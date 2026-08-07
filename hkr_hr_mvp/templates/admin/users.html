@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}{{ t("admin.users") }} - HKR HR{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <h1>{{ t("admin.users") }}</h1>
+    <p>{{ t("admin.users_hint") }}</p>
+  </div>
+  <button class="primary-btn" type="button" data-dialog-open="create-user-dialog">{{ t("admin.add_user") }}</button>
+</section>
+
+<section class="panel admin-user-panel">
+  <div class="section-head compact">
+    <div>
+      <h2>{{ t("admin.existing_users") }}</h2>
+      <p>{{ t("admin.user_count", count=users|length) }}</p>
+    </div>
+  </div>
+  <div class="table-wrap flat">
+    <table class="dense-table admin-user-table">
+      <thead>
+        <tr>
+          <th>{{ t("auth.username") }}</th>
+          <th>{{ t("admin.role") }}</th>
+          <th>{{ t("common.status") }}</th>
+          <th>{{ t("admin.created_date") }}</th>
+          <th>{{ t("common.actions") }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for user in users %}
+          <tr>
+            <td>
+              <strong>{{ user.username }}</strong>
+              {% if user.id == current_user.id %}<span class="current-account">{{ t("admin.current_account") }}</span>{% endif %}
+            </td>
+            <td>{{ option_t("role", user.role, user.role) }}</td>
+            <td><span class="flag {{ 'ok' if user.active else 'danger' }}">{{ t("admin.status_enabled") if user.active else t("admin.status_disabled") }}</span></td>
+            <td>{{ user.created_at.strftime("%Y-%m-%d") }}</td>
+            <td><button class="mini-btn" type="button" data-dialog-open="manage-user-{{ user.id }}">{{ t("admin.manage_user") }}</button></td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5" class="empty-cell">{{ t("common.not_set") }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<dialog class="app-dialog" id="create-user-dialog">
+  <form class="dialog-panel stack-form" method="post">
+    <input type="hidden" name="action" value="create">
+    <div class="section-head">
+      <div><h2>{{ t("admin.add_user") }}</h2><p>{{ t("admin.add_user_hint") }}</p></div>
+      <button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button>
+    </div>
+    <label><span>{{ t("auth.username") }}</span><input name="username" autocomplete="off" required></label>
+    <label><span>{{ t("admin.role") }}</span><select name="role">{% for code, label in roles %}<option value="{{ code }}">{{ option_t("role", code, label) }}</option>{% endfor %}</select></label>
+    <label><span>{{ t("auth.password") }}</span><input type="password" name="password" autocomplete="new-password" required></label>
+    <div class="dialog-actions">
+      <button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button>
+      <button class="primary-btn" type="submit">{{ t("admin.create_user") }}</button>
+    </div>
+  </form>
+</dialog>
+
+{% for user in users %}
+  <dialog class="app-dialog" id="manage-user-{{ user.id }}">
+    <form class="dialog-panel stack-form" method="post">
+      <input type="hidden" name="action" value="update">
+      <input type="hidden" name="user_id" value="{{ user.id }}">
+      <div class="section-head">
+        <div><h2>{{ t("admin.manage_user") }}</h2><p>{{ user.username }}</p></div>
+        <button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button>
+      </div>
+      {% if user.id == current_user.id %}
+        <input type="hidden" name="role" value="admin">
+        <input type="hidden" name="active" value="on">
+        <label><span>{{ t("admin.role") }}</span><select disabled><option>{{ option_t("role", user.role, user.role) }}</option></select></label>
+        <p class="form-note">{{ t("admin.self_protection_hint") }}</p>
+      {% else %}
+        <label><span>{{ t("admin.role") }}</span><select name="role">{% for code, label in roles %}<option value="{{ code }}" {% if user.role == code %}selected{% endif %}>{{ option_t("role", code, label) }}</option>{% endfor %}</select></label>
+        <label class="check-line"><input type="checkbox" name="active" {% if user.active %}checked{% endif %}><span>{{ t("admin.enabled") }}</span></label>
+      {% endif %}
+      <label><span>{{ t("admin.reset_password") }}</span><input type="password" name="password" autocomplete="new-password" placeholder="{{ t('admin.leave_password_blank') }}"></label>
+      <div class="dialog-actions">
+        <button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button>
+        <button class="primary-btn" type="submit">{{ t("common.save") }}</button>
+      </div>
+    </form>
+  </dialog>
+{% endfor %}
+{% endblock %}

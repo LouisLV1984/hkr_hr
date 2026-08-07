@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}{{ t("common.open") }} - {{ document.original_filename }}{% endblock %}
+{% block page_class %}wide-page{% endblock %}
+{% block content %}
+<section class="page-head compact">
+  <div><h1>{{ document.title or document.original_filename }}</h1><p>{{ employee.employee_no }} · {{ employee.display_name }} · {{ t("documents.preview_hint") }}</p></div>
+  <a class="ghost-btn" href="{{ url_for('employees.view_employee', employee_id=employee.id) }}">{{ t("common.back") }}</a>
+</section>
+<section class="document-review-shell">
+  <article class="document-preview-panel">
+    <div class="preview-toolbar"><strong>{{ document.original_filename }}</strong><a href="{{ url_for('documents.download_document', document_id=document.id) }}">{{ t("common.download") }}</a></div>
+    {% if document.file_ext == ".pdf" %}
+      <iframe title="{{ document.original_filename }}" src="{{ url_for('documents.open_document', document_id=document.id) }}"></iframe>
+    {% elif document.file_ext in [".jpg", ".jpeg", ".png"] %}
+      <img src="{{ url_for('documents.open_document', document_id=document.id) }}" alt="{{ document.original_filename }}">
+    {% else %}
+      <div class="file-fallback"><p>{{ document.original_filename }}</p><a class="primary-btn" href="{{ url_for('documents.download_document', document_id=document.id) }}">{{ t("common.download") }}</a></div>
+    {% endif %}
+  </article>
+  <aside class="document-review-form">
+    <form class="stack-form" method="post">
+      <section>
+        <h2>{{ t("common.details") }}</h2>
+        <label><span>{{ t("common.details") }}</span><input name="title" value="{{ document.title or '' }}"></label>
+        <label><span>{{ t("documents.document_date") }}</span><input type="date" name="document_date" value="{{ document.document_date.isoformat() if document.document_date else '' }}"></label>
+      </section>
+      {% if document.category == "staff_record" %}
+        <section><h2>{{ option_t("document_category", "staff_record", "Staff Record") }}</h2>
+          <label><span>{{ t("employees.chinese_name") }}</span><input name="chinese_name" value="{{ employee.chinese_name or '' }}"></label>
+          <label><span>{{ t("employees.english_name") }}</span><input name="english_name" value="{{ employee.english_name or '' }}"></label>
+          <label><span>{{ t("employee.gender") }}</span><select name="gender"><option value=""></option><option value="male" {% if employee.gender == "male" %}selected{% endif %}>{{ t("employee.gender_male") }}</option><option value="female" {% if employee.gender == "female" %}selected{% endif %}>{{ t("employee.gender_female") }}</option></select></label>
+          <label><span>{{ t("employees.contact") }}</span><div class="phone-inputs"><select name="mobile_region_code">{% for item in refs.phone_region %}{% set code = item.display_name.split(' ')[0] %}<option value="{{ code }}" {% if employee.mobile_region_code == code %}selected{% endif %}>{{ code }}</option>{% endfor %}</select><input name="mobile_number" value="{{ employee.mobile_number or '' }}"></div></label>
+          <label><span>{{ t("employee.email") }}</span><input type="email" name="email" value="{{ employee.email or '' }}"></label>
+          <label><span>{{ t("employee.address") }}</span><textarea name="residential_address">{{ employee.residential_address or '' }}</textarea></label>
+          <label><span>{{ t("employee.bank") }}</span><input list="bank-list" name="bank_name" value="{{ employee.bank_name or '' }}"><datalist id="bank-list">{% for item in refs.bank %}<option value="{{ item.display_name }}"></option>{% endfor %}</datalist></label>
+          <label><span>{{ t("employee.bank_account") }}</span><input name="bank_account_no" value="{{ employee.bank_account_no or '' }}"></label>
+          <label><span>{{ t("employee.education") }}</span><select name="education_level"><option value=""></option>{% for item in refs.education_level %}<option value="{{ item.display_name }}" {% if employee.education_level == item.display_name %}selected{% endif %}>{{ item.display_name }}</option>{% endfor %}</select></label>
+          <label><span>{{ t("employee.major") }}</span><input name="major" value="{{ employee.major or '' }}"></label>
+          <label><span>{{ t("employee.school") }}</span><input name="graduation_school" value="{{ employee.graduation_school or '' }}"></label>
+          <label><span>{{ t("employees.start_date") }}</span><input type="date" name="start_date"></label>
+        </section>
+      {% elif document.category in ["three_treasures", "identity"] %}
+        <section><h2>{{ t("employee.credentials") }}</h2>
+          <label><span>{{ t("employee.identity_type") }}</span><select name="identity_type"><option value=""></option>{% for code, label in identity_types %}<option value="{{ code }}">{{ option_t("identity_type", code, label) }}</option>{% endfor %}</select></label>
+          <label><span>{{ t("employee.identity_no") }}</span><input name="identity_number"></label>
+          <div class="two-inputs"><input type="date" name="identity_issue_date" title="{{ t('employee.issue_date') }}"><input type="date" name="identity_expiry_date" title="{{ t('employee.expiry_date') }}"></div>
+          <label class="check-line"><input type="checkbox" name="identity_long_term"><span>{{ t("employee.long_term") }}</span></label>
+          <label class="check-line"><input type="checkbox" name="identity_primary" checked><span>{{ t("employee.primary") }}</span></label>
+          {% if document.category == "three_treasures" %}
+            <h3>{{ t("documents.safety_card") }}</h3><input name="safety_card_no" placeholder="{{ t('employee.certificate_no') }}"><div class="two-inputs"><input type="date" name="safety_card_valid_from"><input type="date" name="safety_card_expiry_date"></div>
+            <h3>{{ t("documents.worker_registration") }}</h3><input name="worker_registration_no" placeholder="{{ t('employee.certificate_no') }}"><div class="two-inputs"><input type="date" name="worker_registration_valid_from"><input type="date" name="worker_registration_expiry_date"></div>
+          {% endif %}
+        </section>
+      {% elif document.category == "bank_proof" %}
+        <section><h2>{{ t("employee.bank") }}</h2><label><span>{{ t("employee.bank") }}</span><input list="bank-list" name="bank_name" value="{{ employee.bank_name or '' }}"><datalist id="bank-list">{% for item in refs.bank %}<option value="{{ item.display_name }}"></option>{% endfor %}</datalist></label><label><span>{{ t("employee.bank_account") }}</span><input name="bank_account_no" value="{{ employee.bank_account_no or '' }}"></label></section>
+      {% elif document.category == "visa" %}
+        <section><h2>VISA</h2><select name="visa_category_id">{% for item in refs.visa_category %}<option value="{{ item.id }}">{{ item.display_name }}</option>{% endfor %}</select><input name="visa_no" placeholder="{{ t('employee.visa_no') }}"><div class="two-inputs"><input type="date" name="visa_issue_date"><input type="date" name="visa_expiry_date"></div></section>
+      {% elif document.category == "qualification" %}
+        <section><h2>{{ t("employee.credentials") }}</h2><select name="qualification_category"><option value="degree">{{ t("documents.qualification_degree") }}</option><option value="skill">{{ t("documents.qualification_skill") }}</option></select><input name="qualification_name" placeholder="{{ t('documents.qualification_name') }}"><input name="qualification_no" placeholder="{{ t('employee.certificate_no') }}"><div class="two-inputs"><input type="date" name="qualification_issue_date"><input type="date" name="qualification_expiry_date"></div></section>
+      {% elif document.category == "signed_contract" %}
+        <section><h2>{{ t("employee.contract") }}</h2><label><span>{{ t("contract.effective_date") }}</span><input type="date" name="contract_effective_date"></label><label><span>{{ t("contract.annual_leave") }}</span><input type="number" min="0" step="0.5" name="contract_annual_leave_days" value="7"></label>{% if employee.payroll_group == "management" %}<label><span>{{ t("employee.probation_end") }}</span><input type="date" name="probation_end_date"></label>{% endif %}</section>
+      {% endif %}
+      <label><span>{{ t("common.remarks") }}</span><textarea name="remarks">{{ document.remarks or '' }}</textarea></label>
+      <div class="sticky-actions"><button class="primary-btn full" type="submit">{{ t("common.save") }}</button></div>
+    </form>
+  </aside>
+</section>
+{% endblock %}

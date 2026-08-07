@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ t("contract.generate") }} - HKR HR{% endblock %}
+{% block content %}
+<section class="page-head"><div><h1>{{ t("contract.generate") }}</h1><p>{{ employee.employee_no }} · {{ employee.display_name }}</p></div><a class="ghost-btn" href="{{ url_for('employees.view_employee', employee_id=employee.id) }}">{{ t("common.back") }}</a></section>
+<section class="contract-generate-shell">
+  <article class="panel">
+    <form class="stack-form" method="post">
+      <label><span>{{ t("contract.template") }}</span><select name="template_code" id="contract-template"><option value="SITE" {% if automatic_template == "SITE" %}selected{% endif %}>{{ t("contract.site") }}</option><option value="OFFICE" {% if automatic_template == "OFFICE" %}selected{% endif %}>{{ t("contract.office") }}</option></select></label>
+      <label><span>{{ t("contract.contract_date") }}</span><input type="date" name="contract_date" value="{{ now_date or '' }}"></label>
+      <label><span>{{ t("contract.effective_date") }} *</span><input type="date" name="effective_date" value="{{ employee.current_period.start_date.isoformat() if employee.current_period else '' }}" required></label>
+      <label><span>{{ t("contract.annual_leave") }}</span><input type="number" name="annual_leave_days" min="0" step="0.5" value="{{ employee.current_period.contract_annual_leave_days if employee.current_period and employee.current_period.contract_annual_leave_days is not none else 7 }}"></label>
+      <label><span>{{ t("contract.notice_period") }}</span><input type="number" name="notice_period_days" min="0" step="0.5" value="{{ employee.current_period.notice_period_value if employee.current_period and employee.current_period.notice_period_value is not none and employee.current_period.notice_period_unit == 'day' else 7 }}"></label>
+      <label id="probation-field"><span>{{ t("contract.probation_months") }}</span><input type="number" name="probation_months" min="0" step="0.5" value="3"></label>
+      <button class="primary-btn" type="submit">{{ t("contract.generate") }}</button>
+    </form>
+  </article>
+  <aside class="panel">
+    <h2>{{ t("common.details") }}</h2>
+    <dl class="detail-grid">
+      <div><dt>{{ t("employee.identity_no") }}</dt><dd>{{ employee.primary_identity.identity_number if employee.primary_identity else "-" }}</dd></div>
+      <div><dt>{{ t("common.project") }}</dt><dd>{{ employee.current_assignment.project.name if employee.current_assignment and employee.current_assignment.project else "-" }}</dd></div>
+      <div><dt>{{ t("common.position") }}</dt><dd>{{ employee.current_assignment.positions|map(attribute='position.display_name')|join('、') if employee.current_assignment else "-" }}</dd></div>
+      <div><dt>{{ t("employees.salary") }}</dt><dd>{% if employee.current_salary %}{{ employee.current_salary.currency }} {{ fmt_money(employee.current_salary.amount) }}{% else %}-{% endif %}</dd></div>
+    </dl>
+    <p class="form-note">{{ t("documents.generate_hint") }}</p>
+  </aside>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+const template = document.getElementById("contract-template");
+const probation = document.getElementById("probation-field");
+function syncProbation() { probation.hidden = template.value !== "OFFICE"; }
+template.addEventListener("change", syncProbation); syncProbation();
+</script>
+{% endblock %}

@@ -1,0 +1,333 @@
+{% extends "base.html" %}
+{% block title %}{{ t("attendance.title") }} - HKR HR{% endblock %}
+{% block page_class %}workbench-page{% endblock %}
+{% block sidebar_content %}
+<div class="attendance-rail">
+  <section class="context-panel">
+    <form class="month-switch" method="get">
+      <label>
+        <span>{{ t("common.month") }}</span>
+        <input type="month" name="month" value="{{ year_month }}" onchange="this.form.submit()">
+      </label>
+    </form>
+  </section>
+
+  <section class="context-panel attendance-upload-panel">
+    <div class="context-panel-head">
+      <strong>{{ t("attendance.upload_batch") }}</strong>
+      <span>{{ t("attendance.upload_hint") }}</span>
+    </div>
+    <form class="stack-form" method="post" action="{{ url_for('attendance.create_batch') }}" enctype="multipart/form-data" data-attendance-upload-form>
+      <input type="hidden" name="year_month" value="{{ year_month }}">
+      <label class="attendance-drop-zone" data-attendance-drop-zone tabindex="0" role="button">
+        <span class="upload-mark" aria-hidden="true">↑</span>
+        <strong>{{ t("attendance.drop_files") }}</strong>
+        <span>{{ t("attendance.pdf_only") }}</span>
+        <input data-attendance-file-input type="file" name="files" accept=".pdf,application/pdf" multiple required>
+      </label>
+      <p class="file-selection"
+         data-attendance-file-summary
+         data-empty-label="{{ t('attendance.no_files_selected') }}"
+         data-selected-label="{{ t('attendance.files_selected', count='__COUNT__') }}">{{ t("attendance.no_files_selected") }}</p>
+      <button class="primary-btn full" type="submit">{{ t("attendance.create_batch") }}</button>
+    </form>
+    <div class="upload-progress" data-attendance-upload-progress hidden aria-live="polite">
+      <span></span>
+      <strong>{{ t("attendance.uploading") }}</strong>
+    </div>
+  </section>
+
+  {% if selected_batch %}
+    {% set processed_count = selected_batch.items|rejectattr("status", "equalto", "pending")|list|length %}
+    <section class="context-panel current-batch-panel">
+      <div class="context-panel-head split">
+        <div>
+          <strong>{{ t("attendance.current_batch") }}</strong>
+          <span>{{ selected_batch.batch_no }}</span>
+        </div>
+        <form method="post" action="{{ url_for('attendance.delete_batch', batch_id=selected_batch.id) }}" data-confirm="{{ t('attendance.delete_confirm') }}">
+          <button class="icon-btn danger-text" type="submit" title="{{ t('attendance.delete_batch') }}" aria-label="{{ t('attendance.delete_batch') }}">×</button>
+        </form>
+      </div>
+      <div class="batch-progress">
+        <span>{{ t("attendance.batch_progress", done=processed_count, total=selected_batch.items|length) }}</span>
+        <progress value="{{ processed_count }}" max="{{ selected_batch.items|length or 1 }}"></progress>
+      </div>
+      <nav class="batch-file-list" aria-label="{{ t('attendance.batch_files') }}">
+        {% for item in selected_batch.items %}
+          <a class="{% if selected_item and item.id == selected_item.id %}active{% endif %}" href="{{ url_for('attendance.attendance_home', month=year_month, batch_id=selected_batch.id, item_id=item.id) }}">
+            <span class="batch-file-index">{{ loop.index }}</span>
+            <span class="batch-file-copy">
+              <strong>{{ item.original_filename }}</strong>
+              <small>{{ option_t("workflow_status", item.status, item.status) }}{% if item.employee %} · {{ item.employee.display_name }}{% endif %}</small>
+            </span>
+          </a>
+        {% endfor %}
+      </nav>
+    </section>
+  {% endif %}
+
+  <section class="context-panel recent-batches-panel">
+    <div class="context-panel-head">
+      <strong>{{ t("attendance.recent_batches") }}</strong>
+      <span>{{ t("attendance.recent_batches_hint") }}</span>
+    </div>
+    {% set other_batches = recent_batches|rejectattr("id", "equalto", selected_batch.id)|list if selected_batch else recent_batches %}
+    <div class="recent-batch-list">
+      {% for batch in other_batches %}
+          {% set batch_done = batch.items|rejectattr("status", "equalto", "pending")|list|length %}
+          <article class="recent-batch-card">
+            <a href="{{ url_for('attendance.attendance_home', month=batch.year_month, batch_id=batch.id) }}">
+              <strong>{{ batch.batch_no }}</strong>
+              <span>{{ batch.year_month }} · {{ batch.items|length }} PDF · {{ batch_done }}/{{ batch.items|length }}</span>
+            </a>
+            <form method="post" action="{{ url_for('attendance.delete_batch', batch_id=batch.id) }}" data-confirm="{{ t('attendance.delete_confirm') }}">
+              <button class="icon-btn danger-text" type="submit" title="{{ t('attendance.delete_batch') }}" aria-label="{{ t('attendance.delete_batch') }}">×</button>
+            </form>
+          </article>
+      {% else %}
+        <p class="empty-context">{{ t("common.not_set") }}</p>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block content %}
+<section class="page-head compact workbench-head">
+  <div><h1>{{ t("attendance.title") }}</h1><p>{{ t("attendance.subtitle") }}</p></div>
+</section>
+<section class="attendance-stats">
+  <a href="#expected"><span>{{ t("attendance.expected") }}</span><strong>{{ expected|length }}</strong></a>
+  <a href="#received"><span>{{ t("attendance.received") }}</span><strong>{{ received|length }}</strong></a>
+  <a href="#missing"><span>{{ t("attendance.missing") }}</span><strong>{{ missing|length }}</strong></a>
+</section>
+
+{% if selected_item or edit_summary_mode %}
+<section class="attendance-workbench">
+  <section class="workbench-preview">
+    {% if selected_item %}
+      <div class="preview-toolbar"><div><strong>{{ selected_item.original_filename }}</strong><span>{{ selected_batch.year_month }} · {{ option_t("workflow_status", selected_item.status, selected_item.status) }}</span></div><a href="{{ url_for('attendance.open_item', item_id=selected_item.id) }}" target="_blank">{{ t("common.open") }}</a></div>
+      <iframe title="{{ selected_item.original_filename }}" src="{{ url_for('attendance.open_item', item_id=selected_item.id) }}"></iframe>
+    {% elif selected_summary and selected_summary.document %}
+      <div class="preview-toolbar"><div><strong>{{ selected_summary.document.original_filename }}</strong><span>{{ selected_summary.year_month }} · {{ t("attendance.correction_mode") }}</span></div><a href="{{ url_for('documents.open_document', document_id=selected_summary.document.id) }}" target="_blank">{{ t("common.open") }}</a></div>
+      <iframe title="{{ selected_summary.document.original_filename }}" src="{{ url_for('documents.open_document', document_id=selected_summary.document.id) }}"></iframe>
+    {% else %}
+      <div class="empty-preview"><h2>{{ t("attendance.upload_batch") }}</h2><p>{{ t("attendance.subtitle") }}</p></div>
+    {% endif %}
+  </section>
+
+  <aside class="workbench-review">
+    {% if selected_item or edit_summary_mode %}
+      <form id="attendance-review-form" class="stack-form" method="post" action="{{ url_for('attendance.save_item', item_id=selected_item.id) if selected_item else url_for('attendance.correct_summary', summary_id=selected_summary.id) }}">
+        <section class="review-section">
+          <h2>{{ t("common.employee") }}</h2>
+          <label><span>{{ t("common.employee") }} *</span><select name="employee_id" required data-attendance-employee><option value="">{{ t("common.not_set") }}</option>{% for employee in employees %}<option value="{{ employee.id }}" {% if selected_employee_id == employee.id or (not selected_employee_id and selected_summary and selected_summary.employee_id == employee.id) %}selected{% endif %}>{{ employee.employee_no }} · {{ employee.display_name }}</option>{% endfor %}</select></label>
+          <p class="form-note">{{ t("attendance.filename_hint") }}</p>
+          {% if selected_item and duplicate_document %}
+            <div class="duplicate-warning">
+              <span class="flag warn">{{ t("documents.duplicate_badge") }}</span>
+              <h2>{{ t("documents.duplicate_title") }}</h2>
+              <p>{{ t("documents.duplicate_attendance") }}</p>
+              <p><strong>{{ duplicate_document.original_filename }}</strong></p>
+              <a class="ghost-btn" href="{{ url_for('attendance.attendance_home', month=year_month, batch_id=selected_batch.id, item_id=selected_item.id) }}">{{ t("documents.duplicate_cancel") }}</a>
+            </div>
+          {% endif %}
+        </section>
+        <p class="form-note strong-note">{{ t("attendance.four_part_hint") }}</p>
+        {% for kind, title, actual in [
+          ("current_1_20", t("attendance.current_period"), true),
+          ("current_21_end_forecast", t("attendance.current_forecast"), false),
+          ("previous_21_end", t("attendance.previous_tail"), true),
+          ("previous_21_end_forecast", t("attendance.previous_forecast"), false)
+        ] %}
+          <section class="review-section">
+            <div class="section-head compact">
+              <h2>{{ title }}</h2>
+              <div class="button-row">
+                {% if kind == "previous_21_end" and previous_summary and previous_summary.document %}
+                  <a class="mini-btn" target="_blank" href="{{ url_for('documents.open_document', document_id=previous_summary.document.id) }}">{{ t("attendance.open_previous_pdf") }}</a>
+                {% endif %}
+                <button class="mini-btn add-segment" type="button" data-kind="{{ kind }}" data-forecast="{{ '0' if actual else '1' }}">{{ t("attendance.add_project") }}</button>
+              </div>
+            </div>
+            <p class="form-note">{{ t("attendance.ecall_hint") if actual else t("attendance.forecast_hint") }}</p>
+            <div class="segment-list" data-segments="{{ kind }}">
+              {% set existing = segment_rows.get(kind, [none]) %}
+              {% for segment in existing or [none] %}
+                <div class="segment-row {{ 'forecast-row' if not actual else '' }}">
+                  <label class="segment-project"><span>{{ t("common.project") }}</span><select name="{{ kind }}_project_id"><option value="">{{ t("common.not_set") }}</option>{% for project in projects %}<option value="{{ project.id }}" {% if segment and segment.project_id == project.id %}selected{% endif %}>{{ project.name }}</option>{% endfor %}</select></label>
+                  <label><span>{{ t("attendance.working_days") if actual else t("attendance.forecast_days") }}</span><input type="number" min="0" step="0.5" name="{{ kind }}_working_days" value="{{ segment.working_days if segment else 0 }}"></label>
+                  <label><span>{{ t("attendance.holiday_days") }}</span><input type="number" min="0" step="0.5" name="{{ kind }}_holiday_days" value="{{ segment.sunday_holiday_days if segment else 0 }}"></label>
+                  {% if actual %}
+                    <label><span>{{ t("attendance.ot_hours") }}</span><input type="number" min="0" step="0.5" name="{{ kind }}_ot_hours" value="{{ segment.ot_hours if segment else 0 }}"></label>
+                    <label><span>{{ t("attendance.large_ecall_count") }}</span><input type="number" min="0" step="1" name="{{ kind }}_large_ecall_count" value="{{ segment.large_ecall_count if segment else 0 }}"></label>
+                    <label><span>{{ t("attendance.ecall_count") }}</span><input type="number" min="0" step="1" name="{{ kind }}_ecall_count" value="{{ segment.ecall_count if segment else 0 }}"></label>
+                  {% endif %}
+                  <button class="icon-btn remove-segment" type="button" title="{{ t('common.delete') }}">×</button>
+                </div>
+              {% endfor %}
+            </div>
+          </section>
+        {% endfor %}
+        <label><span>{{ t("common.remarks") }}</span><textarea name="remarks">{{ selected_summary.remarks if selected_summary else '' }}</textarea></label>
+      </form>
+      {% if selected_item %}
+      <details class="review-section transfer-box">
+        <summary>{{ t("attendance.transfer") }}</summary>
+        <form class="stack-form" method="post" action="{{ url_for('attendance.transfer_project', item_id=selected_item.id) }}" enctype="multipart/form-data">
+          <label><span>{{ t("common.employee") }}</span><select name="employee_id">{% for employee in employees %}<option value="{{ employee.id }}">{{ employee.employee_no }} · {{ employee.display_name }}</option>{% endfor %}</select></label>
+          <label><span>{{ t("employee.effective_date") }}</span><input type="date" name="effective_from" required></label>
+          <label><span>{{ t("common.project") }}</span><select name="project_id">{% for project in projects %}<option value="{{ project.id }}">{{ project.name }}</option>{% endfor %}</select></label>
+          <label><span>{{ t("attendance.transfer_evidence") }}</span><input type="file" name="evidence"></label>
+          <button class="secondary-btn" type="submit">{{ t("attendance.transfer") }}</button>
+        </form>
+      </details>
+      {% endif %}
+      <div class="workbench-actions">
+        {% if edit_summary_mode %}
+          <a class="ghost-btn" href="{{ url_for('employees.view_employee', employee_id=selected_summary.employee_id, tab='attendance') }}">{{ t("common.cancel") }}</a>
+          <form method="post" action="{{ url_for('attendance.withdraw_summary', summary_id=selected_summary.id) }}" data-confirm="{{ t('attendance.withdraw_confirm') }}"><button class="ghost-btn danger-text" type="submit">{{ t("common.withdraw") }}</button></form>
+          <button class="primary-btn" type="submit" form="attendance-review-form">{{ t("common.save") }}</button>
+        {% else %}
+          {% if previous_item %}<a class="ghost-btn" href="{{ url_for('attendance.attendance_home', month=year_month, batch_id=selected_batch.id, item_id=previous_item.id) }}">{{ t("attendance.previous") }}</a>{% else %}<span></span>{% endif %}
+          <form method="post" action="{{ url_for('attendance.skip_item', item_id=selected_item.id) }}"><button class="ghost-btn" type="submit">{{ t("attendance.skip") }}</button></form>
+          {% if duplicate_document %}
+            <button class="primary-btn" type="submit" name="confirm_duplicate" value="1" form="attendance-review-form">{{ t("documents.duplicate_attendance_replace") }}</button>
+          {% else %}
+            <button class="primary-btn" type="submit" form="attendance-review-form">{{ t("attendance.save_next") }}</button>
+          {% endif %}
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="empty-cell">{{ t("attendance.upload_batch") }}</div>
+    {% endif %}
+  </aside>
+</section>
+{% else %}
+<section class="onboarding-empty attendance-start-empty">
+  <div>
+    <h2>{{ t("attendance.start_title") }}</h2>
+    <p>{{ t("attendance.start_hint") }}</p>
+  </div>
+</section>
+{% endif %}
+
+<section class="attendance-roster">
+  <article class="panel" id="missing"><div class="section-head"><h2>{{ t("attendance.missing") }}</h2><strong>{{ missing|length }}</strong></div><div class="chip-list">{% for employee in missing %}<a href="{{ url_for('employees.view_employee', employee_id=employee.id) }}">{{ employee.employee_no }} · {{ employee.display_name }}</a>{% else %}<span>{{ t("dashboard.no_tasks") }}</span>{% endfor %}</div></article>
+  <article class="panel" id="received"><div class="section-head"><h2>{{ t("attendance.received") }}</h2><strong>{{ received|length }}</strong></div><div class="chip-list">{% for summary in received %}<a href="{{ url_for('employees.view_employee', employee_id=summary.employee.id) }}">{{ summary.employee.employee_no }} · {{ summary.employee.display_name }}</a>{% else %}<span>{{ t("common.not_set") }}</span>{% endfor %}</div></article>
+</section>
+<template id="segment-template">
+  <div class="segment-row">
+    <label class="segment-project"><span>{{ t("common.project") }}</span><select data-name="project_id"><option value="">{{ t("common.not_set") }}</option>{% for project in projects %}<option value="{{ project.id }}">{{ project.name }}</option>{% endfor %}</select></label>
+    <label><span>{{ t("attendance.working_days") }}</span><input type="number" min="0" step="0.5" value="0" data-name="working_days"></label>
+    <label><span>{{ t("attendance.ot_hours") }}</span><input type="number" min="0" step="0.5" value="0" data-name="ot_hours"></label>
+    <label><span>{{ t("attendance.holiday_days") }}</span><input type="number" min="0" step="0.5" value="0" data-name="holiday_days"></label>
+    <label><span>{{ t("attendance.large_ecall_count") }}</span><input type="number" min="0" step="1" value="0" data-name="large_ecall_count"></label>
+    <label><span>{{ t("attendance.ecall_count") }}</span><input type="number" min="0" step="1" value="0" data-name="ecall_count"></label>
+    <button class="icon-btn remove-segment" type="button" title="{{ t('common.delete') }}">×</button>
+  </div>
+</template>
+<template id="forecast-segment-template">
+  <div class="segment-row forecast-row">
+    <label class="segment-project"><span>{{ t("common.project") }}</span><select data-name="project_id"><option value="">{{ t("common.not_set") }}</option>{% for project in projects %}<option value="{{ project.id }}">{{ project.name }}</option>{% endfor %}</select></label>
+    <label><span>{{ t("attendance.forecast_days") }}</span><input type="number" min="0" step="0.5" value="0" data-name="working_days"></label>
+    <label><span>{{ t("attendance.holiday_days") }}</span><input type="number" min="0" step="0.5" value="0" data-name="holiday_days"></label>
+    <button class="icon-btn remove-segment" type="button" title="{{ t('common.delete') }}">×</button>
+  </div>
+</template>
+{% endblock %}
+{% block scripts %}
+<script>
+const attendanceUploadForm = document.querySelector("[data-attendance-upload-form]");
+const attendanceDropZone = document.querySelector("[data-attendance-drop-zone]");
+const attendanceFileInput = document.querySelector("[data-attendance-file-input]");
+const attendanceFileSummary = document.querySelector("[data-attendance-file-summary]");
+const attendanceUploadProgress = document.querySelector("[data-attendance-upload-progress]");
+const attendanceEmployee = document.querySelector("[data-attendance-employee]");
+
+if (attendanceEmployee) {
+  attendanceEmployee.addEventListener("change", () => {
+    const url = new URL(window.location.href);
+    if (attendanceEmployee.value) {
+      url.searchParams.set("employee_id", attendanceEmployee.value);
+    } else {
+      url.searchParams.delete("employee_id");
+    }
+    window.location.href = url.toString();
+  });
+}
+
+function updateAttendanceFileSummary() {
+  if (!attendanceFileSummary || !attendanceFileInput) return;
+  const count = attendanceFileInput.files.length;
+  attendanceFileSummary.textContent = count
+    ? attendanceFileSummary.dataset.selectedLabel.replace("__COUNT__", count)
+    : attendanceFileSummary.dataset.emptyLabel;
+}
+
+if (attendanceDropZone && attendanceFileInput) {
+  attendanceDropZone.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      attendanceFileInput.click();
+    }
+  });
+  ["dragenter", "dragover"].forEach((name) => {
+    attendanceDropZone.addEventListener(name, (event) => {
+      event.preventDefault();
+      attendanceDropZone.classList.add("drag-active");
+    });
+  });
+  ["dragleave", "drop"].forEach((name) => {
+    attendanceDropZone.addEventListener(name, () => {
+      attendanceDropZone.classList.remove("drag-active");
+    });
+  });
+  attendanceDropZone.addEventListener("drop", (event) => {
+    event.preventDefault();
+    const pdfFiles = [...event.dataTransfer.files].filter((file) => (
+      file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")
+    ));
+    const transfer = new DataTransfer();
+    pdfFiles.forEach((file) => transfer.items.add(file));
+    attendanceFileInput.files = transfer.files;
+    updateAttendanceFileSummary();
+  });
+  attendanceFileInput.addEventListener("change", updateAttendanceFileSummary);
+}
+
+if (attendanceUploadForm) {
+  attendanceUploadForm.addEventListener("submit", () => {
+    if (attendanceFileInput?.files.length) {
+      attendanceUploadProgress.hidden = false;
+      attendanceUploadForm.querySelector("button[type='submit']").disabled = true;
+    }
+  });
+}
+
+function bindRemove(root = document) {
+  root.querySelectorAll(".remove-segment").forEach((button) => {
+    button.onclick = () => {
+      const list = button.closest(".segment-list");
+      if (list.children.length > 1) button.closest(".segment-row").remove();
+    };
+  });
+}
+document.querySelectorAll(".add-segment").forEach((button) => {
+  button.addEventListener("click", () => {
+    const kind = button.dataset.kind;
+    const templateId = button.dataset.forecast === "1"
+      ? "forecast-segment-template"
+      : "segment-template";
+    const fragment = document.getElementById(templateId).content.cloneNode(true);
+    fragment.querySelectorAll("[data-name]").forEach((input) => {
+      input.name = `${kind}_${input.dataset.name}`;
+    });
+    const list = document.querySelector(`[data-segments="${kind}"]`);
+    list.append(fragment);
+    bindRemove(list);
+  });
+});
+bindRemove();
+</script>
+{% endblock %}

@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="{{ active_lang }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ t("app.title") }}{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body>
+  {% set endpoint = request.endpoint or "" %}
+  {% set module = endpoint.split(".")[0] %}
+  {% set show_context_sidebar = current_user.is_authenticated and module in ["attendance", "payroll", "exports", "references", "admin"] %}
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('dashboard.dashboard') }}">HKR HR</a>
+    {% if current_user.is_authenticated %}
+      <nav class="system-tabs" aria-label="{{ t('nav.primary') }}">
+        <a class="system-tab {% if endpoint == 'dashboard.dashboard' %}active{% endif %}"
+           href="{{ url_for('dashboard.dashboard') }}"
+           {% if endpoint == 'dashboard.dashboard' %}aria-current="page"{% endif %}>
+          {{ t("nav.dashboard") }}
+        </a>
+        <a class="system-tab {% if module in ['employees', 'documents'] %}active{% endif %}"
+           href="{{ url_for('employees.list_employees') }}"
+           {% if module in ['employees', 'documents'] %}aria-current="page"{% endif %}>
+          {{ t("nav.employees") }}
+        </a>
+        <a class="system-tab {% if module == 'leave' %}active{% endif %}"
+           href="{{ url_for('leave.leave_home') }}"
+           {% if module == 'leave' %}aria-current="page"{% endif %}>
+          {{ t("nav.leave") }}
+        </a>
+        <a class="system-tab {% if module == 'attendance' %}active{% endif %}"
+           href="{{ url_for('attendance.attendance_home') }}"
+           {% if module == 'attendance' %}aria-current="page"{% endif %}>
+          {{ t("nav.attendance_payroll") }}
+        </a>
+        <a class="system-tab {% if module in ['payroll', 'exports'] %}active{% endif %}"
+           href="{{ url_for('payroll.attendance_payroll') }}"
+           {% if module in ['payroll', 'exports'] %}aria-current="page"{% endif %}>
+          {{ t("nav.exports") }}
+        </a>
+        <a class="system-tab {% if module == 'references' %}active{% endif %}"
+           href="{{ url_for('references.references_home') }}"
+           {% if module == 'references' %}aria-current="page"{% endif %}>
+          {{ t("nav.settings") }}
+        </a>
+      </nav>
+    {% else %}
+      <span class="topbar-spacer"></span>
+    {% endif %}
+    <div class="top-actions">
+      {% for code, short_label, full_label in languages %}
+        <a class="lang {% if code == active_lang %}active{% endif %}"
+           href="{{ lang_url(code) }}" title="{{ full_label }}">{{ short_label }}</a>
+      {% endfor %}
+      {% if current_user.is_authenticated %}
+        <a class="guide-link" href="{{ url_for('dashboard.guide') }}">{{ t("nav.guide") }}</a>
+        <a class="version-link" href="{{ url_for('dashboard.updates') }}">{{ current_version }}</a>
+        {% if current_user.role == "admin" %}
+          <a class="user" href="{{ url_for('admin.users') }}" title="{{ t('admin.users') }}">{{ current_user.username }}</a>
+        {% else %}
+          <span class="user">{{ current_user.username }}</span>
+        {% endif %}
+        <a class="logout" href="{{ url_for('auth.logout') }}">{{ t("nav.logout") }}</a>
+      {% endif %}
+    </div>
+  </header>
+  <div class="{% if current_user.is_authenticated %}app-layout{% if not show_context_sidebar %} no-sidebar{% endif %}{% else %}auth-layout{% endif %}">
+    {% if show_context_sidebar %}
+      <aside class="app-shell">
+        <nav class="context-nav" aria-label="{{ t('nav.context') }}">
+          {% if module == "attendance" %}
+            <section class="context-nav-group">
+              <div class="context-nav-title">{{ t("nav.section.attendance") }}</div>
+              <a class="context-nav-item {% if module == 'attendance' %}active{% endif %}"
+                 href="{{ url_for('attendance.attendance_home') }}"
+                 {% if module == 'attendance' %}aria-current="page"{% endif %}>
+                <strong>{{ t("nav.attendance") }}</strong>
+                <span>{{ t("nav.attendance.subtitle") }}</span>
+              </a>
+            </section>
+          {% elif module in ["payroll", "exports"] %}
+            <section class="context-nav-group">
+              <div class="context-nav-title">{{ t("nav.section.payroll_exports") }}</div>
+              <a class="context-nav-item {% if endpoint == 'payroll.attendance_payroll' %}active{% endif %}"
+                 href="{{ url_for('payroll.attendance_payroll') }}"
+                 {% if endpoint == 'payroll.attendance_payroll' %}aria-current="page"{% endif %}>
+                <strong>{{ t("payroll.monthly_payroll") }}</strong>
+                <span>{{ t("nav.payroll.subtitle") }}</span>
+              </a>
+              <a class="context-nav-item {% if endpoint == 'payroll.final_payment' %}active{% endif %}"
+                 href="{{ url_for('payroll.final_payment') }}"
+                 {% if endpoint == 'payroll.final_payment' %}aria-current="page"{% endif %}>
+                <strong>{{ t("final_payment.title") }}</strong>
+                <span>{{ t("final_payment.nav_hint") }}</span>
+              </a>
+              <a class="context-nav-item {% if module == 'exports' and request.args.get('section', 'attachments') == 'attachments' %}active{% endif %}"
+                 href="{{ url_for('exports.export_center', section='attachments') }}">
+                <strong>{{ t("exports.attachments") }}</strong>
+                <span>{{ t("exports.attachments_nav_hint") }}</span>
+              </a>
+              <a class="context-nav-item {% if module == 'exports' and request.args.get('section') == 'employees' %}active{% endif %}"
+                 href="{{ url_for('exports.export_center', section='employees') }}">
+                <strong>{{ t("exports.employee_records") }}</strong>
+                <span>{{ t("exports.employee_records_nav_hint") }}</span>
+              </a>
+            </section>
+          {% elif module == "references" %}
+            <section class="context-nav-group">
+              <div class="context-nav-title">{{ t("nav.section.settings") }}</div>
+              <a class="context-nav-item active"
+                 href="{{ url_for('references.references_home') }}"
+                 aria-current="page">
+                <strong>{{ t("nav.references") }}</strong>
+                <span>{{ t("nav.references.subtitle") }}</span>
+              </a>
+            </section>
+          {% elif module == "admin" and current_user.role == "admin" %}
+            <section class="context-nav-group">
+              <div class="context-nav-title">{{ t("nav.section.admin") }}</div>
+              <a class="context-nav-item {% if endpoint == 'admin.users' %}active{% endif %}"
+                 href="{{ url_for('admin.users') }}"
+                 {% if endpoint == 'admin.users' %}aria-current="page"{% endif %}>
+                <strong>{{ t("admin.users") }}</strong>
+                <span>{{ t("nav.admin.users.subtitle") }}</span>
+              </a>
+              <a class="context-nav-item {% if endpoint in ['admin.import_employees', 'admin.download_import_template', 'admin.confirm_import', 'admin.discard_import'] %}active{% endif %}"
+                 href="{{ url_for('admin.import_employees') }}"
+                 {% if endpoint in ['admin.import_employees', 'admin.download_import_template', 'admin.confirm_import', 'admin.discard_import'] %}aria-current="page"{% endif %}>
+                <strong>{{ t("admin.import") }}</strong>
+                <span>{{ t("nav.admin.import.subtitle") }}</span>
+              </a>
+              <a class="context-nav-item {% if endpoint == 'admin.audit' %}active{% endif %}"
+                 href="{{ url_for('admin.audit') }}"
+                 {% if endpoint == 'admin.audit' %}aria-current="page"{% endif %}>
+                <strong>{{ t("admin.audit") }}</strong>
+                <span>{{ t("nav.admin.audit.subtitle") }}</span>
+              </a>
+            </section>
+          {% endif %}
+        </nav>
+        {% block sidebar_content %}{% endblock %}
+      </aside>
+    {% endif %}
+    <main class="page {% block page_class %}{% endblock %}">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash-wrap" role="status" aria-live="polite">
+            {% for category, message in messages %}
+              <div class="flash flash-{{ category }}">{{ message_t(message) }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <script>
+    document.querySelectorAll("form").forEach((form) => {
+      form.setAttribute("autocomplete", "off");
+    });
+    document.querySelectorAll("input, textarea").forEach((control, index) => {
+      if (!control.hasAttribute("autocomplete")) {
+        control.setAttribute("autocomplete", `hkr-disabled-${index}`);
+      }
+    });
+    document.querySelectorAll("[data-money-input]").forEach((input) => {
+      const format = () => {
+        const raw = input.value.replace(/,/g, "").trim();
+        if (!raw || Number.isNaN(Number(raw))) return;
+        input.value = Number(raw).toLocaleString("en-US", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        });
+      };
+      input.addEventListener("blur", format);
+    });
+    function initMultiSelect(source) {
+      const picker = document.createElement("div");
+      picker.className = "multi-select-picker";
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "multi-select-toggle";
+      toggle.setAttribute("aria-haspopup", "listbox");
+      toggle.setAttribute("aria-expanded", "false");
+      const menu = document.createElement("div");
+      menu.className = "multi-select-menu";
+      menu.setAttribute("role", "listbox");
+      menu.setAttribute("aria-multiselectable", "true");
+      menu.hidden = true;
+      picker.append(toggle, menu);
+      source.insertAdjacentElement("afterend", picker);
+      const quickReferenceTrigger = source.previousElementSibling?.matches(".quick-add-reference")
+        ? source.previousElementSibling
+        : null;
+
+      function closeMenu() {
+        menu.hidden = true;
+        toggle.setAttribute("aria-expanded", "false");
+      }
+      function rebuild() {
+        const selected = [...source.selectedOptions].map((option) => option.textContent.trim());
+        toggle.textContent = selected.join("、") || source.dataset.emptyLabel || "-";
+        menu.replaceChildren();
+        [...source.options].forEach((option) => {
+          const label = document.createElement("label");
+          label.className = "multi-select-option";
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.checked = option.selected;
+          checkbox.value = option.value;
+          const text = document.createElement("span");
+          text.textContent = option.textContent;
+          checkbox.addEventListener("change", () => {
+            option.selected = checkbox.checked;
+            closeMenu();
+            source.dispatchEvent(new Event("change", { bubbles: true }));
+            toggle.focus();
+          });
+          label.append(checkbox, text);
+          menu.append(label);
+        });
+        if (quickReferenceTrigger) {
+          const addButton = document.createElement("button");
+          addButton.type = "button";
+          addButton.className = "multi-select-add";
+          addButton.textContent = `＋ ${quickReferenceTrigger.dataset.addLabel}`;
+          addButton.addEventListener("click", () => {
+            closeMenu();
+            quickReferenceTrigger.click();
+          });
+          menu.append(addButton);
+        }
+      }
+      toggle.addEventListener("click", () => {
+        const opening = menu.hidden;
+        document.querySelectorAll(".multi-select-menu:not([hidden])").forEach((item) => {
+          item.hidden = true;
+          item.previousElementSibling?.setAttribute("aria-expanded", "false");
+        });
+        menu.hidden = !opening;
+        toggle.setAttribute("aria-expanded", String(opening));
+      });
+      source.addEventListener("change", rebuild);
+      document.addEventListener("click", (event) => {
+        if (!picker.contains(event.target)) closeMenu();
+      });
+      rebuild();
+    }
+    document.querySelectorAll("select.multi-select-source").forEach(initMultiSelect);
+    document.querySelectorAll("[data-confirm]").forEach((form) => {
+      form.addEventListener("submit", (event) => {
+        if (!window.confirm(form.dataset.confirm)) event.preventDefault();
+      });
+    });
+    function openAppDialog(trigger) {
+      const dialog = document.getElementById(trigger?.dataset.dialogOpen || "");
+      if (!dialog || dialog.open) return;
+      dialog._opener = trigger;
+      dialog.showModal();
+    }
+    document.querySelectorAll("[data-dialog-open]").forEach((button) => {
+      button.addEventListener("click", () => openAppDialog(button));
+    });
+    document.querySelectorAll("[data-dialog-close]").forEach((button) => {
+      button.addEventListener("click", () => button.closest("dialog")?.close());
+    });
+    document.querySelectorAll("dialog.app-dialog").forEach((dialog) => {
+      dialog.addEventListener("click", (event) => {
+        if (event.target === dialog) dialog.close();
+      });
+      dialog.addEventListener("close", () => dialog._opener?.focus());
+    });
+    document.addEventListener("contextmenu", (event) => {
+      const record = event.target.closest("[data-record-context]");
+      const trigger = record?.querySelector("[data-record-editor-trigger]");
+      if (!trigger) return;
+      event.preventDefault();
+      record.classList.add("context-open");
+      window.setTimeout(() => {
+        openAppDialog(trigger);
+        record.classList.remove("context-open");
+      }, 0);
+    });
+    document.querySelectorAll(".flash-success, .flash-info").forEach((flash) => {
+      window.setTimeout(() => {
+        flash.classList.add("is-hiding");
+        window.setTimeout(() => flash.remove(), 200);
+      }, 4000);
+    });
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

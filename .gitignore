@@ -1,0 +1,7 @@
+# This workspace contains real HR business files. Deny root content by default
+# and explicitly allow only the application source and current project docs.
+/*
+!/.gitignore
+!/AGENTS.md
+!/CONTEXT.md
+!/hkr_hr_mvp/

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ t("employees.new_title") }} - HKR HR{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div><h1>{{ t("employees.new_title") }}</h1><p>{{ t("employees.new_hint") }}</p></div>
+  <a class="ghost-btn" href="{{ url_for('employees.list_employees') }}">{{ t("common.back") }}</a>
+</section>
+<section class="create-employee-shell">
+  <article class="panel">
+    <form class="stack-form" method="post">
+      <label><span>{{ t("employees.number_type") }} *</span><select name="employee_type_id" id="employee-type" required><option value="">{{ t("common.not_set") }}</option>{% for item in employee_types %}<option value="{{ item.id }}">{{ item.display_name }}</option>{% endfor %}</select></label>
+      <label><span>{{ t("employees.employee_no") }}</span><input id="employee-no-preview" readonly value="-"></label>
+      <label><span>{{ t("employees.payroll_group") }} *</span><select name="payroll_group" required>{% for code, label in payroll_groups %}<option value="{{ code }}">{{ option_t("payroll_group", code, label) }}</option>{% endfor %}</select></label>
+      <label><span>{{ t("employees.chinese_name") }}</span><input name="chinese_name"></label>
+      <label><span>{{ t("employees.english_name") }}</span><input name="english_name"></label>
+      <p class="form-note">{{ t("employees.new_hint") }}</p>
+      <button class="primary-btn" type="submit">{{ t("employees.new") }}</button>
+    </form>
+  </article>
+  <aside class="panel create-next">
+    <h2>{{ t("employee.profile") }}</h2>
+    <ol><li>{{ t("employees.new") }}</li><li>{{ t("employee.personal") }}</li><li>{{ t("employee.employment") }}</li><li>{{ t("employee.documents") }}</li><li>{{ t("contract.generate") }}</li></ol>
+    <p>{{ t("references.subtitle") }}</p>
+  </aside>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+const typeSelect = document.getElementById("employee-type");
+const numberPreview = document.getElementById("employee-no-preview");
+typeSelect.addEventListener("change", async () => {
+  if (!typeSelect.value) { numberPreview.value = "-"; return; }
+  const response = await fetch(`{{ url_for('employees.api_next_employee_no') }}?employee_type_id=${typeSelect.value}`);
+  const payload = await response.json();
+  numberPreview.value = payload.employee_no || "-";
+});
+</script>
+{% endblock %}

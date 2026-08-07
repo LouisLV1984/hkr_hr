@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}{{ t("documents.upload_title") }} - HKR HR{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div><h1>{{ t("documents.upload_title") }}</h1><p>{{ employee.employee_no }} · {{ employee.display_name }}</p></div>
+  <a class="ghost-btn" href="{{ url_for('employees.view_employee', employee_id=employee.id) }}">{{ t("common.back") }}</a>
+</section>
+<section class="document-upload-shell">
+  <article class="panel">
+    {% if duplicate_pending %}
+      <div class="duplicate-warning">
+        <span class="flag warn">{{ t("documents.duplicate_badge") }}</span>
+        <h2>{{ t("documents.duplicate_title") }}</h2>
+        <p>{{ t("documents.duplicate_detail", filename=duplicate_pending.existing.original_filename) }}</p>
+        <dl class="compact-facts">
+          <div><dt>{{ t("documents.file") }}</dt><dd>{{ duplicate_pending.filename }}</dd></div>
+          <div><dt>{{ t("documents.active") }}</dt><dd>{{ duplicate_pending.existing.original_filename }}</dd></div>
+        </dl>
+        <form class="duplicate-actions" method="post" action="{{ url_for('documents.resolve_duplicate_document', employee_id=employee.id) }}">
+          <input type="hidden" name="duplicate_token" value="{{ duplicate_pending.token }}">
+          <button class="ghost-btn" type="submit" name="action" value="cancel">{{ t("documents.duplicate_cancel") }}</button>
+          <button class="primary-btn" type="submit" name="action" value="replace">{{ t("documents.duplicate_replace") }}</button>
+        </form>
+      </div>
+    {% else %}
+      <form class="stack-form" method="post" enctype="multipart/form-data">
+        <label><span>{{ t("documents.category") }}</span><select name="category" required>{% for code, label in categories.items() %}<option value="{{ code }}">{{ option_t("document_category", code, label) }}</option>{% endfor %}</select></label>
+        <label><span>{{ t("documents.file") }}</span><input type="file" name="file" accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx" required></label>
+        <label><span>{{ t("documents.document_date") }}</span><input type="date" name="document_date"></label>
+        <label><span>{{ t("common.details") }}</span><input name="title"></label>
+        <label class="check-line"><input type="checkbox" name="replace_existing" id="replace-existing"><span>{{ t("common.replace") }}</span></label>
+        <label id="replacement-reason" hidden><span>{{ t("documents.replacement_reason") }}</span><select name="replacement_reason">{% for reason in replacement_reasons %}<option value="{{ reason }}">{{ option_t("replacement_reason", reason, reason) }}</option>{% endfor %}</select></label>
+        <label><span>{{ t("common.remarks") }}</span><textarea name="remarks"></textarea></label>
+        <p class="form-note">{{ t("documents.preview_hint") }}</p>
+        <button class="primary-btn" type="submit">{{ t("common.upload") }}</button>
+      </form>
+    {% endif %}
+  </article>
+  <aside class="panel">
+    <h2>{{ t("employee.documents") }}</h2>
+    <p>{{ t("documents.archive_hint") }}</p>
+    <ul class="compact-list">{% for document in employee.documents[:12] %}<li><strong>{{ document.title or option_t("document_category", document.category, categories.get(document.category, document.category)) }}</strong><span>{{ document.original_filename }} · {{ option_t("document_status", document.status, document.status) }}</span></li>{% else %}<li><span>{{ t("common.not_set") }}</span></li>{% endfor %}</ul>
+  </aside>
+</section>
+{% endblock %}
+{% block scripts %}
+{% if not duplicate_pending %}
+<script>
+const replace = document.getElementById("replace-existing");
+const reason = document.getElementById("replacement-reason");
+replace.addEventListener("change", () => { reason.hidden = !replace.checked; });
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}{{ t("auth.login") }} - {{ t("app.title") }}{% endblock %}
+{% block content %}
+<section class="login-panel">
+  <h1>HKR HR</h1>
+  <p>{{ t("dashboard.subtitle") }}</p>
+  <form class="stack-form" method="post" autocomplete="off">
+    <label><span>{{ t("auth.username") }}</span><input name="username" autofocus required autocomplete="username"></label>
+    <label><span>{{ t("auth.password") }}</span><input type="password" name="password" required autocomplete="current-password"></label>
+    <button class="primary-btn" type="submit">{{ t("auth.login") }}</button>
+  </form>
+</section>
+{% endblock %}

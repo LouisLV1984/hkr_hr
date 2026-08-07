@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ t("updates.title") }} - {{ t("app.title") }}{% endblock %}
+{% block content %}
+<section class="page-head"><div><h1>{{ t("updates.title") }}</h1><p>{{ t("updates.subtitle") }}</p></div></section>
+<div class="release-list">
+  {% for release in releases %}
+  <article class="panel release-card">
+    <div class="section-head"><div><span class="eyebrow">{{ release.version }} · {{ release.date }}</span><h2>{{ release.title[active_lang] }}</h2></div></div>
+    <div class="release-columns">
+      <section><h3>{{ t("updates.features") }}</h3><ul>{% for item in release.features[active_lang] %}<li>{{ item }}</li>{% endfor %}</ul></section>
+      <section><h3>{{ t("updates.improvements") }}</h3><ul>{% for item in release.improvements[active_lang] %}<li>{{ item }}</li>{% endfor %}</ul></section>
+      <section><h3>{{ t("updates.limitations") }}</h3><ul>{% for item in release.limitations[active_lang] %}<li>{{ item }}</li>{% endfor %}</ul></section>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% endblock %}

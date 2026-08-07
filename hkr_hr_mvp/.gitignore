@@ -1,0 +1,15 @@
+.env
+.venv/
+.tmp/
+__pycache__/
+*.py[cod]
+*.log
+.pytest_cache/
+tmp/
+_verification/
+ocr/tessdata/
+
+uploads/*
+!uploads/.gitkeep
+generated_contracts/*
+!generated_contracts/.gitkeep

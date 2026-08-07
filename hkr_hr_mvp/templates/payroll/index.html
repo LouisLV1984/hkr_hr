@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}{{ t("payroll.title") }} - HKR HR{% endblock %}
+{% block sidebar_content %}
+<section class="context-panel payroll-controls">
+  <form class="stack-form" method="get" data-payroll-filter>
+    <label><span>{{ t("common.month") }}</span><input type="month" name="year_month" value="{{ year_month }}" required></label>
+    <label><span>{{ t("employees.payroll_group") }}</span><select name="payroll_group"><option value="all" {% if selected_group == "all" %}selected{% endif %}>{{ t("payroll.group_all") }}</option>{% for code, label in payroll_groups %}<option value="{{ code }}" {% if selected_group == code %}selected{% endif %}>{{ option_t("payroll_group", code, label) }}</option>{% endfor %}</select></label>
+    <p class="form-note">{{ t("payroll.auto_refresh_hint") }}</p>
+  </form>
+  <div class="group-counts">
+    {% for code, label in payroll_groups %}<div><span>{{ option_t("payroll_group", code, label) }}</span><strong>{{ counts[code] }}</strong></div>{% endfor %}
+  </div>
+  <form method="post" action="{{ url_for('payroll.export_current_payroll') }}">
+    <input type="hidden" name="year_month" value="{{ year_month }}"><input type="hidden" name="payroll_group" value="{{ selected_group }}">
+    <button class="primary-btn full" type="submit" {% if blockers or not rows %}disabled{% endif %}>{{ t("payroll.export_zip") if selected_group == "all" else t("payroll.export_xlsx") }}</button>
+  </form>
+  <p class="form-note">{{ t("payroll.direct_export_hint") }}</p>
+  {% if blockers %}<p class="form-note danger-text">{{ t("payroll.blocked") }}</p>{% endif %}
+</section>
+{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div><h1>{{ t("payroll.title") }}</h1><p>{{ t("payroll.subtitle") }}</p></div>
+</section>
+<section class="payroll-main">
+    <article class="payroll-equation" aria-label="{{ t('payroll.four_part_calculation') }}">
+      <strong>{{ t("payroll.four_part_calculation") }}</strong>
+      <span>{{ t("attendance.current_period") }}</span>
+      <b>＋</b>
+      <span>{{ t("attendance.current_forecast") }}</span>
+      <b>＋</b>
+      <span>{{ t("attendance.previous_tail") }}</span>
+      <b>−</b>
+      <span>{{ t("attendance.previous_forecast") }}</span>
+    </article>
+    <section class="payroll-summary-grid" aria-label="{{ t('payroll.summary') }}">
+      <article><span>{{ t("payroll.ready_employees") }}</span><strong>{{ summary.ready_count }}</strong></article>
+      <article><span>{{ t("payroll.blocked_employees") }}</span><strong>{{ summary.blocked_count }}</strong></article>
+      <article><span>{{ t("payroll.gross") }}</span><strong>{{ fmt_money(summary.gross) }}</strong></article>
+      <article><span>{{ t("payroll.employee_mpf") }}</span><strong>{{ fmt_money(summary.employee_mpf) }}</strong></article>
+      <article><span>{{ t("payroll.net") }}</span><strong>{{ fmt_money(summary.net) }}</strong></article>
+    </section>
+    <details class="panel rule-panel">
+      <summary>{{ t("payroll.rules") }} · {{ rule_version }}</summary>
+      <div class="section-head"><div><h2>{{ t("payroll.rules") }}</h2><p>{{ rule_version }}</p></div></div>
+      <ol>{% for note in formula_notes %}<li>{{ t(note) }}</li>{% endfor %}</ol>
+      <details class="mpf-tier-table">
+        <summary>{{ t("payroll.daily_mpf_table") }}</summary>
+        <table class="dense-table">
+          <thead><tr><th>{{ t("payroll.daily_income") }}</th><th>{{ t("payroll.employee_daily_mpf") }}</th><th>{{ t("payroll.employer_daily_mpf") }}</th></tr></thead>
+          <tbody>
+            {% for income, employee_mpf, employer_mpf in [
+              ("< 280", "0", "10"),
+              ("280–<350", "15", "15"),
+              ("350–<450", "20", "20"),
+              ("450–<550", "25", "25"),
+              ("550–<650", "30", "30"),
+              ("650–<750", "35", "35"),
+              ("750–<850", "40", "40"),
+              ("850–<950", "45", "45"),
+              ("≥ 950", "50", "50")
+            ] %}
+              <tr><td>HKD {{ income }}</td><td>HKD {{ employee_mpf }}</td><td>HKD {{ employer_mpf }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </details>
+    </details>
+    {% if blockers %}
+      <article class="panel">
+        <h2>{{ t("payroll.blocked") }}</h2>
+        <div class="chip-list">{% for row in blockers %}<a href="{{ url_for('employees.view_employee', employee_id=row.employee.id) }}"><strong>{{ row.employee.employee_no }} · {{ row.employee.display_name }}</strong><span>{% for blocker in row.blockers %}{% if not loop.first %} / {% endif %}{{ message_t(blocker) }}{% endfor %}</span></a>{% endfor %}</div>
+      </article>
+    {% endif %}
+    <div class="table-wrap">
+      <table class="data-table payroll-table">
+        <thead><tr><th>{{ t("common.employee") }}</th><th>{{ t("employees.payroll_group") }}</th><th>{{ t("common.project") }}</th><th>{{ t("payroll.four_part_breakdown") }}</th><th>E-CALL</th><th>{{ t("payroll.gross") }}</th><th>{{ t("payroll.overpay") }}</th><th>{{ t("payroll.underpay") }}</th><th>{{ t("payroll.employee_mpf") }}</th><th>{{ t("payroll.net") }}</th><th>{{ t("payroll.warnings") }}</th></tr></thead>
+        <tbody>
+          {% for row in rows %}
+            <tr class="{% if row.blockers %}blocked-row{% endif %}">
+              <td><a href="{{ url_for('employees.view_employee', employee_id=row.employee.id) }}">{{ row.employee.employee_no }} · {{ row.employee.display_name }}</a></td>
+              <td>{{ option_t("payroll_group", row.group, dict(payroll_groups).get(row.group, row.group)) }}</td>
+              <td>{% if row.lines %}{% for line in row.lines %}{% if not loop.first %}、{% endif %}{{ project_t(line.project, t("common.unassigned")) }}{% endfor %}{% else %}-{% endif %}</td>
+              <td>
+                {% if not row.blockers %}
+                  <details class="payroll-breakdown-details">
+                    <summary>{{ t("payroll.view_breakdown") }}</summary>
+                    <span>{{ t("attendance.current_period") }}：{{ row.current_actual_days }} {{ t("leave.days") }} / {{ fmt_money(row.current_actual_total) }}</span>
+                    <span>{{ t("attendance.current_forecast") }}：{{ row.current_forecast_days }} {{ t("leave.days") }} / {{ fmt_money(row.forecast_tail_total) }}</span>
+                    <span>{{ t("attendance.previous_tail") }}：{{ row.previous_actual_days }} {{ t("leave.days") }} / {{ fmt_money(row.actual_previous_tail) }}</span>
+                    <span>{{ t("attendance.previous_forecast") }}：{{ row.previous_forecast_days }} {{ t("leave.days") }} / {{ fmt_money(row.expected_previous_tail) }}</span>
+                  </details>
+                {% else %}-{% endif %}
+              </td>
+              <td>{% if not row.blockers %}<span class="money-breakdown">{{ t("payroll.large_ecall") }} {{ fmt_money(row.large_ecall_amount) }}<br>{{ t("payroll.ordinary_ecall") }} {{ fmt_money(row.ecall_amount) }}</span>{% else %}-{% endif %}</td>
+              <td>{% if not row.blockers %}{{ row.currency }} {{ fmt_money(row.gross_amount) }}{% else %}-{% endif %}</td>
+              <td>{{ fmt_money(row.overpay_amount) if not row.blockers else "-" }}</td>
+              <td>{{ fmt_money(row.underpay_amount) if not row.blockers else "-" }}</td>
+              <td>{{ fmt_money(row.employee_mpf) if not row.blockers else "-" }}</td>
+              <td>{% if not row.blockers %}<strong>{{ fmt_money(row.net_amount) }}</strong>{% else %}<span class="flag danger">{% for blocker in row.blockers %}{% if not loop.first %} / {% endif %}{{ message_t(blocker) }}{% endfor %}</span>{% endif %}</td>
+              <td>{% for warning in row.warnings %}<span class="flag warn">{{ message_t(warning) }}</span>{% endfor %}</td>
+            </tr>
+          {% else %}<tr><td colspan="11" class="empty-cell">{{ t("common.no_results") }}</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <article class="panel">
+      <h2>{{ t("exports.project_summary") }}</h2>
+      <div class="table-wrap flat"><table class="dense-table"><thead><tr><th>{{ t("common.project") }}</th><th>{{ t("common.headcount") }}</th><th>{{ t("common.base_pay") }}</th><th>OT</th><th>E-CALL</th><th>{{ t("common.allowance") }}</th><th>{{ t("payroll.gross") }}</th></tr></thead><tbody>{% for item in project_summary %}<tr><td>{{ project_t(item.project, t("common.unassigned")) }}</td><td>{{ item.headcount }}</td><td>{{ fmt_money(item.base) }}</td><td>{{ fmt_money(item.ot) }}</td><td>{{ fmt_money(item.ecall) }}</td><td>{{ fmt_money(item.allowance) }}</td><td>{{ fmt_money(item.total) }}</td></tr>{% else %}<tr><td colspan="7" class="empty-cell">{{ t("common.no_results") }}</td></tr>{% endfor %}</tbody></table></div>
+    </article>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+const payrollFilter = document.querySelector("[data-payroll-filter]");
+payrollFilter?.querySelectorAll("input, select").forEach((control) => {
+  control.addEventListener("change", () => payrollFilter.requestSubmit());
+});
+</script>
+{% endblock %}

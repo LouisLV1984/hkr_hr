@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}{{ t("references.title") }} - HKR HR{% endblock %}
+{% block sidebar_content %}
+<nav class="reference-nav context-reference-nav">
+  {% for group_code, items in nav_groups %}
+    <section class="reference-nav-group">
+      <strong>{{ t("references.group_" ~ group_code) }}</strong>
+      {% if group_code == "organization" %}
+        <a class="{% if selected_code == 'projects' %}active{% endif %}" href="{{ url_for('references.references_home', list='projects', return_to=return_to) }}">{{ t("references.projects") }}</a>
+      {% endif %}
+      {% for item in items %}
+        <a class="{% if selected and selected.id == item.id %}active{% endif %}" href="{{ url_for('references.references_home', list=item.code, return_to=return_to) }}">{{ option_t("reference_list", item.code, item.label) }}</a>
+      {% endfor %}
+    </section>
+  {% endfor %}
+</nav>
+{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <h1>{{ t("references.title") }}</h1>
+    <p>{{ t("references.subtitle") }}</p>
+  </div>
+  {% if return_to %}<a class="secondary-btn" href="{{ return_to }}">{{ t("references.return_to_employee") }}</a>{% endif %}
+</section>
+
+<section class="panel reference-editor">
+    {% if selected_code == "projects" %}
+      <div class="section-head">
+        <div>
+          <h2>{{ t("references.projects") }}</h2>
+          <p>{{ t("references.project_hint") }}</p>
+        </div>
+        {% if can_edit %}
+          <button class="secondary-btn" type="button" data-add-row="project-new-row">{{ t("references.new_row") }}</button>
+        {% endif %}
+      </div>
+
+      {% if can_edit %}
+        {% for project in projects %}
+          <form id="project-update-{{ project.id }}" method="post" action="{{ url_for('references.update_project', project_id=project.id) }}"><input type="hidden" name="return_to" value="{{ return_to or '' }}"></form>
+          <form id="project-delete-{{ project.id }}" method="post" action="{{ url_for('references.delete_project', project_id=project.id) }}" data-confirm="{{ t('references.project_delete_confirm', count=project_counts[project.id]) }}"><input type="hidden" name="return_to" value="{{ return_to or '' }}"></form>
+        {% endfor %}
+        <form id="project-create" method="post" action="{{ url_for('references.create_project') }}"><input type="hidden" name="return_to" value="{{ return_to or '' }}"></form>
+      {% endif %}
+
+      <div class="table-wrap flat">
+        <table class="dense-table reference-table">
+          <thead>
+            <tr>
+              <th>{{ t("references.name") }}</th>
+              <th>{{ t("employee.work_region") }}</th>
+              <th>{{ t("common.location") }}</th>
+              <th>{{ t("common.contact_person") }}</th>
+              <th>{{ t("references.ot_divisor") }}</th>
+              <th>{{ t("references.in_use") }}</th>
+              <th>{{ t("common.actions") }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for project in projects %}
+              {% set update_form = "project-update-" ~ project.id %}
+              <tr>
+                <td><input form="{{ update_form }}" name="name" value="{{ project.name }}" required {% if not can_edit %}readonly{% endif %}></td>
+                <td>
+                  <select form="{{ update_form }}" name="region_id" {% if not can_edit %}disabled{% endif %}>
+                    <option value=""></option>
+                    {% for item in regions %}
+                      <option value="{{ item.id }}" {% if project.region_id == item.id %}selected{% endif %}>{{ item.display_name }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td><input form="{{ update_form }}" name="work_location" value="{{ project.work_location or '' }}" {% if not can_edit %}readonly{% endif %}></td>
+                <td>
+                  <input form="{{ update_form }}" name="contact_name" value="{{ project.contact_name or '' }}" {% if not can_edit %}readonly{% endif %}>
+                  <input form="{{ update_form }}" name="contact_phone" value="{{ project.contact_phone or '' }}" placeholder="{{ t('employees.contact') }}" {% if not can_edit %}readonly{% endif %}>
+                </td>
+                <td><input form="{{ update_form }}" type="number" min="1" step="0.5" name="daily_ot_divisor" value="{{ project.daily_ot_divisor }}" {% if not can_edit %}readonly{% endif %}></td>
+                <td>{{ project_counts[project.id] }}</td>
+                <td class="row-actions">
+                  {% if can_edit %}
+                    <label class="check-line"><input form="{{ update_form }}" type="checkbox" name="active" {% if project.active %}checked{% endif %}><span>{{ t("references.available_for_new") }}</span></label>
+                    <button class="mini-btn" type="submit" form="{{ update_form }}">{{ t("common.save") }}</button>
+                    {% if project_counts[project.id] == 0 %}
+                      <button class="mini-btn danger-text" type="submit" form="project-delete-{{ project.id }}">{{ t("common.delete") }}</button>
+                    {% else %}
+                      <button class="mini-btn" type="button" disabled title="{{ t('references.delete_in_use_hint') }}">{{ t("common.delete") }}</button>
+                    {% endif %}
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+            {% if can_edit %}
+              <tr id="project-new-row" hidden>
+                <td><input form="project-create" name="name" required></td>
+                <td>
+                  <select form="project-create" name="region_id">
+                    <option value=""></option>
+                    {% for item in regions %}<option value="{{ item.id }}">{{ item.display_name }}</option>{% endfor %}
+                  </select>
+                </td>
+                <td><input form="project-create" name="work_location"></td>
+                <td><input form="project-create" name="contact_name"><input form="project-create" name="contact_phone"></td>
+                <td><input form="project-create" type="number" name="daily_ot_divisor" value="9" step="0.5"></td>
+                <td>0</td>
+                <td><button class="primary-btn" type="submit" form="project-create">{{ t("common.save") }}</button></td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    {% elif selected %}
+      <div class="section-head">
+        <div>
+          <h2>{{ option_t("reference_list", selected.code, selected.label) }}</h2>
+          <p>{{ t("references.option_hint") }}</p>
+        </div>
+        {% if can_edit %}
+          <button class="secondary-btn" type="button" data-add-row="reference-new-row">{{ t("references.new_row") }}</button>
+        {% endif %}
+      </div>
+
+      {% if can_edit %}
+        {% for value in values %}
+          <form id="reference-update-{{ value.id }}" method="post" action="{{ url_for('references.update_value', value_id=value.id) }}" data-confirm="{{ t('references.rename_confirm', count=usage_counts[value.id]) }}"><input type="hidden" name="return_to" value="{{ return_to or '' }}"></form>
+          <form id="reference-delete-{{ value.id }}" method="post" action="{{ url_for('references.delete_value', value_id=value.id) }}" data-confirm="{{ t('references.delete_confirm', count=usage_counts[value.id]) }}"><input type="hidden" name="return_to" value="{{ return_to or '' }}"></form>
+        {% endfor %}
+        <form id="reference-create" method="post" action="{{ url_for('references.create_value', list_id=selected.id) }}"><input type="hidden" name="return_to" value="{{ return_to or '' }}"></form>
+      {% endif %}
+
+      <div class="table-wrap flat">
+        <table class="dense-table reference-table">
+          <thead>
+            <tr>
+              <th>{{ t("references.name") }}</th>
+              <th>{{ t("common.remarks") }}</th>
+              <th>{{ t("references.in_use") }}</th>
+              <th>{{ t("references.available_for_new") }}</th>
+              <th>{{ t("common.actions") }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for value in values %}
+              {% set update_form = "reference-update-" ~ value.id %}
+              <tr>
+                <td><input form="{{ update_form }}" name="display_name" value="{{ value.display_name }}" required {% if not can_edit %}readonly{% endif %}></td>
+                <td><input form="{{ update_form }}" name="remarks" value="{{ value.remarks or '' }}" {% if not can_edit %}readonly{% endif %}></td>
+                <td>{{ usage_counts[value.id] }}</td>
+                <td><label class="check-line"><input form="{{ update_form }}" type="checkbox" name="active" {% if value.active %}checked{% endif %} {% if not can_edit %}disabled{% endif %}><span>{{ t("references.available_for_new") }}</span></label></td>
+                <td class="row-actions">
+                  {% if can_edit %}
+                    <button class="mini-btn" type="submit" form="{{ update_form }}">{{ t("common.save") }}</button>
+                    {% if usage_counts[value.id] == 0 %}
+                      <button class="mini-btn danger-text" type="submit" form="reference-delete-{{ value.id }}">{{ t("common.delete") }}</button>
+                    {% else %}
+                      <button class="mini-btn" type="button" disabled title="{{ t('references.delete_in_use_hint') }}">{{ t("common.delete") }}</button>
+                    {% endif %}
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+            {% if can_edit %}
+              <tr id="reference-new-row" hidden>
+                <td><input form="reference-create" name="display_name" required></td>
+                <td><input form="reference-create" name="remarks"></td>
+                <td>0</td>
+                <td>{{ t("references.available_for_new") }}</td>
+                <td><button class="primary-btn" type="submit" form="reference-create">{{ t("common.save") }}</button></td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll("[data-add-row]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const row = document.getElementById(button.dataset.addRow);
+    row.hidden = false;
+    row.querySelector("input:not([readonly])")?.focus();
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}{{ t("exports.title") }} - HKR HR{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <h1>{{ t("exports.title") }}</h1>
+    <p>{{ t("exports.subtitle") }}</p>
+  </div>
+</section>
+
+<section class="report-conditions">
+  {% if section == "attachments" %}
+    <div class="section-head" id="salary-certificate">
+      <div>
+        <h2>{{ t("exports.attachments") }}</h2>
+        <p>{{ t("exports.attachments_hint") }}</p>
+      </div>
+    </div>
+    <form class="report-form report-form-compact"
+          method="get"
+          action="{{ url_for('exports.export_attachments') }}"
+          data-attachment-bundle-form>
+      <label>
+        <span>{{ t("exports.attachment_scope") }}</span>
+        <select name="bundle_group" data-bundle-group>
+          {% for code in bundle_groups %}
+            <option value="{{ code }}">{{ t("exports.bundle_" ~ code) }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label data-attendance-month hidden>
+        <span>{{ t("exports.attendance_month") }}</span>
+        <input type="month" name="year_month" value="{{ year_month }}">
+      </label>
+      <button class="primary-btn" type="submit">{{ t("exports.download_zip") }}</button>
+    </form>
+    <p class="form-note">{{ t("exports.active_only_hint") }}</p>
+
+  {% elif section == "employees" %}
+    <div class="section-head">
+      <div>
+        <h2>{{ t("exports.employee_records") }}</h2>
+        <p>{{ t("exports.employee_records_hint") }}</p>
+      </div>
+    </div>
+    <form class="report-form" method="get" action="{{ url_for('exports.export_employees') }}">
+      <label>
+        <span>{{ t("common.status") }}</span>
+        <select name="status">
+          <option value="">{{ t("common.all") }}</option>
+          <option value="active">{{ t("common.active") }}</option>
+          <option value="departed">{{ t("common.departed") }}</option>
+        </select>
+      </label>
+      <label>
+        <span>{{ t("employees.payroll_group") }}</span>
+        <select name="payroll_group">
+          <option value="">{{ t("common.all") }}</option>
+          {% for code, label in payroll_groups %}
+            <option value="{{ code }}">{{ option_t("payroll_group", code, label) }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>{{ t("employee.work_region") }}</span>
+        <select name="region_id">
+          <option value="">{{ t("common.all") }}</option>
+          {% for item in refs.work_region %}
+            <option value="{{ item.id }}">{{ item.display_name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>{{ t("common.project") }}</span>
+        <select name="project_id">
+          <option value="">{{ t("common.all") }}</option>
+          {% for project in projects %}
+            <option value="{{ project.id }}">{{ project.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>{{ t("common.department") }}</span>
+        <select name="department_id">
+          <option value="">{{ t("common.all") }}</option>
+          {% for item in refs.department %}
+            <option value="{{ item.id }}">{{ item.display_name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button class="primary-btn" type="submit">{{ t("exports.download_employee_records") }}</button>
+    </form>
+    <p class="form-note">{{ t("exports.employee_workbook_hint") }}</p>
+    <hr class="section-divider">
+    <div class="section-head">
+      <div>
+        <h2>{{ t("exports.salary_certificate") }}</h2>
+        <p>{{ t("exports.salary_certificate_hint") }}</p>
+      </div>
+    </div>
+    <form class="report-form report-form-compact" method="get" action="{{ url_for('exports.export_salary_certificate') }}">
+      <label>
+        <span>{{ t("common.employee") }}</span>
+        <select name="employee_id" required>
+          <option value="">{{ t("common.not_set") }}</option>
+          {% for employee in employees %}
+            <option value="{{ employee.id }}">{{ employee.employee_no }} · {{ employee.display_name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>{{ t("exports.up_to_month") }}</span>
+        <input type="month" name="year_month" value="{{ year_month }}" required>
+      </label>
+      <label>
+        <span>{{ t("exports.issue_date") }}</span>
+        <input type="date" name="issue_date" value="{{ today_iso }}">
+      </label>
+      <button class="primary-btn" type="submit">{{ t("exports.download_salary_certificate") }}</button>
+    </form>
+    <p class="form-note">{{ t("exports.salary_certificate_rule") }}</p>
+
+  {% endif %}
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+  const bundleSelect = document.querySelector("[data-bundle-group]");
+  const attendanceMonth = document.querySelector("[data-attendance-month]");
+  if (bundleSelect && attendanceMonth) {
+    const syncAttendanceMonth = () => {
+      attendanceMonth.hidden = bundleSelect.value !== "attendance";
+    };
+    bundleSelect.addEventListener("change", syncAttendanceMonth);
+    syncAttendanceMonth();
+  }
+</script>
+{% endblock %}
