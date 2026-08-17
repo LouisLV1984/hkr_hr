@@ -10,8 +10,12 @@ DATABASE_URL = os.getenv(
 
 class Config:
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-change-me")
+    HKR_HR_ENV = os.getenv("HKR_HR_ENV", "development").strip().lower()
     SQLALCHEMY_DATABASE_URI = DATABASE_URL
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = "Lax"
+    CSRF_ENABLED = True
 
     HKR_HR_UPLOAD_ROOT = Path(
         os.getenv("HKR_HR_UPLOAD_ROOT", str(BASE_DIR / "uploads"))
@@ -30,9 +34,6 @@ class Config:
             "ATTENDANCE_BATCH_ROOT",
             str(BASE_DIR / "uploads" / "_attendance_batches"),
         )
-    )
-    IMPORT_ROOT = Path(
-        os.getenv("IMPORT_ROOT", str(BASE_DIR / "uploads" / "_imports"))
     )
     PAYROLL_OUTPUT_ROOT = Path(
         os.getenv("PAYROLL_OUTPUT_ROOT", str(BASE_DIR / "generated_payroll"))

@@ -21,6 +21,7 @@ from models import (
     EmployeeEmploymentPeriod,
     EmployeeIdentity,
     EmployeeVisa,
+    MpfScheme,
     ReferenceValue,
     User,
     WorkProject,
@@ -28,6 +29,7 @@ from models import (
 )
 from tools.hr_core import (
     create_assignment,
+    create_mpf_enrollment,
     create_salary,
     employee_type_by_code,
     ensure_reference_seed,
@@ -70,6 +72,29 @@ def ensure_period(row, start_date, annual_leave=7, probation_end=None):
     period.contract_annual_leave_days = Decimal(str(annual_leave))
     period.probation_end_date = probation_end
     return period
+
+
+def ensure_mpf(row, effective_from, scheme_code, member_account_no):
+    existing = next(
+        (
+            item
+            for item in row.mpf_enrollments
+            if item.status == "active" and item.effective_from == effective_from
+        ),
+        None,
+    )
+    scheme = MpfScheme.query.filter_by(code=scheme_code).one()
+    if existing:
+        existing.scheme = scheme
+        existing.member_account_no = member_account_no
+        existing.contribution_mode = scheme.calculation_mode
+        return existing
+    return create_mpf_enrollment(
+        row,
+        effective_from,
+        scheme=scheme,
+        member_account_no=member_account_no,
+    )
 
 
 def ensure_identity(row, identity_type, number, primary=False, long_term=False):
@@ -235,8 +260,6 @@ def seed():
     monthly.residential_address = "九龍驗收測試地址 1 號"
     monthly.bank_name = reference_by_code("bank", "BOCHK").display_name
     monthly.bank_account_no = "012-345-678901"
-    monthly.bank_payroll_confirmed_at = datetime.utcnow()
-    monthly.mpf_mode = "regular"
     ensure_period(monthly, date(2025, 10, 27), 10)
     ensure_identity(monthly, "hkid", "QA-M190283(1)", primary=True)
     ensure_assignment(
@@ -248,6 +271,7 @@ def seed():
         foreman,
     )
     ensure_salary(monthly, date(2025, 10, 27), "monthly", "30000")
+    ensure_mpf(monthly, date(2025, 10, 27), "BCOM_MONTHLY", "QA-MPF-M01")
 
     daily = employee(
         "QA-HKRD-D01",
@@ -264,8 +288,6 @@ def seed():
     daily.residential_address = "新界驗收測試地址 2 號"
     daily.bank_name = reference_by_code("bank", "HSBC").display_name
     daily.bank_account_no = "004-345-678902"
-    daily.bank_payroll_confirmed_at = datetime.utcnow()
-    daily.mpf_mode = "casual"
     ensure_period(daily, date(2025, 11, 10), 7)
     ensure_identity(daily, "hkid", "QA-D290384(2)", primary=True)
     ensure_assignment(
@@ -277,6 +299,7 @@ def seed():
         worker,
     )
     ensure_salary(daily, date(2025, 11, 10), "daily", "1650")
+    ensure_mpf(daily, date(2025, 11, 10), "BCT_DAILY", "QA-MPF-D01")
 
     management = employee(
         "QA-ASMTP-V01",
@@ -293,8 +316,6 @@ def seed():
     management.residential_address = "香港驗收測試地址 3 號"
     management.bank_name = reference_by_code("bank", "HASE").display_name
     management.bank_account_no = "024-345-678903"
-    management.bank_payroll_confirmed_at = datetime.utcnow()
-    management.mpf_mode = "regular"
     management.visa_required = True
     ensure_period(
         management,
@@ -318,6 +339,12 @@ def seed():
         manager,
     )
     ensure_salary(management, date(2026, 4, 1), "monthly", "36000")
+    ensure_mpf(
+        management,
+        date(2026, 4, 1),
+        "BCT_SERIES_800",
+        "QA-MPF-V01",
+    )
 
     sources = {
         monthly.id: {

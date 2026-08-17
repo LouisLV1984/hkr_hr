@@ -1,184 +1,171 @@
 {% extends "base.html" %}
 {% block title %}{{ t("leave.title") }} - HKR HR{% endblock %}
 {% block page_class %}leave-page{% endblock %}
-{% block content %}
-<section class="page-head">
-  <div>
-    <h1>{{ t("leave.title") }}</h1>
-    <p>{{ t("leave.subtitle") }}</p>
-  </div>
-</section>
-
-<form class="filter-bar" method="get">
-  <label>
-    <span>{{ t("common.year") }}</span>
-    <input type="number" min="2020" max="2100" name="year" value="{{ year }}">
-  </label>
-  <label>
-    <span>{{ t("common.status") }}</span>
-    <select name="status">
+{% block sidebar_content %}
+<section class="context-panel">
+  <div class="context-panel-head"><strong>{{ t("common.filter") }}</strong><span>篩選結果會同步更新右側名單</span></div>
+  <form class="stack-form" method="get">
+    <input type="hidden" name="view" value="{{ view }}">
+    <label><span>搜尋員工</span><input type="search" name="q" value="{{ search }}" placeholder="姓名或員工編號"><small>支援中文繁簡體、英文姓名及員工編號。</small></label>
+    <label><span>{{ t("common.year") }}</span><input type="number" min="2020" max="2100" name="year" value="{{ year }}"></label>
+    <label><span>{{ t("common.status") }}</span><select name="status">
       <option value="active" {% if status == "active" %}selected{% endif %}>{{ t("common.active") }}</option>
       <option value="departed" {% if status == "departed" %}selected{% endif %}>{{ t("common.departed") }}</option>
       <option value="all" {% if status == "all" %}selected{% endif %}>{{ t("common.all") }}</option>
-    </select>
-  </label>
-  <label class="grow">
-    <span>{{ t("common.search") }}</span>
-    <input name="q" value="{{ search }}" placeholder="{{ t('leave.search_placeholder') }}">
-  </label>
-  <button class="secondary-btn" type="submit">{{ t("common.apply") }}</button>
-</form>
+    </select></label>
+    <label><span>{{ t("employees.payroll_group") }}</span><select name="payroll_group">
+      <option value="">{{ t("common.all") }}</option>
+      {% for code, label in payroll_groups|default([('site_daily','地盤工人（日工）'),('site_monthly','地盤工人（月工）'),('management','管理人員及總部人員')]) %}<option value="{{ code }}" {% if payroll_group == code %}selected{% endif %}>{{ option_t("payroll_group", code, label) }}</option>{% endfor %}
+    </select></label>
+    <label><span>{{ t("common.project") }}</span><select name="project_id"><option value="">{{ t("common.all") }}</option>{% for project in projects %}<option value="{{ project.id }}" {% if project_id == project.id %}selected{% endif %}>{{ project.name }}</option>{% endfor %}</select></label>
+    <div class="button-row"><button class="primary-btn" type="submit">{{ t("common.apply") }}</button><a class="ghost-btn" href="{{ url_for('leave.leave_home', view=view) }}">{{ t("common.clear") }}</a></div>
+  </form>
+</section>
+{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div><h1>{{ '工傷管理' if view == 'injury' else '假期管理' }}</h1><p>{{ '集中管理工傷期間、計薪方式、免考勤範圍及每月復診／醫療實銷。' if view == 'injury' else '集中管理年假、病假、無薪假及由考勤產生的補休。' }}</p></div>
+  {% if selected %}<a class="secondary-btn" href="{{ url_for('leave.leave_home', view=view, year=year, status=status, payroll_group=payroll_group, project_id=project_id, q=search) }}">← 返回{{ '工傷' if view == 'injury' else '假期' }}總覽</a>{% endif %}
+</section>
 
-{% if employees %}
-<div class="leave-workspace">
-  <aside class="leave-employee-list">
+{% if view == 'injury' %}
+  {% if not selected %}
+    {% if employees %}<section class="leave-employee-grid">
+      {% for employee in employees %}
+      {% set active_injuries = employee.work_injury_periods|selectattr('status', 'equalto', 'active')|list %}
+      <a class="leave-employee-card" href="{{ url_for('leave.leave_home', view='injury', year=year, status=status, payroll_group=payroll_group, project_id=project_id, q=search, employee_id=employee.id) }}">
+        <strong>{{ employee.employee_no }} · {{ employee.display_name }}</strong>
+        <span>有效工傷記錄 {{ active_injuries|length }} 項</span>
+        <span>點擊管理計薪與醫療實銷</span>
+      </a>
+      {% endfor %}
+    </section>{% else %}<section class="onboarding-empty"><div><h2>沒有符合條件的員工</h2><p>請調整姓名、員工編號或其他篩選條件。</p></div></section>{% endif %}
+  {% else %}
+  <section class="leave-detail" id="employee-injury">
+    <article class="panel">
+      <div class="section-head"><div><span class="eyebrow">{{ selected.employee_no }}</span><h2>{{ selected.display_name }} · 工傷管理</h2></div><a class="mini-btn" href="{{ url_for('employees.view_employee', employee_id=selected.id, tab='leave') }}">查看員工檔案</a></div>
+      <p class="form-note strong-note">工傷不是在職狀態，而是有日期範圍的免考勤及計薪記錄。新增及更正只在本頁進行；員工檔案只顯示摘要及歷史。</p>
+      <p class="form-note strong-note">{{ t("work_injury.rule_full") }}</p>
+      <button class="secondary-btn" type="button" data-dialog-open="new-work-injury">新增工傷記錄</button>
+      <dialog class="app-dialog" id="new-work-injury"><form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.add_work_injury', employee_id=selected.id) }}" enctype="multipart/form-data">
+        <div class="section-head"><h2>新增工傷記錄</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div>
+        <div class="record-editor-body">
+          <label><span>意外發生日期</span><input type="date" name="accident_date" required></label>
+          <label><span>工傷計薪開始日</span><input type="date" name="payroll_start_date" required></label>
+          <label><span>工傷計薪結束日</span><input type="date" name="payroll_end_date"><small>可不填；留空表示工傷計薪仍在持續。</small></label>
+          <label><span>是否按工傷計算薪酬</span><select name="pay_mode"><option value="four_fifths">是－按 4/5 計薪</option><option value="full_pay">否－按全薪計算</option></select></label>
+          <label><span>HR 核實的意外發生時每月收入</span><input type="number" min="0" step="0.01" name="confirmed_monthly_earnings" value="{{ selected.current_salary.amount if selected.current_salary else '' }}" required></label>
+          <label><span>喪失工作能力期間每月收入</span><input type="number" min="0" step="0.01" name="incapacity_monthly_earnings" value="0"></label>
+          <label><span>幣種</span><input name="currency" value="{{ selected.current_salary.currency if selected.current_salary else 'HKD' }}"></label>
+          <label><span>工傷資料</span><input type="file" name="evidence"></label>
+          <label class="wide"><span>備註</span><textarea name="remarks"></textarea></label>
+          <p class="form-note wide">合約底薪只供預填。HR 須按勞工處口徑核實意外發生時的每月收入。選「是」時：工傷按期付款＝（核實每月收入－暫時喪失工作能力期間每月收入）× 4/5；由首日起計。選「否」時，同一基數按全薪計算。</p>
+        </div><div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>取消</button><button class="primary-btn" type="submit">保存</button></div>
+      </form></dialog>
+    </article>
+    {% for item in work_injury_periods %}
+    <article class="panel {{ 'muted-row' if item.status != 'active' else '' }}">
+      <div class="section-head"><div><h2>{{ fmt_date(item.payroll_start_date) }} 至 {{ fmt_date(item.payroll_end_date) if item.payroll_end_date else '持續中' }}</h2><p>意外日期 {{ fmt_date(item.accident_date) }} · {{ '按 4/5 計薪' if item.pay_mode == 'four_fifths' else '按全薪計算' }}</p></div>{% if item.status == 'active' %}<div class="button-row"><button class="mini-btn" type="button" data-dialog-open="injury-editor-{{ item.id }}">更正</button><form class="mini-form" method="post" action="{{ url_for('employees.withdraw_work_injury', period_id=item.id) }}" data-confirm="確認撤回此工傷記錄？"><button class="mini-btn danger-text" type="submit">撤回</button></form></div>{% endif %}</div>
+      <div class="leave-metrics"><div><span>核實每月收入</span><strong>{{ item.currency }} {{ item.confirmed_monthly_earnings }}</strong></div><div><span>期間收入</span><strong>{{ item.currency }} {{ item.incapacity_monthly_earnings }}</strong></div><div><span>計薪方式</span><strong>{{ '4/5' if item.pay_mode == 'four_fifths' else '全薪' }}</strong></div></div>
+      {% if item.evidence_document %}<p><a href="{{ url_for('documents.open_document', document_id=item.evidence_document.id) }}" target="_blank">查看工傷資料</a></p>{% endif %}
+      {% if item.status == 'active' %}<button class="secondary-btn" type="button" data-dialog-open="injury-expense-{{ item.id }}">新增每月復診／醫療實銷</button>{% endif %}
+      <dialog class="app-dialog" id="injury-expense-{{ item.id }}"><form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.add_work_injury_expense', period_id=item.id) }}" enctype="multipart/form-data"><div class="section-head"><h2>新增每月復診／醫療實銷</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div><div class="record-editor-body"><label><span>出糧月份</span><input type="month" name="year_month" required></label><label><span>金額</span><input type="number" min="0" step="0.01" name="amount" required></label><label><span>幣種</span><input name="currency" value="{{ item.currency }}"></label><label><span>憑證</span><input type="file" name="evidence"></label><label class="wide"><span>備註</span><textarea name="remarks"></textarea><small>金額只作醫療開支實銷：加入該月實收薪金及 Payroll 的「工傷補償金＋醫療開支實銷」欄（日工 AM；月工／OFFICE AN），不納入普通工資或 MPF 有關入息。</small></label></div><div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>取消</button><button class="primary-btn" type="submit">保存</button></div></form></dialog>
+      <dialog class="app-dialog" id="injury-editor-{{ item.id }}"><form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.correct_work_injury', period_id=item.id) }}" enctype="multipart/form-data"><div class="section-head"><h2>更正工傷記錄</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div><div class="record-editor-body"><label><span>意外發生日期</span><input type="date" name="accident_date" value="{{ item.accident_date.isoformat() }}" required></label><label><span>計薪開始日</span><input type="date" name="payroll_start_date" value="{{ item.payroll_start_date.isoformat() }}" required></label><label><span>計薪結束日</span><input type="date" name="payroll_end_date" value="{{ item.payroll_end_date.isoformat() if item.payroll_end_date else '' }}"><small>可不填</small></label><label><span>是否按工傷計算薪酬</span><select name="pay_mode"><option value="four_fifths" {% if item.pay_mode == 'four_fifths' %}selected{% endif %}>是－按 4/5 計薪</option><option value="full_pay" {% if item.pay_mode == 'full_pay' %}selected{% endif %}>否－按全薪計算</option></select></label><label><span>核實每月收入</span><input type="number" min="0" step="0.01" name="confirmed_monthly_earnings" value="{{ item.confirmed_monthly_earnings }}" required></label><label><span>期間每月收入</span><input type="number" min="0" step="0.01" name="incapacity_monthly_earnings" value="{{ item.incapacity_monthly_earnings }}"></label><label><span>幣種</span><input name="currency" value="{{ item.currency }}"></label><label><span>補交／替換資料</span><input type="file" name="evidence"></label><label class="wide"><span>備註</span><textarea name="remarks">{{ item.remarks or '' }}</textarea></label><p class="form-note wide">「是」按 4/5；「否」按全薪。合約底薪只供參考，HR 仍須核實意外發生時每月收入。</p></div><div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>取消</button><button class="primary-btn" type="submit">保存</button></div></form></dialog>
+    </article>
+    {% else %}<section class="onboarding-empty"><div><h2>尚未有工傷記錄</h2><p>如員工發生工傷，請在上方新增記錄。</p></div></section>{% endfor %}
+    <article class="panel"><h2>復診／醫療開支歷史</h2><div class="table-wrap flat"><table class="dense-table"><thead><tr><th>出糧月份</th><th>工傷期間</th><th>金額</th><th>憑證</th><th>狀態</th><th>操作</th></tr></thead><tbody>{% for expense in work_injury_expenses %}<tr class="{{ 'muted-row' if expense.status != 'active' else '' }}"><td>{{ expense.year_month }}</td><td>{{ fmt_date(expense.work_injury_period.payroll_start_date) }}</td><td>{{ expense.currency }} {{ expense.amount }}</td><td>{% if expense.evidence_document %}<a href="{{ url_for('documents.open_document', document_id=expense.evidence_document.id) }}" target="_blank">查看</a>{% else %}<span class="flag danger">待補憑證</span>{% endif %}</td><td>{{ '有效' if expense.status == 'active' else '已撤回' }}</td><td>{% if expense.status == 'active' %}<button class="mini-btn" type="button" data-dialog-open="expense-editor-{{ expense.id }}">更正</button><form class="mini-form" method="post" action="{{ url_for('employees.withdraw_work_injury_expense', expense_id=expense.id) }}" data-confirm="確認撤回此開支？"><button class="mini-btn danger-text" type="submit">撤回</button></form><dialog class="app-dialog" id="expense-editor-{{ expense.id }}"><form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.correct_work_injury_expense', expense_id=expense.id) }}" enctype="multipart/form-data"><div class="section-head"><h2>更正醫療實銷</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div><div class="record-editor-body"><label><span>出糧月份</span><input type="month" name="year_month" value="{{ expense.year_month }}" required></label><label><span>金額</span><input type="number" min="0" step="0.01" name="amount" value="{{ expense.amount }}" required></label><label><span>幣種</span><input name="currency" value="{{ expense.currency }}"></label><label><span>補交／替換憑證</span><input type="file" name="evidence"></label><label class="wide"><span>備註</span><textarea name="remarks">{{ expense.remarks or '' }}</textarea></label></div><div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>取消</button><button class="primary-btn" type="submit">保存</button></div></form></dialog>{% endif %}</td></tr>{% else %}<tr><td colspan="6" class="empty-cell">尚未有復診／醫療開支</td></tr>{% endfor %}</tbody></table></div></article>
+  </section>
+  {% endif %}
+{% elif not selected %}
+  {% if employees %}
+  <section class="leave-employee-grid">
     {% for employee in employees %}
       {% set summary = summaries[employee.id] %}
-      <a class="leave-employee-card {% if selected and selected.id == employee.id %}active{% endif %}"
-         href="{{ url_for('leave.leave_home', year=year, status=status, q=search, employee_id=employee.id) }}">
+      <a class="leave-employee-card" href="{{ url_for('leave.leave_home', year=year, status=status, payroll_group=payroll_group, project_id=project_id, employee_id=employee.id) }}">
         <strong>{{ employee.employee_no }} · {{ employee.display_name }}</strong>
-        <span>{{ t("employee.leave_remaining") }} {{ summary.remaining }} {{ t("leave.days") }}</span>
+        <span>年假剩餘 {{ summary.annual.remaining }} 日</span>
+        <span>補休剩餘 {{ summary.comp.remaining }} 日 · 不設到期</span>
       </a>
-    {% else %}
-      <p class="empty-cell">{{ t("common.no_results") }}</p>
     {% endfor %}
-  </aside>
-
-  <section class="leave-detail" id="employee-leave">
-    {% if selected %}
-      <article class="panel">
-        <div class="section-head">
-          <div>
-            <span class="eyebrow">{{ selected.employee_no }}</span>
-            <h2>{{ selected.display_name }} · {{ year }} {{ t("employee.annual_leave") }}</h2>
-            <p>{{ t("employees.start_date") }}：{{ fmt_date(selected.current_period.start_date) if selected.current_period else "-" }}</p>
-          </div>
-          <a class="mini-btn" href="{{ url_for('employees.view_employee', employee_id=selected.id) }}">{{ t("employee.profile") }}</a>
-        </div>
-        <div class="leave-metrics">
-          <div><span>{{ t("employee.leave_entitled") }}</span><strong>{{ leave.entitled }}</strong></div>
-          <div><span>{{ t("employee.leave_used") }}</span><strong>{{ leave.used }}</strong></div>
-          <div><span>{{ t("employee.leave_remaining") }}</span><strong>{{ leave.remaining }}</strong></div>
-          <div><span>{{ t("leave.legacy_remaining") }}</span><strong>{{ leave.legacy_remaining }}</strong></div>
-        </div>
-        <p class="form-note">{{ t("leave.calculation_hint", calculated=leave.calculated_entitled, statutory=leave.statutory, contract=leave.contract) }}</p>
-        <form class="form-grid" method="post" action="{{ url_for('leave.update_balance', employee_id=selected.id) }}">
-          <input type="hidden" name="year" value="{{ year }}">
-          <label>
-            <span>{{ t("leave.entitled_override") }}</span>
-            <input type="number" min="0" step="0.5" name="entitled_days" value="{{ leave.entitled }}">
-            <small>{{ t("leave.entitled_override_hint") }}</small>
-          </label>
-          <label>
-            <span>{{ t("leave.legacy_balance") }}</span>
-            <input type="number" min="0" step="0.5" name="legacy_days" value="{{ leave.legacy_remaining + leave.legacy_used }}">
-            <small>{{ t("leave.legacy_balance_hint") }}</small>
-          </label>
-          {% if year >= 2024 %}
-          <label>
-            <span>{{ t("leave.extended_until") }}</span>
-            <input type="date" name="extended_until" value="{{ balance.extended_until.isoformat() if balance and balance.extended_until else '' }}">
-            <small>{{ t("leave.extended_until_hint", date=fmt_date(default_expiry)) }}</small>
-          </label>
-          {% endif %}
-          <label class="wide">
-            <span>{{ t("common.remarks") }}</span>
-            <textarea name="remarks">{{ balance.remarks if balance and balance.remarks else "" }}</textarea>
-          </label>
-          <div class="button-row">
-            <button class="primary-btn" type="submit">{{ t("common.save") }}</button>
-            {% if leave.entitled_override is not none %}
-              <button class="ghost-btn" type="submit" name="clear_override" value="1">{{ t("leave.restore_calculated") }}</button>
-            {% endif %}
-          </div>
-        </form>
-        <div class="table-wrap flat leave-bucket-table">
-          <table class="dense-table">
-            <thead><tr><th>{{ t("common.year") }}</th><th>{{ t("employee.leave_entitled") }}</th><th>{{ t("employee.leave_used") }}</th><th>{{ t("employee.leave_remaining") }}</th><th>{{ t("leave.expiry_date") }}</th></tr></thead>
-            <tbody>
-              {% for bucket in buckets %}
-                <tr class="{{ 'muted-row' if bucket.expired else '' }}"><td>{{ t("leave.legacy_bucket") if bucket.is_legacy else bucket.year }}</td><td>{{ bucket.total }}</td><td>{{ bucket.used }}</td><td>{{ bucket.remaining }}</td><td>{% if bucket.is_legacy %}{{ t("leave.no_expiry") }}{% elif bucket.expired %}<span class="flag danger">{{ fmt_date(bucket.expiry_date) }} · {{ t("leave.expired") }}</span>{% else %}{{ fmt_date(bucket.expiry_date) }}{% endif %}</td></tr>
-              {% else %}<tr><td colspan="5" class="empty-cell">{{ t("common.not_set") }}</td></tr>{% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </article>
-
-      <div class="two-column-work">
-        <article class="panel">
-          <h2>{{ t("leave.record_leave") }}</h2>
-          <form class="form-grid" method="post" action="{{ url_for('employees.add_annual_leave', employee_id=selected.id) }}">
-            <input type="hidden" name="return_to" value="annual_leave">
-            <input type="hidden" name="entitlement_year" value="{{ year }}">
-            <label><span>{{ t("employee.leave_start_date") }}</span><input type="date" name="start_date" required></label>
-            <label><span>{{ t("employee.leave_start_session") }}</span><select name="start_session"><option value="am">{{ t("employee.morning") }}</option><option value="pm">{{ t("employee.afternoon") }}</option></select></label>
-            <label><span>{{ t("employee.leave_end_date") }}</span><input type="date" name="end_date" required></label>
-            <label><span>{{ t("employee.leave_end_session") }}</span><select name="end_session"><option value="pm">{{ t("employee.afternoon") }}</option><option value="am">{{ t("employee.morning") }}</option></select></label>
-            <label><span>{{ t("employee.leave_days_override") }}</span><input type="number" min="0.5" step="0.5" name="days" placeholder="{{ t('employee.auto_calculate') }}"></label>
-            <label><span>{{ t("leave.use_legacy_days") }}</span><input type="number" min="0" step="0.5" name="legacy_days" value="0"><small>{{ t("leave.use_legacy_days_hint") }}</small></label>
-            <label><span>{{ t("leave.use_regular_days") }}</span><input type="number" min="0" step="0.5" name="regular_days" placeholder="{{ t('leave.auto_remaining_days') }}"><small>{{ t("leave.use_regular_days_hint") }}</small></label>
-            <button class="secondary-btn" type="submit">{{ t("common.add") }}</button>
-          </form>
-        </article>
-        <article class="panel">
-          <h2>{{ t("leave.records") }}</h2>
-          <div class="table-wrap flat">
-            <table class="dense-table">
-              <thead><tr><th>{{ t("employee.leave_period") }}</th><th>{{ t("employee.leave_days") }}</th><th>{{ t("common.status") }}</th><th>{{ t("common.actions") }}</th></tr></thead>
-              <tbody>
-                {% for item in records %}
-                  <tr class="{{ 'muted-row' if item.status != 'active' else '' }}" data-record-context>
-                    <td>{{ fmt_date(item.leave_date) }} {{ t("employee.morning") if item.start_session == "am" else t("employee.afternoon") }} – {{ fmt_date(item.end_date or item.leave_date) }} {{ t("employee.morning") if item.end_session == "am" else t("employee.afternoon") }}</td>
-                    <td>{{ item.days }}</td>
-                    <td>{{ option_t("document_status", item.status, item.status) }}</td>
-                    <td>
-                      {% if item.status == "active" %}
-                        <button class="mini-btn" type="button" data-dialog-open="leave-editor-{{ item.id }}" data-record-editor-trigger>{{ t("common.correct") }}</button>
-                        <dialog class="app-dialog record-editor-dialog" id="leave-editor-{{ item.id }}">
-                          <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.update_annual_leave', record_id=item.id) }}">
-                            <input type="hidden" name="return_to" value="annual_leave">
-                            <input type="hidden" name="entitlement_year" value="{{ year }}">
-                            <div class="section-head record-editor-head"><div><h2>{{ t("common.correct") }} · {{ t("leave.records") }}</h2><p>{{ fmt_date(item.leave_date) }}</p></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
-                            <div class="record-editor-body">
-                            <label><span>{{ t("employee.leave_start_date") }}</span><input type="date" name="start_date" value="{{ item.leave_date.isoformat() }}" required></label>
-                            <label><span>{{ t("employee.leave_start_session") }}</span><select name="start_session"><option value="am" {% if item.start_session == "am" %}selected{% endif %}>{{ t("employee.morning") }}</option><option value="pm" {% if item.start_session == "pm" %}selected{% endif %}>{{ t("employee.afternoon") }}</option></select></label>
-                            <label><span>{{ t("employee.leave_end_date") }}</span><input type="date" name="end_date" value="{{ (item.end_date or item.leave_date).isoformat() }}" required></label>
-                            <label><span>{{ t("employee.leave_end_session") }}</span><select name="end_session"><option value="pm" {% if item.end_session == "pm" %}selected{% endif %}>{{ t("employee.afternoon") }}</option><option value="am" {% if item.end_session == "am" %}selected{% endif %}>{{ t("employee.morning") }}</option></select></label>
-                            <label><span>{{ t("employee.leave_days_override") }}</span><input type="number" min="0.5" step="0.5" name="days" value="{{ item.days }}"></label>
-                            <label><span>{{ t("leave.use_legacy_days") }}</span><input type="number" min="0" step="0.5" name="legacy_days" value="{{ allocation_splits[item.id].legacy }}"></label>
-                            <label><span>{{ t("leave.use_regular_days") }}</span><input type="number" min="0" step="0.5" name="regular_days" value="{{ allocation_splits[item.id].regular }}"></label>
-                            </div>
-                            <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
-                          </form>
-                        </dialog>
-                        <form class="mini-form" method="post" action="{{ url_for('employees.void_annual_leave', record_id=item.id) }}" data-confirm="{{ t('employee.withdraw_confirm') }}">
-                          <input type="hidden" name="return_to" value="annual_leave">
-                          <input type="hidden" name="entitlement_year" value="{{ year }}">
-                          <button class="mini-btn danger-text" type="submit">{{ t("common.withdraw") }}</button>
-                        </form>
-                      {% endif %}
-                    </td>
-                  </tr>
-                {% else %}
-                  <tr><td colspan="4" class="empty-cell">{{ t("common.not_set") }}</td></tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </article>
-      </div>
-    {% else %}
-      <article class="panel empty-cell">{{ t("common.no_results") }}</article>
-    {% endif %}
   </section>
-</div>
+  {% else %}
+  <section class="onboarding-empty"><div><h2>{{ t("leave.empty_title") }}</h2><p>{{ t("leave.empty_hint") }}</p></div></section>
+  {% endif %}
 {% else %}
-<section class="onboarding-empty">
-  <div>
-    <h2>{{ t("leave.empty_title") }}</h2>
-    <p>{{ t("leave.empty_hint") }}</p>
+<section class="leave-detail" id="employee-leave">
+  <article class="panel">
+    <div class="section-head">
+      <div><span class="eyebrow">{{ selected.employee_no }}</span><h2>{{ selected.display_name }} · {{ year }} 假期</h2></div>
+      <a class="mini-btn" href="{{ url_for('employees.view_employee', employee_id=selected.id, tab='leave') }}">{{ t("employee.profile") }}</a>
+    </div>
+    <div class="leave-metrics">
+      <div><span>本年年假應享</span><strong>{{ leave.entitled }}</strong></div>
+      <div><span>本年年假已放</span><strong>{{ leave.used }}</strong></div>
+      <div><span>本年年假剩餘</span><strong>{{ leave.remaining }}</strong></div>
+      <div><span>補休剩餘</span><strong>{{ comp_leave.remaining }}</strong><small>不設到期</small></div>
+      <div><span>2023及以前年假</span><strong>{{ leave.legacy_remaining }}</strong><small>不設到期</small></div>
+    </div>
+    <p class="form-note">放年假時，系統依次扣除補休、2023及以前年假、最早到期的2024年起年假。</p>
+    {% if leave.termination_prorated %}<p class="form-note strong-note">已填寫最後工作日 {{ fmt_date(leave.termination_date) }}；本年應享年假按「當年在職日數（含入職及離職日）÷ 本年 365／366 日 × 本年應休年假」自動更新。超用日數會先抵扣其他可用年假，仍不足部分在離職結算追扣。</p>{% endif %}
+    <form class="form-grid" method="post" action="{{ url_for('leave.update_balance', employee_id=selected.id) }}">
+      <input type="hidden" name="year" value="{{ year }}">
+      <label><span>{{ t("leave.entitled_override") }}</span><input type="number" min="0" step="0.5" name="entitled_days" value="{{ leave.entitled }}"></label>
+      <label><span>{{ t("leave.legacy_balance") }}</span><input type="number" min="0" step="0.5" name="legacy_days" value="{{ leave.legacy_remaining + leave.legacy_used }}"></label>
+      {% if year >= 2024 %}<label><span>{{ t("leave.extended_until") }}</span><input type="date" name="extended_until" value="{{ balance.extended_until.isoformat() if balance and balance.extended_until else '' }}"></label>{% endif %}
+      <label class="wide"><span>{{ t("common.remarks") }}</span><textarea name="remarks">{{ balance.remarks if balance and balance.remarks else "" }}</textarea></label>
+      <div class="button-row"><button class="primary-btn" type="submit">{{ t("common.save") }}</button>{% if leave.entitled_override is not none %}<button class="ghost-btn" type="submit" name="clear_override" value="1">{{ t("leave.restore_calculated") }}</button>{% endif %}</div>
+    </form>
+    <div class="table-wrap flat"><table class="dense-table"><thead><tr><th>帳戶</th><th>應享</th><th>已用</th><th>剩餘</th><th>到期</th></tr></thead><tbody>
+      <tr><td>補休</td><td>{{ comp_leave.total }}</td><td>{{ comp_leave.used }}</td><td>{{ comp_leave.remaining }}</td><td>不設到期</td></tr>
+      {% for bucket in buckets %}<tr class="{{ 'muted-row' if bucket.expired else '' }}"><td>{{ t("leave.legacy_bucket") if bucket.is_legacy else bucket.year }}</td><td>{{ bucket.total }}</td><td>{{ bucket.used }}</td><td>{{ bucket.remaining }}</td><td>{% if bucket.is_legacy %}{{ t("leave.no_expiry") }}{% elif bucket.expired %}<span class="flag danger">{{ fmt_date(bucket.expiry_date) }} · {{ t("leave.expired") }}</span>{% else %}{{ fmt_date(bucket.expiry_date) }}{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>
+  </article>
+
+  <div class="two-column-work">
+    <article class="panel">
+      <h2>新增請假</h2>
+      <form class="form-grid" method="post" action="{{ url_for('employees.add_annual_leave', employee_id=selected.id) }}" enctype="multipart/form-data">
+        <input type="hidden" name="return_to" value="annual_leave"><input type="hidden" name="entitlement_year" value="{{ year }}">
+        <label><span>請假類別</span><select name="leave_type" required><option value="annual">年假</option><option value="sick">病假</option><option value="unpaid">無薪假</option></select></label>
+        <label><span>{{ t("employee.leave_start_date") }}</span><input type="date" name="start_date" required></label>
+        <label><span>{{ t("employee.leave_start_session") }}</span><select name="start_session"><option value="am">{{ t("employee.morning") }}</option><option value="pm">{{ t("employee.afternoon") }}</option></select></label>
+        <label><span>{{ t("employee.leave_end_date") }}</span><input type="date" name="end_date" required></label>
+        <label><span>{{ t("employee.leave_end_session") }}</span><select name="end_session"><option value="pm">{{ t("employee.afternoon") }}</option><option value="am">{{ t("employee.morning") }}</option></select></label>
+        <label><span>{{ t("employee.leave_days_override") }}</span><input type="number" min="0.5" step="0.5" name="days" placeholder="{{ t('employee.auto_calculate') }}"></label>
+        <label><span>憑證</span><input type="file" name="evidence"><small>病假必須補交憑證；未上傳不阻止保存或出糧，但會顯示紅色提示。年假及無薪假可選擇上傳。</small></label>
+        <label class="wide"><span>{{ t("common.remarks") }}</span><textarea name="remarks"></textarea><small>年假不扣減薪資；{{ t("leave.sick_rule_short") }} 無薪假視作當日沒有出勤。</small></label>
+        <button class="secondary-btn" type="submit">{{ t("common.add") }}</button>
+      </form>
+    </article>
+    <article class="panel">
+      <h2>假期記錄</h2>
+      <div class="table-wrap flat"><table class="dense-table"><thead><tr><th>類別</th><th>{{ t("employee.leave_period") }}</th><th>日數</th><th>憑證</th><th>{{ t("common.actions") }}</th></tr></thead><tbody>
+        {% for item in records %}<tr class="{{ 'muted-row' if item.status != 'active' else '' }}">
+          <td>{{ {'annual':'年假','sick':'病假','unpaid':'無薪假'}.get(item.leave_type, '年假') }}</td>
+          <td>{{ fmt_date(item.leave_date) }} – {{ fmt_date(item.end_date or item.leave_date) }}</td><td>{{ item.days }}</td>
+          <td>{% if item.evidence_document %}<a href="{{ url_for('documents.open_document', document_id=item.evidence_document.id) }}" target="_blank">已上傳</a>{% elif item.leave_type == 'sick' %}<span class="flag danger">待補憑證</span>{% else %}—{% endif %}</td>
+          <td>{% if item.status == "active" %}
+            <button class="mini-btn" type="button" data-dialog-open="leave-editor-{{ item.id }}">更正</button>
+            <dialog class="app-dialog" id="leave-editor-{{ item.id }}"><form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.update_annual_leave', record_id=item.id) }}" enctype="multipart/form-data">
+              <input type="hidden" name="return_to" value="annual_leave"><input type="hidden" name="entitlement_year" value="{{ year }}">
+              <div class="section-head"><h2>更正請假</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div>
+              <div class="record-editor-body">
+                <label><span>類別</span><select name="leave_type"><option value="annual" {% if item.leave_type == 'annual' %}selected{% endif %}>年假</option><option value="sick" {% if item.leave_type == 'sick' %}selected{% endif %}>病假</option><option value="unpaid" {% if item.leave_type == 'unpaid' %}selected{% endif %}>無薪假</option></select></label>
+                <label><span>開始</span><input type="date" name="start_date" value="{{ item.leave_date.isoformat() }}" required></label>
+                <label><span>開始時段</span><select name="start_session"><option value="am" {% if item.start_session == 'am' %}selected{% endif %}>上午</option><option value="pm" {% if item.start_session == 'pm' %}selected{% endif %}>下午</option></select></label>
+                <label><span>結束</span><input type="date" name="end_date" value="{{ (item.end_date or item.leave_date).isoformat() }}" required></label>
+                <label><span>結束時段</span><select name="end_session"><option value="pm" {% if item.end_session == 'pm' %}selected{% endif %}>下午</option><option value="am" {% if item.end_session == 'am' %}selected{% endif %}>上午</option></select></label>
+                <label><span>日數</span><input type="number" min="0.5" step="0.5" name="days" value="{{ item.days }}"></label>
+                <label><span>補交／替換憑證</span><input type="file" name="evidence"></label>
+                <label class="wide"><span>備註</span><textarea name="remarks">{{ item.remarks or '' }}</textarea></label>
+              </div><div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>取消</button><button class="primary-btn" type="submit">保存</button></div>
+            </form></dialog>
+            <form class="mini-form" method="post" action="{{ url_for('employees.void_annual_leave', record_id=item.id) }}" data-confirm="{{ t('employee.withdraw_confirm') }}"><input type="hidden" name="return_to" value="annual_leave"><input type="hidden" name="entitlement_year" value="{{ year }}"><button class="mini-btn danger-text" type="submit">撤回</button></form>
+          {% endif %}</td>
+        </tr>{% else %}<tr><td colspan="5" class="empty-cell">尚未有假期記錄</td></tr>{% endfor %}
+      </tbody></table></div>
+    </article>
   </div>
-  <a class="primary-btn" href="{{ url_for('employees.new_employee') }}">{{ t("employees.new") }}</a>
 </section>
 {% endif %}
 {% endblock %}

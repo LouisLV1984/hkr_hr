@@ -17,15 +17,13 @@
   <a class="metric-card" href="{{ url_for('payroll.attendance_payroll', year_month=year_month) }}">
     <span>{{ year_month }} · {{ t("dashboard.estimated_payroll") }}</span>
     <strong>HKD {{ fmt_money(estimated_payroll) }}</strong>
-    {% if payroll_unready_count %}
-      <small>{{ t("dashboard.payroll_unready", count=payroll_unready_count) }}</small>
-    {% endif %}
+    {% if payroll_unready_count %}<small>{{ t("dashboard.payroll_unready", count=payroll_unready_count) }}</small>{% endif %}
   </a>
   <a class="metric-card" href="{{ url_for('attendance.attendance_home', month=year_month) }}">
     <span>{{ t("dashboard.attendance_received") }}</span>
     <strong>{{ attendance_received }} / {{ attendance_expected }}</strong>
   </a>
-  <a class="metric-card warn" href="#expiry-alerts">
+  <a class="metric-card warn" href="{{ url_for('dashboard.dashboard', month=year_month, panel='expiry') }}#expiry-alerts">
     <span>{{ t("dashboard.expiry") }}</span>
     <strong>{{ expiry_alerts|length }}</strong>
   </a>
@@ -33,94 +31,44 @@
 
 {% if active_count == 0 %}
 <section class="panel onboarding-empty">
-  <div>
-    <h2>{{ t("dashboard.start_title") }}</h2>
-    <p>{{ t("dashboard.start_hint") }}</p>
-  </div>
+  <div><h2>{{ t("dashboard.start_title") }}</h2><p>{{ t("dashboard.start_hint") }}</p></div>
   <a class="primary-btn" href="{{ url_for('employees.new_employee') }}">{{ t("employees.new") }}</a>
 </section>
 {% else %}
-<section class="dashboard-grid">
-  <article class="panel" id="expiry-alerts">
-    <div class="section-head">
-      <div>
-        <h2>{{ t("dashboard.expiring") }}</h2>
-        <p>{{ t("dashboard.expiry") }}</p>
+<section class="dashboard-sections">
+  <details class="panel dashboard-disclosure" id="expiry-alerts" {% if open_panel == "expiry" %}open{% endif %}>
+    <summary class="dashboard-section-summary">
+      <strong>{{ t("dashboard.expiry_with_count", count=expiry_alerts|length) }}</strong>
+    </summary>
+    <div class="dashboard-section-content">
+      <div class="table-wrap flat">
+        <table class="dense-table">
+          <thead><tr><th>{{ t("common.employee") }}</th><th>{{ t("common.details") }}</th><th>{{ t("employee.expiry_date") }}</th><th>{{ t("common.status") }}</th></tr></thead>
+          <tbody>
+            {% for alert in expiry_alerts %}
+              <tr class="expiry-row {{ alert.severity }}">
+                <td><a href="{{ url_for('employees.view_employee', employee_id=alert.employee.id) }}">{{ alert.employee.employee_no }} · {{ alert.employee.display_name }}</a></td>
+                <td>{{ option_t("identity_type", alert.label, alert.label) }}</td>
+                <td>{{ fmt_date(alert.date) }}</td>
+                <td><span class="flag expiry-status {{ alert.severity }}">{% if alert.severity == 'expired' %}已到期 {{ -alert.days_remaining }} 日{% elif alert.severity == 'urgent' %}{{ alert.days_remaining }} 日內到期{% else %}{{ alert.days_remaining }} 日後到期{% endif %}</span></td>
+              </tr>
+            {% else %}
+              <tr><td colspan="4" class="empty-cell">{{ t("dashboard.no_expiry_alerts") }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
     </div>
-    <div class="table-wrap flat">
-      <table class="dense-table">
-        <thead>
-          <tr>
-            <th>{{ t("common.employee") }}</th>
-            <th>{{ t("common.details") }}</th>
-            <th>{{ t("employee.expiry_date") }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for alert in expiry_alerts %}
-            <tr>
-              <td><a href="{{ url_for('employees.view_employee', employee_id=alert.employee.id) }}">{{ alert.employee.employee_no }} · {{ alert.employee.display_name }}</a></td>
-              <td>{{ option_t("identity_type", alert.label, alert.label) }}</td>
-              <td>{{ fmt_date(alert.date) }}</td>
-            </tr>
-          {% else %}
-            <tr><td colspan="3" class="empty-cell">{{ t("dashboard.no_tasks") }}</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </article>
+  </details>
 
-  <article class="panel" id="tasks">
-    <div class="section-head">
-      <div>
-        <h2>{{ t("dashboard.tasks") }}</h2>
-        <p>{{ t("dashboard.task_hint") }}</p>
-      </div>
+  <section class="panel dashboard-action-panel" id="tasks">
+    <div class="section-head"><div><h2>{{ t("dashboard.current_month_actions", month=year_month, count=readiness_total_count) }}</h2><p>{{ t("dashboard.current_month_actions_hint") }}</p></div></div>
+    <div class="dashboard-action-links">
+      <a href="{{ url_for('employees.list_employees', month=year_month, readiness='employee_data', status='all') }}"><span>{{ t("readiness.employee_file") }}</span><strong>{{ employee_data_issue_count }}</strong></a>
+      <a href="{{ url_for('employees.list_employees', month=year_month, readiness='attendance', status='all') }}"><span>{{ t("readiness.attendance") }}</span><strong>{{ attendance_issue_count }}</strong></a>
+      <a href="{{ url_for('employees.list_employees', month=year_month, readiness='payroll', status='all') }}"><span>{{ t("readiness.payroll_status") }}</span><strong>{{ payroll_issue_count }}</strong></a>
     </div>
-    <form class="task-filter-form" method="get">
-      <input type="hidden" name="month" value="{{ year_month }}">
-      <label><span>{{ t("dashboard.task_type") }}</span><select name="task_type"><option value="">{{ t("common.all") }}</option>{% for code, config in task_types.items() %}<option value="{{ code }}" {% if task_filters.type == code %}selected{% endif %}>{{ message_t(config[0]) }}</option>{% endfor %}</select></label>
-      <label><span>{{ t("dashboard.task_progress") }}</span><select name="task_progress"><option value="">{{ t("common.all") }}</option>{% for code in task_progress_options %}<option value="{{ code }}" {% if task_filters.progress == code %}selected{% endif %}>{{ t("task.progress." ~ code) }}</option>{% endfor %}</select></label>
-      <label class="grow"><span>{{ t("common.search") }}</span><input name="task_q" value="{{ task_filters.q }}" placeholder="{{ t('dashboard.task_search') }}"></label>
-      <button class="secondary-btn" type="submit">{{ t("common.apply") }}</button>
-    </form>
-    <div class="todo-list">
-      {% for task in tasks %}
-        <article class="todo-card">
-          <div class="todo-card-head">
-            <a href="{{ url_for('employees.view_employee', employee_id=task.employee.id) }}"><strong>{{ task.employee.employee_no }} · {{ task.employee.display_name }}</strong></a>
-            <div class="button-row"><span class="flag {{ task.kind }}">{{ message_t(task.label) }}</span><span class="flag">{{ t("task.progress." ~ task.progress) }}</span></div>
-          </div>
-          {% if task.notes %}
-            <div class="task-note-history">
-              {% for note in task.notes[:3] %}
-                <div>
-                  <p>{{ note.note }}</p>
-                  <small>{{ note.author.username if note.author else t("common.system") }} · {{ note.created_at.strftime("%Y-%m-%d %H:%M") }} · {{ t("task.progress." ~ note.progress) }}</small>
-                </div>
-              {% endfor %}
-            </div>
-          {% endif %}
-          <details class="task-note-editor">
-            <summary class="mini-btn">{{ t("dashboard.add_progress_note") }}</summary>
-            <form class="stack-form" method="post" action="{{ url_for('dashboard.add_task_note', employee_id=task.employee.id, task_code=task.code) }}">
-              <input type="hidden" name="month" value="{{ year_month }}">
-              <input type="hidden" name="task_type" value="{{ task_filters.type }}">
-              <input type="hidden" name="task_progress" value="{{ task_filters.progress }}">
-              <input type="hidden" name="task_q" value="{{ task_filters.q }}">
-              <label><span>{{ t("dashboard.task_progress") }}</span><select name="progress">{% for code in task_progress_options %}<option value="{{ code }}" {% if task.progress == code %}selected{% endif %}>{{ t("task.progress." ~ code) }}</option>{% endfor %}</select></label>
-              <label><span>{{ t("common.remarks") }}</span><textarea name="note" required></textarea></label>
-              <button class="primary-btn" type="submit">{{ t("common.save") }}</button>
-            </form>
-          </details>
-        </article>
-      {% else %}
-        <p class="empty-cell">{{ t("dashboard.no_tasks") }}</p>
-      {% endfor %}
-    </div>
-  </article>
+  </section>
 </section>
 {% endif %}
 {% endblock %}

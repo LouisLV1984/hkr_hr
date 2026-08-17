@@ -85,7 +85,11 @@ function Test-DeployablePath {
         "allow_hkr_hr_firewall_port.ps1",
         "allow_hkr_hr_firewall_port_admin.bat",
         "init_hkr_hr_database.ps1",
-        "mini_pc_init_hkr_hr_database.bat"
+        "mini_pc_init_hkr_hr_database.bat",
+        "backup_hkr_hr_short_term.ps1",
+        "backup_hkr_hr_to_laptop.ps1",
+        "setup_hkr_hr_backup.ps1",
+        "verify_hkr_hr_backup_restore.ps1"
     )
     foreach ($prefix in $excludedPrefixes) {
         if ($normalized.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -131,10 +135,13 @@ if (-not $SkipCompile) {
         (Join-Path $SourceRoot "scripts\bootstrap_production_db.py") `
         (Join-Path $SourceRoot "scripts\seed_acceptance_data.py") `
         (Join-Path $SourceRoot "tools\hr_core.py") `
+        (Join-Path $SourceRoot "tools\completeness.py") `
         (Join-Path $SourceRoot "tools\i18n.py") `
         (Join-Path $SourceRoot "tools\payroll_engine.py") `
         (Join-Path $SourceRoot "tools\releases.py") `
-        (Join-Path $SourceRoot "tools\schema_migrations.py")
+        (Join-Path $SourceRoot "tools\security.py") `
+        (Join-Path $SourceRoot "tools\schema_migrations.py") `
+        (Join-Path $SourceRoot "tools\text_search.py")
     if ($LASTEXITCODE -ne 0) {
         throw "py_compile failed; deployment aborted."
     }
@@ -202,7 +209,13 @@ $operatorScripts = @(
     "allow_hkr_hr_firewall_port.ps1",
     "allow_hkr_hr_firewall_port_admin.bat",
     "init_hkr_hr_database.ps1",
-    "mini_pc_init_hkr_hr_database.bat"
+    "mini_pc_init_hkr_hr_database.bat",
+    "backup_hkr_hr_short_term.ps1",
+    "backup_hkr_hr_to_laptop.ps1",
+    "setup_hkr_hr_backup.ps1",
+    "verify_hkr_hr_backup_restore.ps1",
+    "repair_salary_timeline_20260811.py",
+    "mini_pc_repair_salary_timeline_20260811.bat"
 )
 foreach ($scriptName in $operatorScripts) {
     $scriptPath = Join-Path $SourceRoot "scripts\$scriptName"
@@ -243,6 +256,7 @@ $staleAppFiles = @(
     "templates\employees\certificates.html",
     "templates\employees\export_placeholder.html",
     "templates\employees\phase2_placeholder.html"
+    "templates\admin\import.html"
 )
 foreach ($relativePath in $staleAppFiles) {
     $stalePath = Join-Path $AppTarget $relativePath
@@ -288,6 +302,12 @@ if (-not (Test-Path -LiteralPath $productionEnv)) {
         Write-DeployLog "Updated production .env DATABASE_URL from psycopg2 to psycopg."
     }
     $envText = Get-Content -Raw -LiteralPath $productionEnv
+    if ($envText -match "(?m)^IMPORT_ROOT=.*(?:\r?\n|$)") {
+        $envText = $envText -replace "(?m)^IMPORT_ROOT=.*(?:\r?\n|$)", ""
+        Set-Content -LiteralPath $productionEnv -Value $envText -NoNewline
+        Write-DeployLog "Removed retired production .env IMPORT_ROOT setting."
+    }
+    $envText = Get-Content -Raw -LiteralPath $productionEnv
     if ($envText -notmatch "(?m)^PAYROLL_TEMPLATE_ROOT=") {
         Add-Content -LiteralPath $productionEnv -Value "`nPAYROLL_TEMPLATE_ROOT=D:\HKR_HR\02.Templates\payroll"
         Write-DeployLog "Added production .env PAYROLL_TEMPLATE_ROOT."
@@ -298,7 +318,6 @@ if (-not (Test-Path -LiteralPath $productionEnv)) {
     }
     $runtimeSettings = [ordered]@{
         "ATTENDANCE_BATCH_ROOT" = "D:\HKR_HR\01.Attachments\_attendance_batches"
-        "IMPORT_ROOT" = "D:\HKR_HR\01.Attachments\_imports"
         "PAYROLL_OUTPUT_ROOT" = "D:\HKR_HR\03.Output\generated_payroll"
     }
     foreach ($setting in $runtimeSettings.GetEnumerator()) {
@@ -308,6 +327,36 @@ if (-not (Test-Path -LiteralPath $productionEnv)) {
             Write-DeployLog "Added production .env $($setting.Key)."
         }
     }
+}
+
+$envText = Get-Content -Raw -LiteralPath $productionEnv
+if ($envText -notmatch "(?m)^HKR_HR_ENV=") {
+    Add-Content -LiteralPath $productionEnv -Value "`nHKR_HR_ENV=production"
+    Write-DeployLog "Added production environment marker."
+} elseif ($envText -notmatch "(?m)^HKR_HR_ENV=production\s*$") {
+    $envText = $envText -replace "(?m)^HKR_HR_ENV=.*$", "HKR_HR_ENV=production"
+    Set-Content -LiteralPath $productionEnv -Value $envText -NoNewline
+    Write-DeployLog "Corrected production environment marker."
+}
+$envText = Get-Content -Raw -LiteralPath $productionEnv
+$secretMatch = [regex]::Match($envText, "(?m)^SECRET_KEY=(.*)$")
+$weakSecret = -not $secretMatch.Success -or $secretMatch.Groups[1].Value.Trim() -in @(
+    "",
+    "dev-change-me",
+    "change-me-before-production"
+)
+if ($weakSecret) {
+    $secretBytes = New-Object byte[] 32
+    $generator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $generator.GetBytes($secretBytes) } finally { $generator.Dispose() }
+    $secretValue = ([System.BitConverter]::ToString($secretBytes)).Replace("-", "").ToLowerInvariant()
+    if ($secretMatch.Success) {
+        $envText = [regex]::Replace($envText, "(?m)^SECRET_KEY=.*$", "SECRET_KEY=$secretValue")
+        Set-Content -LiteralPath $productionEnv -Value $envText -NoNewline
+    } else {
+        Add-Content -LiteralPath $productionEnv -Value "`nSECRET_KEY=$secretValue"
+    }
+    Write-DeployLog "Generated a non-placeholder production SECRET_KEY. Existing sessions will sign in again after restart."
 }
 
 Write-DeployLog "Copied app files: $($files.Count)"

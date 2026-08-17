@@ -8,6 +8,9 @@
       {% if group_code == "organization" %}
         <a class="{% if selected_code == 'projects' %}active{% endif %}" href="{{ url_for('references.references_home', list='projects', return_to=return_to) }}">{{ t("references.projects") }}</a>
       {% endif %}
+      {% if group_code == "finance_contact" %}
+        <a class="{% if selected_code == 'mpf_schemes' %}active{% endif %}" href="{{ url_for('references.references_home', list='mpf_schemes', return_to=return_to) }}">{{ t("mpf.schemes") }}</a>
+      {% endif %}
       {% for item in items %}
         <a class="{% if selected and selected.id == item.id %}active{% endif %}" href="{{ url_for('references.references_home', list=item.code, return_to=return_to) }}">{{ option_t("reference_list", item.code, item.label) }}</a>
       {% endfor %}
@@ -106,6 +109,37 @@
                 <td><button class="primary-btn" type="submit" form="project-create">{{ t("common.save") }}</button></td>
               </tr>
             {% endif %}
+          </tbody>
+        </table>
+      </div>
+    {% elif selected_code == "mpf_schemes" %}
+      <div class="section-head">
+        <div><h2>{{ t("mpf.schemes") }}</h2><p>{{ t("mpf.scheme_reference_hint") }}</p></div>
+        {% if can_edit %}<button class="secondary-btn" type="button" data-add-row="mpf-new-row">{{ t("references.new_row") }}</button>{% endif %}
+      </div>
+      {% if can_edit %}
+        {% for scheme in mpf_schemes %}
+          <form id="mpf-update-{{ scheme.id }}" method="post" action="{{ url_for('references.update_mpf_scheme', scheme_id=scheme.id) }}"></form>
+          <form id="mpf-delete-{{ scheme.id }}" method="post" action="{{ url_for('references.delete_mpf_scheme', scheme_id=scheme.id) }}" data-confirm="{{ t('mpf.scheme_delete_confirm', count=mpf_scheme_counts[scheme.id]) }}"></form>
+        {% endfor %}
+        <form id="mpf-create" method="post" action="{{ url_for('references.create_mpf_scheme') }}"></form>
+      {% endif %}
+      <div class="table-wrap flat">
+        <table class="dense-table reference-table mpf-scheme-table">
+          <thead><tr><th>{{ t("mpf.scheme_name") }}</th><th>{{ t("mpf.employer_account_no") }}</th><th>{{ t("mpf.payroll_group_no") }}</th><th>{{ t("mpf.calculation_mode") }}</th><th>{{ t("references.in_use") }}</th><th>{{ t("common.actions") }}</th></tr></thead>
+          <tbody>
+            {% for scheme in mpf_schemes %}
+              {% set update_form = "mpf-update-" ~ scheme.id %}
+              <tr>
+                <td><input form="{{ update_form }}" name="name" value="{{ scheme.name }}" required {% if not can_edit %}readonly{% endif %}></td>
+                <td><input form="{{ update_form }}" name="employer_account_no" value="{{ scheme.employer_account_no }}" required {% if not can_edit %}readonly{% endif %}></td>
+                <td><input form="{{ update_form }}" name="payroll_group_no" value="{{ scheme.payroll_group_no or 'N/A' }}" {% if not can_edit %}readonly{% endif %}></td>
+                <td><select form="{{ update_form }}" name="calculation_mode" {% if not can_edit %}disabled{% endif %}><option value="regular" {% if scheme.calculation_mode == "regular" %}selected{% endif %}>{{ t("mpf.mode_regular") }}</option><option value="casual" {% if scheme.calculation_mode == "casual" %}selected{% endif %}>{{ t("mpf.mode_casual") }}</option></select></td>
+                <td>{{ mpf_scheme_counts[scheme.id] }}</td>
+                <td class="row-actions">{% if can_edit %}<label class="check-line"><input form="{{ update_form }}" type="checkbox" name="active" {% if scheme.active %}checked{% endif %}><span>{{ t("references.available_for_new") }}</span></label><button class="mini-btn" type="submit" form="{{ update_form }}">{{ t("common.save") }}</button>{% if mpf_scheme_counts[scheme.id] == 0 %}<button class="mini-btn danger-text" type="submit" form="mpf-delete-{{ scheme.id }}">{{ t("common.delete") }}</button>{% else %}<button class="mini-btn" type="button" disabled>{{ t("common.delete") }}</button>{% endif %}{% endif %}</td>
+              </tr>
+            {% endfor %}
+            {% if can_edit %}<tr id="mpf-new-row" hidden><td><input form="mpf-create" name="name" required></td><td><input form="mpf-create" name="employer_account_no" required></td><td><input form="mpf-create" name="payroll_group_no" placeholder="N/A"></td><td><select form="mpf-create" name="calculation_mode"><option value="regular">{{ t("mpf.mode_regular") }}</option><option value="casual">{{ t("mpf.mode_casual") }}</option></select></td><td>0</td><td><button class="primary-btn" type="submit" form="mpf-create">{{ t("common.save") }}</button></td></tr>{% endif %}
           </tbody>
         </table>
       </div>

@@ -22,7 +22,7 @@
   <div><h1>{{ t("final_payment.title") }}</h1><p>{{ t("final_payment.subtitle") }}</p></div>
 </section>
 <section class="payroll-main final-payment-main">
-  <section class="payroll-summary-grid" aria-label="{{ t('payroll.summary') }}">
+  <section class="payroll-summary-grid" aria-label="{{ t('payroll.summary', month=month_t(year_month)) }}">
     <article><span>{{ t("payroll.ready_employees") }}</span><strong>{{ summary.ready_count }}</strong></article>
     <article><span>{{ t("payroll.blocked_employees") }}</span><strong>{{ summary.blocked_count }}</strong></article>
     <article><span>{{ t("final_payment.wage_income") }}</span><strong>{{ fmt_money(summary.gross) }}</strong></article>
@@ -33,6 +33,15 @@
   <details class="panel rule-panel" open>
     <summary>{{ t("final_payment.rules") }} · {{ rule_version }}</summary>
     <div class="section-head"><div><h2>{{ t("final_payment.rules") }}</h2><p>{{ t("final_payment.rules_intro") }}</p></div></div>
+    <div class="inline-alert info">
+      <strong>{{ t("final_payment.source_title") }}</strong>
+      <span>{{ t("final_payment.source_notice") }}</span>
+      <span class="rule-source-links">
+        {% for source in labour_sources %}
+          <a href="{{ source.url }}" target="_blank" rel="noopener noreferrer">{{ t(source.label_key) }}</a>{% if not loop.last %}<span aria-hidden="true"> · </span>{% endif %}
+        {% endfor %}
+      </span>
+    </div>
     <ol>{% for note in formula_notes %}<li>{{ t(note) }}</li>{% endfor %}</ol>
   </details>
 
@@ -71,7 +80,8 @@
           <label><span>{{ t("leave.legacy_days") }}</span><input type="number" min="0" step="0.001" name="legacy_leave_days" value="{{ row.legacy_leave_days }}"></label>
           <label><span>{{ t("leave.post_2024_days") }}</span><input type="number" min="0" step="0.001" name="post_2024_leave_days" value="{{ row.post_2024_leave_days }}"></label>
           <label><span>{{ t("final_payment.statutory_holiday_days") }}</span><input type="number" min="0" step="0.001" name="statutory_holiday_days" value="{{ row.statutory_holiday_days }}"></label>
-          <label><span>{{ t("final_payment.leave_average_wage") }}</span><input type="number" min="0" step="0.01" name="leave_average_wage" value="{{ row.leave_average_wage }}"><small>{{ t("final_payment.average_months_hint", count=row.leave_average_count) }}</small></label>
+          <label><span>前 12 個月工資合計</span><input type="number" min="0" step="0.01" name="leave_wage_total" value="{{ row.leave_wage_total }}"><small>目前找到 {{ row.leave_average_count }} 個 Payroll 月份。年假補薪日薪率＝經 HR 核實的前 12 個月工資合計 ÷ 365；如紀錄不足 12 個月，必須由 HR 核實並補填，或使用右側日薪率覆寫。</small></label>
+          <input type="hidden" name="leave_average_wage" value="{{ row.leave_average_wage }}">
           <label><span>{{ t("final_payment.leave_daily_rate_override") }}</span><input type="number" min="0" step="0.0001" name="leave_daily_rate_override" value="{{ row.case.leave_daily_rate_override if row.case and row.case.leave_daily_rate_override is not none else '' }}"><small>{{ t("final_payment.calculated_rate_hint", rate=row.leave_rate) }}</small></label>
           <label><span>{{ t("final_payment.holiday_daily_rate_override") }}</span><input type="number" min="0" step="0.0001" name="holiday_daily_rate_override" value="{{ row.case.holiday_daily_rate_override if row.case and row.case.holiday_daily_rate_override is not none else '' }}"><small>{{ t("final_payment.calculated_rate_hint", rate=row.holiday_rate) }}</small></label>
         </div>
@@ -95,8 +105,11 @@
       </details>
 
       <div class="final-payment-breakdown">
-        <span>{{ t("final_payment.wage_income") }} <strong>{{ fmt_money(row.wage_income) }}</strong></span>
+        <span>工資、補貼及假期款項合計 <strong>{{ fmt_money(row.wage_income) }}</strong></span>
+        <span>離職月基本工資 <strong>{{ fmt_money(row.base_amount) }}</strong></span>
+        <span>補貼 <strong>{{ fmt_money(row.allowance_amount) }}</strong></span>
         <span>{{ t("final_payment.annual_leave_pay") }} <strong>{{ fmt_money(row.annual_leave_pay) }}</strong></span>
+        {% if row.annual_leave_overused_days > 0 %}<span class="danger-text">超用年假追扣 {{ row.annual_leave_overused_days }} 日 <strong>-{{ fmt_money(row.annual_leave_overuse_deduction) }}</strong></span>{% endif %}
         <span>{{ t("final_payment.service_benefit") }} <strong>{{ fmt_money(row.benefit.net) }}</strong></span>
         <span>{{ t("payroll.employee_mpf") }} <strong>{{ fmt_money(row.employee_mpf) }}</strong></span>
         <span>{{ t("payroll.net") }} <strong>{{ fmt_money(row.net_amount) }}</strong></span>

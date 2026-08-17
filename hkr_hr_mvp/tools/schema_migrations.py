@@ -3,21 +3,35 @@ from sqlalchemy import inspect, text
 from models import SystemSetting, db
 
 
-SCHEMA_VERSION = "1.5"
+SCHEMA_VERSION = "2.2"
 REQUIRED_V1_TABLES = {
     "employees",
     "employee_assignments",
     "employee_salaries",
+    "employee_mpf_enrollments",
+    "mpf_schemes",
     "employee_documents",
+    "employee_bank_accounts",
     "attendance_batches",
     "attendance_monthly_summaries",
+    "employee_attendance_policies",
     "attendance_segments",
+    "attendance_special_days",
+    "employee_comp_leave_credits",
+    "employee_comp_leave_allocations",
+    "employee_work_injury_periods",
+    "employee_work_injury_monthly_expenses",
     "payroll_runs",
     "payroll_employee_results",
     "payroll_project_lines",
 }
 
 ADDITIVE_V1_MIGRATIONS = {
+    "users": {
+        "last_login_at": "TIMESTAMP",
+        "last_seen_at": "TIMESTAMP",
+        "last_logout_at": "TIMESTAMP",
+    },
     "employee_documents": {
         "content_sha256": "VARCHAR(64)",
     },
@@ -27,6 +41,18 @@ ADDITIVE_V1_MIGRATIONS = {
     "attendance_segments": {
         "large_ecall_count": "INTEGER NOT NULL DEFAULT 0",
         "ecall_count": "INTEGER NOT NULL DEFAULT 0",
+        "other_allowance_amount": "NUMERIC(14, 2) NOT NULL DEFAULT 0",
+    },
+    "attendance_monthly_summaries": {
+        "special_day_handling": "VARCHAR(20) NOT NULL DEFAULT 'pay'",
+    },
+    "attendance_special_days": {
+        "session": "VARCHAR(20) NOT NULL DEFAULT 'full_day'",
+    },
+    "employee_allowances": {
+        "allowance_type": "VARCHAR(30) NOT NULL DEFAULT 'special'",
+        "exchange_rate": "NUMERIC(14, 6)",
+        "status": "VARCHAR(30) NOT NULL DEFAULT 'active'",
     },
     "employee_assignments": {
         "status": "VARCHAR(30) NOT NULL DEFAULT 'active'",
@@ -56,16 +82,46 @@ ADDITIVE_V1_MIGRATIONS = {
         "start_session": "VARCHAR(20) NOT NULL DEFAULT 'am'",
         "end_session": "VARCHAR(20) NOT NULL DEFAULT 'pm'",
         "status": "VARCHAR(30) NOT NULL DEFAULT 'active'",
+        "leave_type": "VARCHAR(30) NOT NULL DEFAULT 'annual'",
+        "evidence_document_id": "INTEGER",
     },
     "payroll_employee_results": {
         "large_ecall_amount": "NUMERIC(14, 2) NOT NULL DEFAULT 0",
         "ecall_amount": "NUMERIC(14, 2) NOT NULL DEFAULT 0",
+        "mpf_relevant_income": "NUMERIC(14, 2) NOT NULL DEFAULT 0",
+        "mpf_scheme_name": "VARCHAR(200)",
+        "mpf_scheme_code": "VARCHAR(80)",
+        "mpf_employer_account_no": "VARCHAR(80)",
+        "mpf_payroll_group_no": "VARCHAR(120)",
+        "mpf_member_account_no": "VARCHAR(120)",
+        "mpf_member_name": "VARCHAR(200)",
+        "mpf_calculation_mode": "VARCHAR(20)",
+        "traffic_meal_allowance_amount": "NUMERIC(14, 2) NOT NULL DEFAULT 0",
+        "special_allowance_amount": "NUMERIC(14, 2) NOT NULL DEFAULT 0",
+        "sick_leave_amount": "NUMERIC(14, 2) NOT NULL DEFAULT 0",
+        "work_injury_amount": "NUMERIC(14, 2) NOT NULL DEFAULT 0",
+        "unpaid_leave_deduction": "NUMERIC(14, 2) NOT NULL DEFAULT 0",
+        "annual_leave_days": "NUMERIC(8, 2) NOT NULL DEFAULT 0",
+        "sick_leave_days": "NUMERIC(8, 2) NOT NULL DEFAULT 0",
+        "unpaid_leave_days": "NUMERIC(8, 2) NOT NULL DEFAULT 0",
+        "work_injury_days": "NUMERIC(8, 2) NOT NULL DEFAULT 0",
+        "work_injury_medical_reimbursement_amount": "NUMERIC(14, 2) NOT NULL DEFAULT 0",
+        "attendance_other_allowance_amount": "NUMERIC(14, 2) NOT NULL DEFAULT 0",
     },
     "payroll_project_lines": {
         "large_ecall_count": "INTEGER NOT NULL DEFAULT 0",
         "ecall_count": "INTEGER NOT NULL DEFAULT 0",
         "large_ecall_amount": "NUMERIC(14, 2) NOT NULL DEFAULT 0",
         "ecall_amount": "NUMERIC(14, 2) NOT NULL DEFAULT 0",
+        "traffic_meal_allowance_amount": "NUMERIC(14, 2) NOT NULL DEFAULT 0",
+        "special_allowance_amount": "NUMERIC(14, 2) NOT NULL DEFAULT 0",
+        "attendance_other_allowance_amount": "NUMERIC(14, 2) NOT NULL DEFAULT 0",
+    },
+    "employee_work_injury_periods": {
+        "pay_mode": "VARCHAR(30) NOT NULL DEFAULT 'four_fifths'",
+    },
+    "employee_final_payment_cases": {
+        "leave_wage_total": "NUMERIC(14, 2)",
     },
 }
 
@@ -136,6 +192,19 @@ def apply_additive_migrations():
     return changed
 
 
+def retire_legacy_tables():
+    """Remove tables belonging only to retired, one-time setup workflows."""
+    retired = []
+    for table_name in ("import_batches", "employee_task_notes"):
+        if table_name not in existing_tables():
+            continue
+        db.session.execute(text(f'DROP TABLE "{table_name}"'))
+        retired.append(table_name)
+    if retired:
+        db.session.commit()
+    return retired
+
+
 def cleanup_orphaned_workflow_rows():
     """Remove workflow shells left by the previous hard-delete behavior."""
     present_tables = existing_tables()
@@ -179,10 +248,51 @@ def cleanup_orphaned_workflow_rows():
     return removed
 
 
+def retire_obsolete_audit_events():
+    """Remove audit events belonging to retired application workflows."""
+    if "audit_logs" not in existing_tables():
+        return 0
+    result = db.session.execute(
+        text(
+            "DELETE FROM audit_logs "
+            "WHERE action = 'bank_confirmed_for_payroll'"
+        )
+    )
+    db.session.commit()
+    return max(result.rowcount or 0, 0)
+
+
 def ensure_schema():
     db.create_all()
     apply_additive_migrations()
+    db.session.execute(
+        text(
+            """
+            INSERT INTO employee_bank_accounts
+                (employee_id, effective_from, bank_name, account_no, currency,
+                 status, created_at, updated_at)
+            SELECT e.id, COALESCE(
+                       (SELECT MIN(p.start_date)
+                        FROM employee_employment_periods AS p
+                        WHERE p.employee_id = e.id),
+                       CURRENT_DATE
+                   ),
+                   e.bank_name, e.bank_account_no, 'HKD', 'active',
+                   CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            FROM employees AS e
+            WHERE e.bank_name IS NOT NULL
+              AND e.bank_account_no IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM employee_bank_accounts AS b
+                  WHERE b.employee_id = e.id
+              )
+            """
+        )
+    )
+    db.session.commit()
+    retire_legacy_tables()
     cleanup_orphaned_workflow_rows()
+    retire_obsolete_audit_events()
     issues = schema_compatibility_issues()
     if issues:
         raise RuntimeError(

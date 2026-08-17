@@ -3,13 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}{{ t("app.title") }}{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
 </head>
 <body>
   {% set endpoint = request.endpoint or "" %}
   {% set module = endpoint.split(".")[0] %}
-  {% set show_context_sidebar = current_user.is_authenticated and module in ["attendance", "payroll", "exports", "references", "admin"] %}
+  {% set attendance_detail_mode = module == "attendance" and (request.args.get("item_id") or request.args.get("summary_id")) %}
+  {% set attendance_view = "collection" if module == "attendance" and (request.args.get("batch_id") or attendance_detail_mode) else request.args.get("view", "details") %}
+  {% set employee_list_mode = endpoint == "employees.list_employees" %}
+  {% set show_context_sidebar = current_user.is_authenticated and (module in ["attendance", "payroll", "exports", "references", "admin", "leave"] or employee_list_mode) and not attendance_detail_mode %}
   <header class="topbar">
     <a class="brand" href="{{ url_for('dashboard.dashboard') }}">HKR HR</a>
     {% if current_user.is_authenticated %}
@@ -30,18 +34,18 @@
           {{ t("nav.leave") }}
         </a>
         <a class="system-tab {% if module == 'attendance' %}active{% endif %}"
-           href="{{ url_for('attendance.attendance_home') }}"
+           href="{{ url_for('attendance.attendance_home', month=operating_month) }}"
            {% if module == 'attendance' %}aria-current="page"{% endif %}>
           {{ t("nav.attendance_payroll") }}
         </a>
-        <a class="system-tab {% if module in ['payroll', 'exports'] %}active{% endif %}"
-           href="{{ url_for('payroll.attendance_payroll') }}"
-           {% if module in ['payroll', 'exports'] %}aria-current="page"{% endif %}>
+        <a class="system-tab {% if module == 'payroll' %}active{% endif %}"
+           href="{{ url_for('payroll.attendance_payroll', year_month=operating_month) }}"
+           {% if module == 'payroll' %}aria-current="page"{% endif %}>
           {{ t("nav.exports") }}
         </a>
-        <a class="system-tab {% if module == 'references' %}active{% endif %}"
+        <a class="system-tab {% if module in ['references', 'exports'] %}active{% endif %}"
            href="{{ url_for('references.references_home') }}"
-           {% if module == 'references' %}aria-current="page"{% endif %}>
+           {% if module in ['references', 'exports'] %}aria-current="page"{% endif %}>
           {{ t("nav.settings") }}
         </a>
       </nav>
@@ -61,7 +65,7 @@
         {% else %}
           <span class="user">{{ current_user.username }}</span>
         {% endif %}
-        <a class="logout" href="{{ url_for('auth.logout') }}">{{ t("nav.logout") }}</a>
+        <form class="logout-form" method="post" action="{{ url_for('auth.logout') }}"><button class="logout" type="submit">{{ t("nav.logout") }}</button></form>
       {% endif %}
     </div>
   </header>
@@ -72,21 +76,65 @@
           {% if module == "attendance" %}
             <section class="context-nav-group">
               <div class="context-nav-title">{{ t("nav.section.attendance") }}</div>
-              <a class="context-nav-item {% if module == 'attendance' %}active{% endif %}"
-                 href="{{ url_for('attendance.attendance_home') }}"
-                 {% if module == 'attendance' %}aria-current="page"{% endif %}>
-                <strong>{{ t("nav.attendance") }}</strong>
-                <span>{{ t("nav.attendance.subtitle") }}</span>
+              <a class="context-nav-item {% if attendance_view == 'details' %}active{% endif %}"
+                  href="{{ url_for('attendance.attendance_home', view='details', month=operating_month) }}"
+                 {% if attendance_view == 'details' %}aria-current="page"{% endif %}>
+                <strong>{{ t("attendance.details") }}</strong>
+                <span>{{ t("attendance.details_nav_hint") }}</span>
+              </a>
+              <a class="context-nav-item {% if attendance_view == 'collection' %}active{% endif %}"
+                  href="{{ url_for('attendance.attendance_home', view='collection', month=operating_month) }}"
+                 {% if attendance_view == 'collection' %}aria-current="page"{% endif %}>
+                <strong>{{ t("attendance.collection") }}</strong>
+                <span>{{ t("attendance.collection_nav_hint") }}</span>
+              </a>
+              <a class="context-nav-item {% if attendance_view == 'monthly_exemptions' %}active{% endif %}"
+                  href="{{ url_for('attendance.attendance_home', view='monthly_exemptions', month=operating_month) }}"
+                 {% if attendance_view == 'monthly_exemptions' %}aria-current="page"{% endif %}>
+                <strong>{{ t("attendance.monthly_exemptions") }}</strong>
+                <span>{{ t("attendance.monthly_exemptions_nav_hint") }}</span>
+              </a>
+              <a class="context-nav-item {% if attendance_view == 'policies' %}active{% endif %}"
+                  href="{{ url_for('attendance.attendance_home', view='policies', month=operating_month) }}"
+                 {% if attendance_view == 'policies' %}aria-current="page"{% endif %}>
+                <strong>{{ t("attendance.long_term_policy") }}</strong>
+                <span>{{ t("attendance.long_term_policy_nav_hint") }}</span>
               </a>
             </section>
-          {% elif module in ["payroll", "exports"] %}
+          {% elif employee_list_mode %}
+            <section class="context-nav-group">
+              <div class="context-nav-title">{{ t("nav.section.employees") }}</div>
+              <a class="context-nav-item active" href="{{ url_for('employees.list_employees') }}" aria-current="page">
+                <strong>{{ t("employees.title") }}</strong>
+                <span>{{ t("employees.workspace_hint") }}</span>
+              </a>
+            </section>
+          {% elif module == "leave" %}
+            <section class="context-nav-group">
+              <div class="context-nav-title">{{ t("nav.section.leave") }}</div>
+              <a class="context-nav-item {% if request.args.get('view', 'leave') == 'leave' %}active{% endif %}" href="{{ url_for('leave.leave_home', view='leave') }}">
+                <strong>假期管理</strong>
+                <span>{{ t("leave.workspace_hint") }}</span>
+              </a>
+              <a class="context-nav-item {% if request.args.get('view') == 'injury' %}active{% endif %}" href="{{ url_for('leave.leave_home', view='injury') }}">
+                <strong>工傷管理</strong>
+                <span>工傷計薪、免考勤及醫療實銷</span>
+              </a>
+            </section>
+          {% elif module == "payroll" %}
             <section class="context-nav-group">
               <div class="context-nav-title">{{ t("nav.section.payroll_exports") }}</div>
               <a class="context-nav-item {% if endpoint == 'payroll.attendance_payroll' %}active{% endif %}"
-                 href="{{ url_for('payroll.attendance_payroll') }}"
+                  href="{{ url_for('payroll.attendance_payroll', year_month=operating_month) }}"
                  {% if endpoint == 'payroll.attendance_payroll' %}aria-current="page"{% endif %}>
                 <strong>{{ t("payroll.monthly_payroll") }}</strong>
                 <span>{{ t("nav.payroll.subtitle") }}</span>
+              </a>
+              <a class="context-nav-item {% if endpoint == 'payroll.mpf_contributions' %}active{% endif %}"
+                  href="{{ url_for('payroll.mpf_contributions', year_month=operating_month) }}"
+                 {% if endpoint == 'payroll.mpf_contributions' %}aria-current="page"{% endif %}>
+                <strong>{{ t("mpf.export_title") }}</strong>
+                <span>{{ t("mpf.export_nav_hint") }}</span>
               </a>
               <a class="context-nav-item {% if endpoint == 'payroll.final_payment' %}active{% endif %}"
                  href="{{ url_for('payroll.final_payment') }}"
@@ -94,25 +142,23 @@
                 <strong>{{ t("final_payment.title") }}</strong>
                 <span>{{ t("final_payment.nav_hint") }}</span>
               </a>
-              <a class="context-nav-item {% if module == 'exports' and request.args.get('section', 'attachments') == 'attachments' %}active{% endif %}"
-                 href="{{ url_for('exports.export_center', section='attachments') }}">
-                <strong>{{ t("exports.attachments") }}</strong>
-                <span>{{ t("exports.attachments_nav_hint") }}</span>
-              </a>
-              <a class="context-nav-item {% if module == 'exports' and request.args.get('section') == 'employees' %}active{% endif %}"
-                 href="{{ url_for('exports.export_center', section='employees') }}">
-                <strong>{{ t("exports.employee_records") }}</strong>
-                <span>{{ t("exports.employee_records_nav_hint") }}</span>
-              </a>
             </section>
-          {% elif module == "references" %}
+          {% elif module in ["references", "exports"] %}
             <section class="context-nav-group">
               <div class="context-nav-title">{{ t("nav.section.settings") }}</div>
-              <a class="context-nav-item active"
+              <a class="context-nav-item {% if module == 'references' %}active{% endif %}"
                  href="{{ url_for('references.references_home') }}"
                  aria-current="page">
                 <strong>{{ t("nav.references") }}</strong>
                 <span>{{ t("nav.references.subtitle") }}</span>
+              </a>
+              <a class="context-nav-item {% if module == 'exports' and request.args.get('section') == 'employees' %}active{% endif %}" href="{{ url_for('exports.export_center', section='employees') }}">
+                <strong>{{ t("exports.employee_records") }}</strong>
+                <span>{{ t("exports.employee_records_nav_hint") }}</span>
+              </a>
+              <a class="context-nav-item {% if module == 'exports' and request.args.get('section', 'attachments') == 'attachments' %}active{% endif %}" href="{{ url_for('exports.export_center', section='attachments') }}">
+                <strong>{{ t("exports.attachments") }}</strong>
+                <span>{{ t("exports.attachments_nav_hint") }}</span>
               </a>
             </section>
           {% elif module == "admin" and current_user.role == "admin" %}
@@ -123,12 +169,6 @@
                  {% if endpoint == 'admin.users' %}aria-current="page"{% endif %}>
                 <strong>{{ t("admin.users") }}</strong>
                 <span>{{ t("nav.admin.users.subtitle") }}</span>
-              </a>
-              <a class="context-nav-item {% if endpoint in ['admin.import_employees', 'admin.download_import_template', 'admin.confirm_import', 'admin.discard_import'] %}active{% endif %}"
-                 href="{{ url_for('admin.import_employees') }}"
-                 {% if endpoint in ['admin.import_employees', 'admin.download_import_template', 'admin.confirm_import', 'admin.discard_import'] %}aria-current="page"{% endif %}>
-                <strong>{{ t("admin.import") }}</strong>
-                <span>{{ t("nav.admin.import.subtitle") }}</span>
               </a>
               <a class="context-nav-item {% if endpoint == 'admin.audit' %}active{% endif %}"
                  href="{{ url_for('admin.audit') }}"
@@ -156,6 +196,26 @@
     </main>
   </div>
   <script>
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
+    document.querySelectorAll('form[method="post"], form[method="POST"]').forEach((form) => {
+      if (form.querySelector('input[name="_csrf_token"]')) return;
+      const token = document.createElement("input");
+      token.type = "hidden";
+      token.name = "_csrf_token";
+      token.value = csrfToken;
+      form.prepend(token);
+    });
+    const nativeFetch = window.fetch.bind(window);
+    window.fetch = (input, init = {}) => {
+      const method = String(init.method || "GET").toUpperCase();
+      const target = typeof input === "string" ? new URL(input, window.location.href) : new URL(input.url, window.location.href);
+      if (target.origin === window.location.origin && !["GET", "HEAD", "OPTIONS", "TRACE"].includes(method)) {
+        const headers = new Headers(init.headers || {});
+        headers.set("X-CSRFToken", csrfToken);
+        init = { ...init, headers };
+      }
+      return nativeFetch(input, init);
+    };
     document.querySelectorAll("form").forEach((form) => {
       form.setAttribute("autocomplete", "off");
     });

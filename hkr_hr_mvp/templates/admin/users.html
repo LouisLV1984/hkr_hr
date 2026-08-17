@@ -22,13 +22,15 @@
         <tr>
           <th>{{ t("auth.username") }}</th>
           <th>{{ t("admin.role") }}</th>
-          <th>{{ t("common.status") }}</th>
+          <th>{{ t("admin.account_status") }}</th>
+          <th>{{ t("admin.recent_activity") }}</th>
           <th>{{ t("admin.created_date") }}</th>
           <th>{{ t("common.actions") }}</th>
         </tr>
       </thead>
       <tbody>
-        {% for user in users %}
+        {% for row in user_rows %}
+          {% set user = row.user %}
           <tr>
             <td>
               <strong>{{ user.username }}</strong>
@@ -36,11 +38,26 @@
             </td>
             <td>{{ option_t("role", user.role, user.role) }}</td>
             <td><span class="flag {{ 'ok' if user.active else 'danger' }}">{{ t("admin.status_enabled") if user.active else t("admin.status_disabled") }}</span></td>
+            <td>
+              {% if row.activity_kind == "online" %}
+                <span class="account-presence online"><i></i>{{ t("admin.online") }}</span>
+              {% elif row.activity_kind == "minutes" %}
+                {{ t("admin.minutes_ago", count=row.activity_value) }}
+              {% elif row.activity_kind == "hours" %}
+                {{ t("admin.hours_ago", count=row.activity_value) }}
+              {% elif row.activity_kind == "days" %}
+                {{ t("admin.days_ago", count=row.activity_value) }}
+              {% elif row.activity_kind == "date" %}
+                {{ row.activity_value }}
+              {% else %}
+                <span class="muted">{{ t("admin.never_active") }}</span>
+              {% endif %}
+            </td>
             <td>{{ user.created_at.strftime("%Y-%m-%d") }}</td>
             <td><button class="mini-btn" type="button" data-dialog-open="manage-user-{{ user.id }}">{{ t("admin.manage_user") }}</button></td>
           </tr>
         {% else %}
-          <tr><td colspan="5" class="empty-cell">{{ t("common.not_set") }}</td></tr>
+          <tr><td colspan="6" class="empty-cell">{{ t("common.not_set") }}</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -67,7 +84,6 @@
 {% for user in users %}
   <dialog class="app-dialog" id="manage-user-{{ user.id }}">
     <form class="dialog-panel stack-form" method="post">
-      <input type="hidden" name="action" value="update">
       <input type="hidden" name="user_id" value="{{ user.id }}">
       <div class="section-head">
         <div><h2>{{ t("admin.manage_user") }}</h2><p>{{ user.username }}</p></div>
@@ -84,10 +100,39 @@
       {% endif %}
       <label><span>{{ t("admin.reset_password") }}</span><input type="password" name="password" autocomplete="new-password" placeholder="{{ t('admin.leave_password_blank') }}"></label>
       <div class="dialog-actions">
+        {% if user.id != current_user.id %}
+          <button class="ghost-btn danger-text" type="button" data-user-delete-open>{{ t("admin.delete_user") }}</button>
+        {% endif %}
         <button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button>
-        <button class="primary-btn" type="submit">{{ t("common.save") }}</button>
+        <button class="primary-btn" type="submit" name="action" value="update">{{ t("common.save") }}</button>
       </div>
+      {% if user.id != current_user.id %}
+        <div class="danger-zone" data-user-delete-confirm hidden>
+          <p>{{ t("admin.delete_user_confirm", username=user.username) }}</p>
+          <div class="dialog-actions">
+            <button class="ghost-btn" type="button" data-user-delete-cancel>{{ t("common.cancel") }}</button>
+            <button class="danger-btn" type="submit" name="action" value="delete">{{ t("admin.confirm_delete_user") }}</button>
+          </div>
+        </div>
+      {% endif %}
     </form>
   </dialog>
 {% endfor %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.querySelectorAll("[data-user-delete-open]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const panel = button.closest("form")?.querySelector("[data-user-delete-confirm]");
+      if (panel) panel.hidden = false;
+    });
+  });
+  document.querySelectorAll("[data-user-delete-cancel]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const panel = button.closest("[data-user-delete-confirm]");
+      if (panel) panel.hidden = true;
+    });
+  });
+</script>
 {% endblock %}

@@ -6,39 +6,27 @@ from flask import (
     Blueprint,
     abort,
     current_app,
-    flash,
-    redirect,
     render_template,
     request,
-    url_for,
 )
-from flask_login import current_user, login_required
+from flask_login import login_required
 from markdown import Markdown
 from markupsafe import Markup
-from sqlalchemy import and_, or_
-
 from models import (
     AttendanceMonthlySummary,
     Employee,
     EmployeeCertificate,
     EmployeeIdentity,
-    EmployeeTaskNote,
     EmployeeVisa,
-    db,
 )
-from tools.hr_core import current_month, parse_year_month, write_audit
+from tools.completeness import employee_readiness
+from tools.hr_core import current_month, parse_year_month
 from tools.payroll_engine import calculate_payroll
 from tools.releases import RELEASES
 
 
 dashboard_bp = Blueprint("dashboard", __name__)
 GUIDE_FILENAME = "操作指南.md"
-TASK_TYPES = {
-    "missing_salary": ("缺薪酬資料", "danger"),
-    "missing_staff_record": ("缺 Staff Record", "warning"),
-    "missing_signed_contract": ("缺已簽署合同", "warning"),
-}
-TASK_PROGRESS = {"pending", "in_progress", "waiting"}
 
 
 def guide_path():
@@ -86,90 +74,48 @@ def dashboard():
     payroll_unready_count = sum(
         1 for row in payroll_rows if row.get("blockers")
     )
-    tasks = []
-    for employee in active_employees:
-        if not employee.current_salary:
-            tasks.append(
-                {
-                    "employee": employee,
-                    "code": "missing_salary",
-                    "label": TASK_TYPES["missing_salary"][0],
-                    "kind": TASK_TYPES["missing_salary"][1],
-                }
-            )
-        active_categories = {
-            document.category
-            for document in employee.documents
-            if document.status == "active"
-        }
-        if "staff_record" not in active_categories:
-            tasks.append(
-                {
-                    "employee": employee,
-                    "code": "missing_staff_record",
-                    "label": TASK_TYPES["missing_staff_record"][0],
-                    "kind": TASK_TYPES["missing_staff_record"][1],
-                }
-            )
-        if "signed_contract" not in active_categories:
-            tasks.append(
-                {
-                    "employee": employee,
-                    "code": "missing_signed_contract",
-                    "label": TASK_TYPES["missing_signed_contract"][0],
-                    "kind": TASK_TYPES["missing_signed_contract"][1],
-                }
-            )
-
-    notes = (
-        EmployeeTaskNote.query.filter(
-            EmployeeTaskNote.employee_id.in_(
-                [employee.id for employee in active_employees]
-            )
-        )
-        .order_by(EmployeeTaskNote.created_at.desc())
-        .all()
-        if active_employees
-        else []
-    )
-    notes_by_task = {}
-    for note in notes:
-        notes_by_task.setdefault(
-            (note.employee_id, note.task_code),
-            [],
-        ).append(note)
-    for task in tasks:
-        task["notes"] = notes_by_task.get(
-            (task["employee"].id, task["code"]),
-            [],
-        )
-        task["progress"] = (
-            task["notes"][0].progress if task["notes"] else "pending"
-        )
-    task_type = request.args.get("task_type", "")
-    task_progress = request.args.get("task_progress", "")
-    task_search = request.args.get("task_q", "").strip().casefold()
-    if task_type in TASK_TYPES:
-        tasks = [task for task in tasks if task["code"] == task_type]
-    if task_progress in TASK_PROGRESS:
-        tasks = [
-            task for task in tasks if task["progress"] == task_progress
-        ]
-    if task_search:
-        tasks = [
-            task
-            for task in tasks
-            if task_search
-            in (
-                f"{task['employee'].employee_no} "
-                f"{task['employee'].display_name}"
-            ).casefold()
-        ]
-
-    expected = [
+    month_employees = [
         employee
         for employee in Employee.query.all()
         if employee.employed_during(month_start, month_end)
+    ]
+    summaries = AttendanceMonthlySummary.query.filter_by(
+        year_month=year_month,
+    ).all()
+    summaries_by_employee = {row.employee_id: row for row in summaries}
+    payroll_by_employee = {
+        row["employee"].id: row
+        for row in payroll_rows
+    }
+    all_readiness_rows = [
+        employee_readiness(
+            employee,
+            year_month,
+            payroll_row=payroll_by_employee.get(employee.id),
+            summary=summaries_by_employee.get(employee.id),
+        )
+        for employee in month_employees
+    ]
+    readiness_rows = [row for row in all_readiness_rows if row["has_issue"]]
+    readiness_total_count = len(readiness_rows)
+    employee_data_issue_count = sum(
+        1
+        for row in all_readiness_rows
+        if any(not item["ok"] for item in row["employee_data"])
+    )
+    attendance_issue_count = sum(
+        1 for row in all_readiness_rows if not row["attendance"]["ok"]
+    )
+    payroll_issue_count = sum(
+        1
+        for row in all_readiness_rows
+        if any(not item["ok"] for item in row["payroll"])
+    )
+
+    expected = [
+        row["employee"]
+        for row in all_readiness_rows
+        if row["attendance"]["code"] != "not_required"
     ]
     received_ids = {
         row.employee_id
@@ -219,6 +165,16 @@ def dashboard():
                 "date": visa.expiry_date,
             }
         )
+    today = date.today()
+    for alert in expiry_alerts:
+        alert["days_remaining"] = (alert["date"] - today).days
+        alert["severity"] = (
+            "expired"
+            if alert["days_remaining"] < 0
+            else "urgent"
+            if alert["days_remaining"] <= 30
+            else "warning"
+        )
     expiry_alerts.sort(key=lambda item: item["date"] or date.max)
 
     return render_template(
@@ -229,57 +185,10 @@ def dashboard():
         payroll_unready_count=payroll_unready_count,
         attendance_expected=len(expected),
         attendance_received=len(received_ids.intersection({item.id for item in expected})),
-        tasks=tasks,
-        task_types=TASK_TYPES,
-        task_progress_options=("pending", "in_progress", "waiting"),
-        task_filters={
-            "type": task_type,
-            "progress": task_progress,
-            "q": request.args.get("task_q", "").strip(),
-        },
-        expiry_alerts=expiry_alerts[:20],
-    )
-
-
-@dashboard_bp.route(
-    "/dashboard/tasks/<int:employee_id>/<task_code>/notes",
-    methods=["POST"],
-)
-@login_required
-def add_task_note(employee_id, task_code):
-    employee = db.get_or_404(Employee, employee_id)
-    if task_code not in TASK_TYPES:
-        abort(400)
-    progress = request.form.get("progress", "pending")
-    note_text = request.form.get("note", "").strip()
-    if progress not in TASK_PROGRESS or not note_text:
-        flash("請選擇進度並填寫備註。", "error")
-    else:
-        note = EmployeeTaskNote(
-            employee=employee,
-            task_code=task_code,
-            progress=progress,
-            note=note_text,
-            created_by=current_user.id,
-        )
-        db.session.add(note)
-        db.session.flush()
-        write_audit(
-            "task_note_added",
-            "EmployeeTaskNote",
-            note.id,
-            employee_id=employee.id,
-            detail=f"{TASK_TYPES[task_code][0]}：{progress}",
-        )
-        db.session.commit()
-        flash("待辦進度備註已保存。", "success")
-    return redirect(
-        url_for(
-            "dashboard.dashboard",
-            month=request.form.get("month") or current_month(),
-            task_type=request.form.get("task_type", ""),
-            task_progress=request.form.get("task_progress", ""),
-            task_q=request.form.get("task_q", ""),
-        )
-        + "#tasks"
+        readiness_total_count=readiness_total_count,
+        employee_data_issue_count=employee_data_issue_count,
+        attendance_issue_count=attendance_issue_count,
+        payroll_issue_count=payroll_issue_count,
+        expiry_alerts=expiry_alerts,
+        open_panel=request.args.get("panel", ""),
     )

@@ -1,33 +1,4 @@
 {% extends "base.html" %}
-{% macro timeline_value(change, value) -%}
-  {%- if value is none -%}
-    {{ t("common.not_set") }}
-  {%- elif change.is_boolean -%}
-    {{ t("common.yes") if value else t("common.no") }}
-  {%- elif change.option_category -%}
-    {{ option_t(change.option_category, value, value) }}
-  {%- else -%}
-    {{ value }}
-  {%- endif -%}
-{%- endmacro %}
-{% macro timeline_entry(item, date_format="%Y-%m-%d %H:%M") -%}
-  <li>
-    <time>{{ item.date.strftime(date_format) }}</time>
-    <div>
-      <strong>{{ message_t(item.title) }}</strong>
-      {% if item.detail %}<p>{{ item.detail }}</p>{% endif %}
-      {% for change in item.changes %}
-        <small class="timeline-change">
-          <b>{{ t(change.label_key) }}</b>
-          {{ timeline_value(change, change.before) }}
-          <span aria-hidden="true">→</span>
-          {{ timeline_value(change, change.after) }}
-        </small>
-      {% endfor %}
-      {% if item.author %}<small class="timeline-author">{{ item.author }}</small>{% endif %}
-    </div>
-  </li>
-{%- endmacro %}
 {% macro quick_reference_label(label, list_code, target_name, value_field="id") -%}
   <span class="field-label-row"><span>{{ label }}</span></span>
   <button class="quick-add-reference" type="button" hidden
@@ -42,6 +13,7 @@
 {% block content %}
 {% set assignment = employee.current_assignment %}
 {% set salary = employee.current_salary %}
+{% set mpf = employee.current_mpf %}
 {% set period = employee.current_period %}
 {% set assignment_position_ids = assignment.positions|map(attribute='position_id')|list if assignment else [] %}
 {% set mobile_region = employee.mobile_region_code or "+852" %}
@@ -62,13 +34,7 @@
       <span>{{ t("common.project") }}：{% if assignment %}{{ project_t(assignment.project, t("common.unassigned")) }}{% else %}{{ t("employee.assignment_not_created") }}{% endif %}</span>
       {% if salary %}<span>{{ salary.currency }} {{ fmt_money(salary.amount) }} / {{ t("employee.monthly") if salary.salary_basis == "monthly" else t("employee.daily") }}</span>{% endif %}
     </div>
-    <div class="warning-row">{% for item in missing %}<span class="flag danger">{{ message_t(item) }}</span>{% endfor %}</div>
-  </div>
-  <div class="profile-actions">
-    <a class="secondary-btn" href="{{ url_for('documents.new_document', employee_id=employee.id) }}">{{ t("documents.upload_title") }}</a>
-    <a class="primary-btn" href="{{ url_for('documents.generate_contract', employee_id=employee.id) }}">{{ t("contract.generate") }}</a>
-    <a class="secondary-btn" href="{{ url_for('leave.leave_home', employee_id=employee.id) }}">{{ t("employee.annual_leave") }}</a>
-    <a class="ghost-btn" href="{{ url_for('documents.employee_document_bundle', employee_id=employee.id) }}">{{ t("exports.attachments") }}</a>
+    <div class="warning-row">{% for item in missing %}<span class="flag danger">{{ t(item) }}</span>{% endfor %}</div>
   </div>
 </section>
 
@@ -77,9 +43,10 @@
   <button data-tab="personal">{{ t("employee.personal") }}</button>
   <button data-tab="employment">{{ t("employee.employment") }}</button>
   <button data-tab="credentials">{{ t("employee.credentials") }}</button>
-  <button data-tab="documents">{{ t("employee.documents") }}</button>
+  <button data-tab="documents">{{ t("employee.contracts_documents") }}</button>
+  <button data-tab="leave">{{ t("leave.title") }}</button>
   <button data-tab="attendance">{{ t("employee.attendance") }}</button>
-  <button data-tab="leave">{{ t("employee.confirmation_termination") }}</button>
+  <button data-tab="employment_status">{{ t("employee.confirmation_termination") }}</button>
 </nav>
 
 <section class="profile-tab-panel active" data-panel="overview">
@@ -90,13 +57,11 @@
         <div><dt>{{ t("employees.contact") }}</dt><dd>{{ employee.mobile_region_code or "" }} {{ employee.mobile_number or "-" }}</dd></div>
         <div><dt>{{ t("employee.email") }}</dt><dd>{{ employee.email or "-" }}</dd></div>
         <div><dt>{{ t("employee.address") }}</dt><dd>{{ employee.residential_address or "-" }}</dd></div>
-        <div><dt>{{ t("employee.bank") }}</dt><dd>{{ employee.bank_name or "-" }}</dd></div>
+        <div><dt>{{ t("employee.bank") }}</dt><dd>{{ current_bank.bank_name if current_bank else employee.bank_name or "-" }}</dd></div>
         <div><dt>{{ t("employee.bank_account") }}</dt><dd>{{ masked_bank }}</dd></div>
-        <div><dt>MPF</dt><dd>{{ option_t("mpf_mode", employee.mpf_mode, employee.mpf_mode) }}</dd></div>
+        <div><dt>MPF</dt><dd>{% if mpf %}{{ mpf.scheme.name if mpf.scheme else t("employee.mpf_exempt") }}{% else %}{{ t("common.not_set") }}{% endif %}</dd></div>
+        <div><dt>{{ t("attendance.monthly_required_field") }}</dt><dd>{{ t("attendance.required") if attendance_required_now else t("attendance.long_term_exempt") }}{% if attendance_policy %}<br><small>{{ t("attendance.effective_from_value", month=attendance_policy.effective_from_month) }}</small>{% endif %}</dd></div>
       </dl>
-      {% if employee.bank_changed_at and (not employee.bank_payroll_confirmed_at or employee.bank_payroll_confirmed_at < employee.bank_changed_at) %}
-        <form method="post" action="{{ url_for('employees.confirm_bank', employee_id=employee.id) }}"><button class="danger-btn" type="submit">{{ t("employee.bank_confirm") }}</button></form>
-      {% endif %}
     </article>
     <article class="panel">
       <div class="section-head"><h2>{{ t("employee.employment") }}</h2><button class="mini-btn" type="button" data-open-tab="employment">{{ t("common.edit") }}</button></div>
@@ -118,7 +83,7 @@
       </ul>
     </article>
     <article class="panel">
-      <div class="section-head"><h2>{{ t("employee.documents") }}</h2><button class="mini-btn" type="button" data-open-tab="documents">{{ t("common.open") }}</button></div>
+      <div class="section-head"><h2>{{ t("employee.contracts_documents") }}</h2><button class="mini-btn" type="button" data-open-tab="documents">{{ t("common.open") }}</button></div>
       <div class="document-card-grid">
         {% for code, label in document_categories.items() %}
           {% set docs = employee.documents|selectattr('category', 'equalto', code)|selectattr('status', 'equalto', 'active')|list %}
@@ -129,60 +94,20 @@
       </div>
     </article>
   </div>
-  <article class="panel profile-timeline">
-    <div class="section-head">
-      <div><h2>{{ t("employee.timeline") }}</h2><p>{{ t("employee.timeline_hint") }}</p></div>
-    </div>
-    <ol class="timeline-list">
-      {% for item in timeline[:10] %}
-        {{ timeline_entry(item) }}
-      {% else %}<li class="empty-cell">{{ t("common.not_set") }}</li>{% endfor %}
-    </ol>
-  </article>
 </section>
 
 <section class="profile-tab-panel" data-panel="personal" hidden>
-  <div class="two-column-work">
-    <article class="panel">
-      <div class="section-head"><div><h2>{{ t("employee.personal") }}</h2><p>{{ t("employee.personal_history_hint") }}</p></div></div>
-      <form class="form-grid" method="post" action="{{ url_for('employees.update_personal', employee_id=employee.id) }}">
-        <label><span>{{ t("employee.gender") }}</span><select name="gender"><option value="">{{ t("common.not_set") }}</option><option value="male" {% if employee.gender == "male" %}selected{% endif %}>{{ t("employee.gender_male") }}</option><option value="female" {% if employee.gender == "female" %}selected{% endif %}>{{ t("employee.gender_female") }}</option></select></label>
-        <label><span>{{ t("employee.birth_date") }}</span><input type="date" name="date_of_birth" value="{{ employee.date_of_birth.isoformat() if employee.date_of_birth else '' }}"></label>
-        <label class="wide"><span>{{ t("employees.contact") }}</span><div class="phone-inputs"><select name="mobile_region_code">{% for item in refs.phone_region %}{% set phone_code = item.display_name.split(' ')[0] %}<option value="{{ phone_code }}" {% if mobile_region == phone_code %}selected{% endif %}>{{ phone_code }}</option>{% endfor %}</select><input name="mobile_number" value="{{ employee.mobile_number or '' }}"></div></label>
-        <label><span>{{ t("employee.email") }}</span><input type="email" name="email" value="{{ employee.email or '' }}"></label>
-        <label class="wide"><span>{{ t("employee.address") }}</span><textarea name="residential_address">{{ employee.residential_address or '' }}</textarea></label>
-        <label>{{ quick_reference_label(t("employee.bank"), "bank", "bank_name", "display_name") }}<input name="bank_name" list="bank-options" value="{{ employee.bank_name or '' }}"><datalist id="bank-options">{% for item in refs.bank %}<option value="{{ item.display_name }}"></option>{% endfor %}</datalist></label>
-        <label><span>{{ t("employee.bank_account") }}</span><input name="bank_account_no" value="{{ employee.bank_account_no or '' }}"></label>
-        <label><span>{{ t("employee.emergency_contact") }}</span><input name="emergency_contact_name" value="{{ employee.emergency_contact_name or '' }}"></label>
-        <label><span>{{ t("employee.emergency_relation") }}</span><input name="emergency_contact_relation" value="{{ employee.emergency_contact_relation or '' }}"></label>
-        <label class="wide"><span>{{ t("employee.emergency_phone") }}</span><div class="phone-inputs"><select name="emergency_contact_region_code">{% for item in refs.phone_region %}{% set phone_code = item.display_name.split(' ')[0] %}<option value="{{ phone_code }}" {% if emergency_region == phone_code %}selected{% endif %}>{{ phone_code }}</option>{% endfor %}</select><input name="emergency_contact_phone" value="{{ employee.emergency_contact_phone or '' }}"></div></label>
-        <label>{{ quick_reference_label(t("employee.education"), "education_level", "education_level", "display_name") }}<select name="education_level"><option value="">{{ t("common.not_set") }}</option>{% for item in refs.education_level %}<option value="{{ item.display_name }}" {% if employee.education_level == item.display_name %}selected{% endif %}>{{ item.display_name }}</option>{% endfor %}</select></label>
-        <label><span>{{ t("employee.major") }}</span><input name="major" value="{{ employee.major or '' }}"></label>
-        <label><span>{{ t("employee.school") }}</span><input name="graduation_school" value="{{ employee.graduation_school or '' }}"></label>
-        <label><span>{{ t("employee.mpf_mode") }}</span><select name="mpf_mode"><option value="regular" {% if employee.mpf_mode == "regular" %}selected{% endif %}>{{ t("employee.mpf_regular") }}</option><option value="casual" {% if employee.mpf_mode == "casual" %}selected{% endif %}>{{ t("employee.mpf_casual") }}</option><option value="exempt" {% if employee.mpf_mode == "exempt" %}selected{% endif %}>{{ t("employee.mpf_exempt") }}</option></select></label>
-        <label class="check-line"><input type="checkbox" name="visa_required" value="1" {% if employee.visa_required %}checked{% endif %}><span>{{ t("employee.visa_required") }}</span></label>
-        <label class="wide"><span>{{ t("common.remarks") }}</span><textarea name="remarks">{{ employee.remarks or '' }}</textarea></label>
-        <button class="primary-btn" type="submit">{{ t("common.save") }}</button>
-      </form>
-    </article>
-    <article class="panel">
-      <h2>{{ t("employees.chinese_name") }} / {{ t("employees.english_name") }}</h2>
-      <form class="stack-form" method="post" action="{{ url_for('employees.update_name', employee_id=employee.id) }}" enctype="multipart/form-data">
-        <label><span>{{ t("employees.chinese_name") }}</span><input name="chinese_name" value="{{ employee.chinese_name or '' }}"></label>
-        <label><span>{{ t("employees.english_name") }}</span><input name="english_name" value="{{ employee.english_name or '' }}"></label>
-        <label><span>{{ t("common.reason") }}</span><select name="reason"><option value="correction">{{ t("employee.name_reason_correction") }}</option><option value="legal_change">{{ t("employee.name_reason_legal") }}</option></select></label>
-        <label><span>{{ t("employee.name_change_evidence") }}</span><input type="file" name="evidence"></label>
-        <button class="secondary-btn" type="submit">{{ t("common.save") }}</button>
-      </form>
-    </article>
-  </div>
+  {% include "employees/_personal_tab.html" %}
 </section>
 
 <section class="profile-tab-panel" data-panel="employment" hidden>
-  <p class="form-note">{{ t("employee.record_correction_hint") }}</p>
+  <div class="section-head">
+    <p class="form-note">{{ t("employee.record_correction_hint") }}</p>
+    <a class="secondary-btn" href="{{ url_for('documents.generate_contract', employee_id=employee.id) }}">{{ t("contract.generate") }}</a>
+  </div>
   <div class="current-state-grid">
     <article class="panel current-state-card">
-      <div class="section-head"><div><span class="eyebrow">{{ t("employee.current_assignment") }}</span><h2>{% if assignment and assignment.primary_position %}{{ assignment.primary_position.display_name }}{% elif assignment %}{{ t("employee.position_pending") }}{% else %}{{ t("employee.assignment_not_created") }}{% endif %}</h2></div></div>
+      <div class="section-head"><div><span class="eyebrow">{{ t("employee.current_assignment") }}</span><h2>{% if assignment and assignment.primary_position %}{{ assignment.primary_position.display_name }}{% elif assignment %}{{ t("employee.position_pending") }}{% else %}{{ t("employee.assignment_not_created") }}{% endif %}</h2></div><button class="mini-btn" type="button" data-dialog-open="add-assignment-dialog">{{ t("employee.add_assignment_record") }}</button></div>
       <dl class="detail-grid">
         <div><dt>{{ t("employee.effective_date") }}</dt><dd>{{ fmt_date(assignment.effective_from) if assignment else "-" }}</dd></div>
         <div><dt>{{ t("employee.work_region") }}</dt><dd>{{ assignment.region.display_name if assignment and assignment.region else "-" }}</dd></div>
@@ -197,20 +122,44 @@
         <div><dt>{{ t("common.evidence") }}</dt><dd>{% if assignment and assignment.evidence_document and assignment.evidence_document.status == "active" %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=assignment.evidence_document.id) }}">{{ assignment.evidence_document.original_filename }}</a>{% elif assignment %}<span class="flag danger">{{ t("common.pending") }}</span>{% else %}-{% endif %}</dd></div>
       </dl>
     </article>
+    <article class="panel current-state-card salary-mpf-card">
+      <div class="section-head"><div><span class="eyebrow">{{ t("employee.current_salary_mpf") }}</span><h2>{% if salary %}{{ salary.currency }} {{ fmt_money(salary.amount) }}{% else %}{{ t("common.not_set") }}{% endif %}</h2></div><div class="button-row"><button class="mini-btn" type="button" data-dialog-open="add-salary-dialog">{{ t("employee.add_salary_record") }}</button><button class="mini-btn" type="button" data-dialog-open="add-mpf-dialog">{{ t("employee.add_mpf_record") }}</button></div></div>
+      <div class="salary-mpf-current-grid">
+        <dl class="detail-grid">
+          <div><dt>{{ t("employee.salary_basis") }}</dt><dd>{% if salary %}{{ t("employee.monthly") if salary.salary_basis == "monthly" else t("employee.daily") }}{% else %}-{% endif %}</dd></div>
+          <div><dt>{{ t("employee.effective_date") }}</dt><dd>{{ fmt_date(salary.effective_from) if salary else "-" }}</dd></div>
+          <div><dt>{{ t("common.evidence") }}</dt><dd>{% if salary and salary.evidence_document and salary.evidence_document.status == "active" %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=salary.evidence_document.id) }}">{{ salary.evidence_document.original_filename }}</a>{% elif salary %}<span class="flag danger">{{ t("common.pending") }}</span>{% else %}-{% endif %}</dd></div>
+        </dl>
+        <dl class="detail-grid mpf-current-details">
+          <div><dt>{{ t("mpf.scheme_name") }}</dt><dd>{% if mpf and mpf.scheme %}{{ mpf.scheme.name }}{% else %}{{ t("employee.mpf_exempt") if mpf and mpf.is_exempt else "-" }}{% endif %}</dd></div>
+          <div><dt>Member Account No.</dt><dd>{{ mpf.member_account_no if mpf else "-" }}</dd></div>
+          <div><dt>{{ t("mpf.calculation_mode") }}</dt><dd>{% if mpf %}{{ t("employee.mpf_exempt") if mpf.is_exempt else t("mpf.mode_" ~ mpf.contribution_mode) }}{% else %}-{% endif %}</dd></div>
+          <div><dt>{{ t("employee.effective_date") }}</dt><dd>{{ fmt_date(mpf.effective_from) if mpf else "-" }}</dd></div>
+          <div><dt>{{ t("mpf.employer_account_no") }}</dt><dd>{{ mpf.scheme.employer_account_no if mpf and mpf.scheme else "-" }}</dd></div>
+          <div><dt>{{ t("mpf.payroll_group_no") }}</dt><dd>{{ mpf.scheme.payroll_group_no if mpf and mpf.scheme and mpf.scheme.payroll_group_no else "N/A" }}</dd></div>
+        </dl>
+      </div>
+    </article>
     <article class="panel current-state-card">
-      <div class="section-head"><div><span class="eyebrow">{{ t("employee.current_salary") }}</span><h2>{% if salary %}{{ salary.currency }} {{ fmt_money(salary.amount) }}{% else %}{{ t("common.not_set") }}{% endif %}</h2></div></div>
-      <dl class="detail-grid">
-        <div><dt>{{ t("employee.effective_date") }}</dt><dd>{{ fmt_date(salary.effective_from) if salary else "-" }}</dd></div>
-        <div><dt>{{ t("employee.salary_basis") }}</dt><dd>{% if salary %}{{ t("employee.monthly") if salary.salary_basis == "monthly" else t("employee.daily") }}{% else %}-{% endif %}</dd></div>
-        <div><dt>{{ t("common.evidence") }}</dt><dd>{% if salary and salary.evidence_document and salary.evidence_document.status == "active" %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=salary.evidence_document.id) }}">{{ salary.evidence_document.original_filename }}</a>{% elif salary %}<span class="flag danger">{{ t("common.pending") }}</span>{% else %}-{% endif %}</dd></div>
-      </dl>
+      <div class="section-head"><div><span class="eyebrow">{{ t("employee.current_allowances") }}</span><h2>{{ allowances|selectattr('status', 'equalto', 'active')|list|length }} {{ t("employee.allowance_items") }}</h2></div><button class="mini-btn" type="button" data-dialog-open="add-allowance-dialog">{{ t("employee.add_allowance") }}</button></div>
+      <ul class="compact-list">
+        {% for item in allowances if item.status == 'active' %}
+          <li><strong>{{ t("allowance." ~ item.allowance_type) }} · {{ item.currency }} {{ fmt_money(item.amount) }}</strong><span>{{ fmt_date(item.effective_from) }}{% if item.effective_to %} – {{ fmt_date(item.effective_to) }}{% else %} – {{ t("employee.long_term") }}{% endif %}{% if salary and item.currency != salary.currency %} · {{ t("employee.exchange_rate") }} {{ item.exchange_rate or '-' }}{% endif %}</span></li>
+        {% else %}<li><span>{{ t("common.not_set") }}</span></li>{% endfor %}
+      </ul>
+    </article>
+    <article class="panel current-state-card">
+      <div class="section-head"><div><span class="eyebrow">{{ t("employee.current_attendance_policy") }}</span><h2>{{ t("attendance.required") if attendance_required_now else t("attendance.long_term_exempt") }}</h2></div><button class="mini-btn" type="button" data-dialog-open="edit-attendance-policy-dialog">{{ t("common.edit") }}</button></div>
+      <dl class="detail-grid"><div><dt>{{ t("employee.effective_date") }}</dt><dd>{% if attendance_policy %}{{ t("attendance.effective_from_value", month=attendance_policy.effective_from_month) }}{% else %}{{ t("employee.default_rule") }}{% endif %}</dd></div><div><dt>{{ t("employee.policy_effect") }}</dt><dd>{{ t("attendance.monthly_required_field_hint") }}</dd></div></dl>
     </article>
   </div>
-  <div class="two-column-work">
-    <details class="panel action-panel">
-      <summary>{{ t("employee.adjust_assignment") if assignment else t("employee.create_assignment") }}</summary>
+  <div>
+    <dialog class="app-dialog record-editor-dialog" id="add-assignment-dialog">
+      <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.add_assignment', employee_id=employee.id) }}" enctype="multipart/form-data">
+      <div class="section-head record-editor-head"><h2>{{ t("employee.add_assignment_record") }}</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div>
+      <div class="record-editor-body">
       <p class="form-note">{{ t("employee.adjust_assignment_hint") if assignment else t("employee.create_assignment_hint") }} {{ t("employee.effective_hint") }}</p>
-      <form class="form-grid" method="post" action="{{ url_for('employees.add_assignment', employee_id=employee.id) }}" enctype="multipart/form-data">
+      <div class="form-grid">
         <label><span>{{ t("employee.effective_date") }} *</span><input type="date" name="effective_from" required></label>
         <label>{{ quick_reference_label(t("employee.work_region"), "work_region", "region_id") }}<select name="region_id"><option value="">{{ t("common.not_set") }}</option>{% for item in refs.work_region %}<option value="{{ item.id }}" {% if assignment and assignment.region_id == item.id %}selected{% endif %}>{{ item.display_name }}</option>{% endfor %}</select></label>
         <label>{{ quick_reference_label(t("common.project"), "projects", "project_id") }}<select name="project_id"><option value="">{{ t("common.unassigned") }}</option>{% for project in projects %}<option value="{{ project.id }}" {% if assignment and assignment.project_id == project.id %}selected{% endif %}>{{ project.name }}</option>{% endfor %}</select></label>
@@ -223,116 +172,73 @@
         <label><span>{{ t("employees.payroll_group") }}</span><select name="payroll_group">{% for code, label in payroll_groups %}<option value="{{ code }}" {% if (assignment and assignment.payroll_group == code) or (not assignment and employee.payroll_group == code) %}selected{% endif %}>{{ option_t("payroll_group", code, label) }}</option>{% endfor %}</select></label>
         <label><span>{{ t("employee.change_evidence") }}</span><input type="file" name="evidence"></label>
         <label class="wide"><span>{{ t("common.remarks") }}</span><textarea name="remarks"></textarea></label>
-        <button class="primary-btn" type="submit">{{ t("common.save") }}</button>
+      </div>
+      </div>
+      <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
       </form>
-    </details>
-    <details class="panel action-panel">
-      <summary>{{ t("employee.add_salary") }}</summary>
+    </dialog>
+    <dialog class="app-dialog record-editor-dialog" id="add-salary-dialog">
+      <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.add_salary', employee_id=employee.id) }}" enctype="multipart/form-data">
+      <div class="section-head record-editor-head"><h2>{{ t("employee.add_salary_record") }}</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div>
+      <div class="record-editor-body">
       <p class="form-note">{{ t("employee.effective_hint") }}</p>
-      <form class="stack-form" method="post" action="{{ url_for('employees.add_salary', employee_id=employee.id) }}" enctype="multipart/form-data">
+      <div class="stack-form">
         <label><span>{{ t("employee.effective_date") }} *</span><input type="date" name="effective_from" required></label>
         <label><span>{{ t("employee.salary_basis") }}</span><select name="salary_basis"><option value="monthly" {% if default_salary_basis == "monthly" %}selected{% endif %}>{{ t("employee.monthly") }}</option><option value="daily" {% if default_salary_basis == "daily" %}selected{% endif %}>{{ t("employee.daily") }}</option></select></label>
         <label>{{ quick_reference_label(t("common.currency"), "currency", "currency", "code") }}<select name="currency">{% for item in refs.currency %}<option value="{{ item.code }}" {% if default_currency == item.code %}selected{% endif %}>{{ item.display_name }}</option>{% endfor %}</select></label>
         <label><span>{{ t("common.amount") }}</span><input name="amount" data-money-input required></label>
         <label><span>{{ t("employee.change_evidence") }}</span><input type="file" name="evidence"></label>
         <label><span>{{ t("common.remarks") }}</span><textarea name="remarks"></textarea></label>
-        <button class="primary-btn" type="submit">{{ t("common.save") }}</button>
+      </div>
+      </div>
+      <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
       </form>
-    </details>
+    </dialog>
+    <dialog class="app-dialog record-editor-dialog" id="add-mpf-dialog">
+      <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.add_mpf_enrollment', employee_id=employee.id) }}">
+      <div class="section-head record-editor-head"><h2>{{ t("employee.add_mpf_record") }}</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div>
+      <div class="record-editor-body">
+      <p class="form-note">{{ t("mpf.employee_record_hint") }}</p>
+      <div class="stack-form">
+        <label><span>{{ t("employee.effective_date") }} *</span><input type="date" name="effective_from" value="{{ period.start_date.isoformat() if period and not employee.mpf_enrollments else '' }}" required></label>
+        <label><span>{{ t("mpf.scheme_name") }}</span><select name="mpf_selection" required><option value="">{{ t("common.not_set") }}</option>{% for scheme in mpf_schemes %}<option value="{{ scheme.id }}">{{ scheme.name }}</option>{% endfor %}</select></label>
+        <label><span>Member Account No.</span><input name="member_account_no" required></label>
+        <label class="check-line"><input type="checkbox" name="mpf_exempt"><span>{{ t("employee.mpf_exempt") }}</span></label>
+        <label><span>{{ t("common.remarks") }}</span><textarea name="remarks"></textarea></label>
+      </div>
+      </div>
+      <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
+      </form>
+    </dialog>
+    <dialog class="app-dialog record-editor-dialog" id="add-allowance-dialog">
+      <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.add_allowance', employee_id=employee.id) }}" enctype="multipart/form-data">
+        <div class="section-head record-editor-head"><div><h2>{{ t("employee.add_allowance") }}</h2><p>{{ t("employee.allowance_proration_hint") }}</p></div><button class="icon-btn" type="button" data-dialog-close>×</button></div>
+        <div class="record-editor-body">
+        <div class="form-grid">
+          <label><span>{{ t("employee.allowance_type") }} *</span><select name="allowance_type" required><option value="meal">{{ t("allowance.meal") }}</option><option value="transport">{{ t("allowance.transport") }}</option><option value="special">{{ t("allowance.special") }}</option></select></label>
+          <label><span>{{ t("employee.effective_date") }} *</span><input type="date" name="effective_from" required></label>
+          <label><span>{{ t("employee.effective_to") }} · {{ t("common.optional") }}</span><input type="date" name="effective_to"><small>{{ t("employee.allowance_end_optional") }}</small></label>
+          <label><span>{{ t("common.amount") }} *</span><input name="amount" data-money-input required></label>
+          <label><span>{{ t("common.currency") }} *</span><select name="currency" data-allowance-currency>{% for item in refs.currency %}<option value="{{ item.code }}" {% if default_currency == item.code %}selected{% endif %}>{{ item.display_name }}</option>{% endfor %}</select></label>
+          <label data-exchange-rate-field hidden><span>{{ t("employee.exchange_rate") }} *</span><input name="exchange_rate" inputmode="decimal"><small>{{ t("employee.exchange_rate_hint", currency=default_currency) }}</small></label>
+          <label><span>{{ t("common.evidence") }}</span><input type="file" name="evidence"></label>
+          <label class="wide"><span>{{ t("common.remarks") }}</span><textarea name="remarks"></textarea></label>
+        </div>
+        </div>
+        <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
+      </form>
+    </dialog>
+    <dialog class="app-dialog record-editor-dialog" id="edit-attendance-policy-dialog">
+      <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.update_personal', employee_id=employee.id) }}">
+        <input type="hidden" name="form_scope" value="attendance_policy">
+        <div class="section-head record-editor-head"><div><h2>{{ t("employee.current_attendance_policy") }}</h2><p>{{ t("attendance.monthly_required_field_hint") }}</p></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
+        <div class="record-editor-body"><label><span>{{ t("attendance.monthly_required_field") }}</span><select name="requires_attendance"><option value="1" {% if attendance_required_now %}selected{% endif %}>{{ t("common.yes") }}</option><option value="0" {% if not attendance_required_now %}selected{% endif %}>{{ t("common.no") }}</option></select></label></div>
+        <div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
+      </form>
+    </dialog>
   </div>
-  <div class="table-wrap">
-    <table class="dense-table">
-      <thead><tr><th>{{ t("employee.effective_date") }}</th><th>{{ t("common.project") }}</th><th>{{ t("common.position") }}</th><th>{{ t("employees.payroll_group") }}</th><th>{{ t("common.evidence") }}</th><th>{{ t("common.actions") }}</th></tr></thead>
-      <tbody>
-        {% for item in employee.assignments %}
-          <tr class="{{ 'muted-row' if item.status != 'active' else '' }}" data-record-context>
-            <td>{{ fmt_date(item.effective_from) }} – {{ fmt_date(item.effective_to) }}{% if item.status != "active" %}<br><span class="flag">{{ option_t("document_status", item.status, item.status) }}</span>{% endif %}</td>
-            <td>{{ project_t(item.project, "-") }}</td>
-            <td>{{ item.positions|map(attribute='position.display_name')|join('、') }}</td>
-            <td>{{ option_t("payroll_group", item.payroll_group, dict(payroll_groups).get(item.payroll_group, item.payroll_group)) }}</td>
-            <td>
-              {% if item.evidence_document and item.evidence_document.status == "active" %}
-                <a target="_blank" href="{{ url_for('documents.open_document', document_id=item.evidence_document.id) }}">{{ item.evidence_document.original_filename }}</a>
-              {% elif item.status == "active" %}
-                <form class="inline-upload compact-upload" method="post" action="{{ url_for('employees.supplement_assignment_evidence', assignment_id=item.id) }}" enctype="multipart/form-data"><input type="file" name="evidence" required><button class="mini-btn" type="submit">{{ t("employee.add_evidence") }}</button></form>
-              {% else %}-{% endif %}
-            </td>
-            <td>
-              {% if item.status == "active" %}
-                <button class="mini-btn" type="button" data-dialog-open="assignment-editor-{{ item.id }}" data-record-editor-trigger>{{ t("common.correct") }}</button>
-                <dialog class="app-dialog record-editor-dialog" id="assignment-editor-{{ item.id }}">
-                  <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.correct_assignment', assignment_id=item.id) }}" enctype="multipart/form-data">
-                    <div class="section-head record-editor-head">
-                      <div><h2>{{ t("common.correct") }} · {{ t("employee.employment") }}</h2><p>{{ fmt_date(item.effective_from) }}</p></div>
-                      <button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button>
-                    </div>
-                    <div class="record-editor-body">
-                    <label><span>{{ t("employee.effective_date") }}</span><input type="date" name="effective_from" value="{{ item.effective_from.isoformat() }}" required></label>
-                    <label>{{ quick_reference_label(t("employee.work_region"), "work_region", "region_id") }}<select name="region_id"><option value="">{{ t("common.not_set") }}</option>{% for ref in refs.work_region %}<option value="{{ ref.id }}" {% if item.region_id == ref.id %}selected{% endif %}>{{ ref.display_name }}</option>{% endfor %}</select></label>
-                    <label>{{ quick_reference_label(t("common.project"), "projects", "project_id") }}<select name="project_id"><option value="">{{ t("common.unassigned") }}</option>{% for project in projects %}<option value="{{ project.id }}" {% if item.project_id == project.id %}selected{% endif %}>{{ project.name }}</option>{% endfor %}</select></label>
-                    <label>{{ quick_reference_label(t("common.department"), "department", "department_id") }}<select name="department_id"><option value="">{{ t("common.not_set") }}</option>{% for ref in refs.department %}<option value="{{ ref.id }}" {% if item.department_id == ref.id %}selected{% endif %}>{{ ref.display_name }}</option>{% endfor %}</select></label>
-                    <label>{{ quick_reference_label(t("common.position"), "position", "position_ids") }}<select class="multi-select-source" name="position_ids" multiple hidden data-empty-label="{{ t('common.not_set') }}">{% set selected_positions = item.positions|map(attribute='position_id')|list %}{% for ref in refs.position %}<option value="{{ ref.id }}" {% if ref.id in selected_positions %}selected{% endif %}>{{ ref.display_name }}</option>{% endfor %}</select></label>
-                    <label><span>{{ t("employees.payroll_group") }}</span><select name="payroll_group">{% for code, label in payroll_groups %}<option value="{{ code }}" {% if item.payroll_group == code %}selected{% endif %}>{{ option_t("payroll_group", code, label) }}</option>{% endfor %}</select></label>
-                    <label>{{ quick_reference_label(t("employee.employer"), "employer", "employer_id") }}<select name="employer_id"><option value="">{{ t("common.not_set") }}</option>{% for ref in refs.employer %}<option value="{{ ref.id }}" {% if item.employer_id == ref.id %}selected{% endif %}>{{ ref.display_name }}</option>{% endfor %}</select></label>
-                    <label>{{ quick_reference_label(t("employee.payroll_entity"), "payroll_entity", "payroll_entity_id") }}<select name="payroll_entity_id"><option value="">{{ t("common.not_set") }}</option>{% for ref in refs.payroll_entity %}<option value="{{ ref.id }}" {% if item.payroll_entity_id == ref.id %}selected{% endif %}>{{ ref.display_name }}</option>{% endfor %}</select></label>
-                    <label>{{ quick_reference_label(t("employee.social_entity"), "social_insurance_entity", "social_insurance_entity_id") }}<select name="social_insurance_entity_id"><option value="">{{ t("common.not_set") }}</option>{% for ref in refs.social_insurance_entity %}<option value="{{ ref.id }}" {% if item.social_insurance_entity_id == ref.id %}selected{% endif %}>{{ ref.display_name }}</option>{% endfor %}</select></label>
-                    <label>{{ quick_reference_label(t("employee.dispatch_entity"), "labour_dispatch_entity", "labour_dispatch_entity_id") }}<select name="labour_dispatch_entity_id"><option value="">{{ t("common.not_set") }}</option>{% for ref in refs.labour_dispatch_entity %}<option value="{{ ref.id }}" {% if item.labour_dispatch_entity_id == ref.id %}selected{% endif %}>{{ ref.display_name }}</option>{% endfor %}</select></label>
-                    <label><span>{{ t("common.evidence") }}</span><input type="file" name="evidence"></label>
-                    <label><span>{{ t("common.remarks") }}</span><textarea name="remarks">{{ item.remarks or "" }}</textarea></label>
-                    </div>
-                    <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
-                  </form>
-                </dialog>
-                <form class="mini-form" method="post" action="{{ url_for('employees.withdraw_assignment', assignment_id=item.id) }}" data-confirm="{{ t('employee.withdraw_confirm') }}"><input type="hidden" name="reason" value="撤回錯誤記錄"><button class="mini-btn danger-text" type="submit">{{ t("common.withdraw") }}</button></form>
-              {% endif %}
-            </td>
-          </tr>
-        {% else %}<tr><td colspan="6" class="empty-cell">{{ t("common.not_set") }}</td></tr>{% endfor %}
-      </tbody>
-    </table>
-  </div>
-  <div class="table-wrap">
-    <table class="dense-table">
-      <thead><tr><th>{{ t("employee.effective_date") }}</th><th>{{ t("employee.salary_basis") }}</th><th>{{ t("common.amount") }}</th><th>{{ t("common.evidence") }}</th><th>{{ t("common.actions") }}</th></tr></thead>
-      <tbody>
-        {% for item in employee.salaries %}
-          <tr class="{{ 'muted-row' if item.status != 'active' else '' }}" data-record-context>
-            <td>{{ fmt_date(item.effective_from) }} – {{ fmt_date(item.effective_to) }}{% if item.status != "active" %}<br><span class="flag">{{ option_t("document_status", item.status, item.status) }}</span>{% endif %}</td>
-            <td>{{ t("employee.monthly") if item.salary_basis == "monthly" else t("employee.daily") }}</td>
-            <td>{{ item.currency }} {{ fmt_money(item.amount) }}</td>
-            <td>{% if item.evidence_document and item.evidence_document.status == "active" %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=item.evidence_document.id) }}">{{ item.evidence_document.original_filename }}</a>{% elif item.status == "active" %}<form class="inline-upload compact-upload" method="post" action="{{ url_for('employees.supplement_salary_evidence', salary_id=item.id) }}" enctype="multipart/form-data"><input type="file" name="evidence" required><button class="mini-btn" type="submit">{{ t("employee.add_evidence") }}</button></form>{% else %}-{% endif %}</td>
-            <td>
-              {% if item.status == "active" %}
-                <button class="mini-btn" type="button" data-dialog-open="salary-editor-{{ item.id }}" data-record-editor-trigger>{{ t("common.correct") }}</button>
-                <dialog class="app-dialog record-editor-dialog" id="salary-editor-{{ item.id }}">
-                  <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.correct_salary', salary_id=item.id) }}" enctype="multipart/form-data">
-                    <div class="section-head record-editor-head">
-                      <div><h2>{{ t("common.correct") }} · {{ t("employee.current_salary") }}</h2><p>{{ fmt_date(item.effective_from) }}</p></div>
-                      <button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button>
-                    </div>
-                    <div class="record-editor-body">
-                    <label><span>{{ t("employee.effective_date") }}</span><input type="date" name="effective_from" value="{{ item.effective_from.isoformat() }}" required></label>
-                    <label><span>{{ t("employee.salary_basis") }}</span><select name="salary_basis"><option value="monthly" {% if item.salary_basis == "monthly" %}selected{% endif %}>{{ t("employee.monthly") }}</option><option value="daily" {% if item.salary_basis == "daily" %}selected{% endif %}>{{ t("employee.daily") }}</option></select></label>
-                    <label>{{ quick_reference_label(t("common.currency"), "currency", "currency", "code") }}<select name="currency">{% for ref in refs.currency %}<option value="{{ ref.code }}" {% if item.currency == ref.code %}selected{% endif %}>{{ ref.display_name }}</option>{% endfor %}</select></label>
-                    <label><span>{{ t("common.amount") }}</span><input name="amount" value="{{ item.amount }}" data-money-input required></label>
-                    <label><span>{{ t("common.evidence") }}</span><input type="file" name="evidence"></label>
-                    <label><span>{{ t("common.remarks") }}</span><textarea name="remarks">{{ item.remarks or "" }}</textarea></label>
-                    </div>
-                    <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
-                  </form>
-                </dialog>
-                <form class="mini-form" method="post" action="{{ url_for('employees.withdraw_salary', salary_id=item.id) }}" data-confirm="{{ t('employee.withdraw_confirm') }}"><input type="hidden" name="reason" value="撤回錯誤記錄"><button class="mini-btn danger-text" type="submit">{{ t("common.withdraw") }}</button></form>
-              {% endif %}
-            </td>
-          </tr>
-        {% else %}<tr><td colspan="5" class="empty-cell">{{ t("common.not_set") }}</td></tr>{% endfor %}
-      </tbody>
-    </table>
-  </div>
-  <article class="panel domain-timeline">
-    <h2>{{ t("employee.employment_history") }}</h2>
-    <ol class="timeline-list">{% for entry in timeline if entry.kind in ["employment", "salary"] %}{{ timeline_entry(entry, "%Y-%m-%d") }}{% else %}<li class="empty-cell">{{ t("common.not_set") }}</li>{% endfor %}</ol>
-  </article>
+  <div class="section-head change-history-head"><div><h2>{{ t("employee.change_history") }}</h2><p>{{ t("employee.change_history_hint") }}</p></div></div>
+  {% include "employees/_change_history.html" %}
 </section>
 
 <section class="profile-tab-panel" data-panel="credentials" hidden>
@@ -342,8 +248,8 @@
       <p>{{ t("employee.credentials_edit_hint") }}</p>
     </div>
   </div>
-  <div class="credential-grid">
-    <article class="panel">
+  <div class="current-state-grid credential-current-grid">
+    <article class="panel current-state-card">
       <div class="section-head">
         <h2>{{ t("employee.identity_records") }}</h2>
         <button class="secondary-btn" type="button" data-dialog-open="identity-add-dialog">{{ t("employee.add_identity") }}</button>
@@ -364,7 +270,7 @@
         </dialog>
       </div>
       <div class="credential-records">
-        {% for item in employee.identities %}
+        {% for item in employee.identities if item.status == 'active' %}
           <article class="credential-record {{ 'is-voided' if item.status != 'active' else '' }}" data-record-context>
             <div class="credential-record-main">
               <div>
@@ -376,7 +282,6 @@
             <div class="row-actions">
               {% if item.document and item.document.status == "active" %}<a class="mini-btn" target="_blank" href="{{ url_for('documents.open_document', document_id=item.document.id) }}">{{ t("common.open") }}</a>{% elif item.status == "active" %}<span class="flag warn">{{ t("common.pending") }}</span>{% endif %}
               {% if item.status == "active" %}
-                <button class="mini-btn" type="button" data-dialog-open="identity-editor-{{ item.id }}" data-record-editor-trigger>{{ t("common.correct") }}</button>
                 <dialog class="app-dialog record-editor-dialog" id="identity-editor-{{ item.id }}">
                   <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.update_identity', identity_id=item.id) }}" enctype="multipart/form-data">
                     <div class="section-head record-editor-head"><div><h2>{{ t("common.correct") }} · {{ t("employee.identity_records") }}</h2><p>{{ item.identity_number }}</p></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
@@ -393,16 +298,13 @@
                     <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
                   </form>
                 </dialog>
-                <form class="mini-form" method="post" action="{{ url_for('employees.void_identity', identity_id=item.id) }}" data-confirm="{{ t('employee.credential_void_confirm') }}">
-                  <button class="mini-btn danger-text" type="submit">{{ t("common.void") }}</button>
-                </form>
               {% endif %}
             </div>
           </article>
         {% else %}<p class="empty-cell">{{ t("common.not_set") }}</p>{% endfor %}
       </div>
     </article>
-    <article class="panel">
+    <article class="panel current-state-card">
       <div class="section-head">
         <h2>{{ t("employee.certificate_records") }}</h2>
         <button class="secondary-btn" type="button" data-dialog-open="certificate-add-dialog">{{ t("employee.add_certificate") }}</button>
@@ -422,13 +324,12 @@
         </dialog>
       </div>
       <div class="credential-records">
-        {% for item in employee.certificates %}
+        {% for item in employee.certificates if item.status == 'active' %}
           <article class="credential-record {{ 'is-voided' if item.status != 'active' else '' }}" data-record-context>
             <div class="credential-record-main"><div><strong>{{ item.certificate_type.display_name }}</strong><span>{{ item.certificate_no or "-" }} · {{ t("employee.long_term") if item.is_long_term else fmt_date(item.expiry_date) }}</span></div><span class="flag">{{ option_t("document_status", item.status, item.status) }}</span></div>
             <div class="row-actions">
               {% if item.document and item.document.status == "active" %}<a class="mini-btn" target="_blank" href="{{ url_for('documents.open_document', document_id=item.document.id) }}">{{ t("common.open") }}</a>{% elif item.status == "active" %}<span class="flag warn">{{ t("common.pending") }}</span>{% endif %}
               {% if item.status == "active" %}
-                <button class="mini-btn" type="button" data-dialog-open="certificate-editor-{{ item.id }}" data-record-editor-trigger>{{ t("common.correct") }}</button>
                 <dialog class="app-dialog record-editor-dialog" id="certificate-editor-{{ item.id }}">
                   <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.update_certificate', certificate_id=item.id) }}" enctype="multipart/form-data">
                     <div class="section-head record-editor-head"><div><h2>{{ t("common.correct") }} · {{ t("employee.certificate_records") }}</h2><p>{{ item.certificate_no or item.certificate_type.display_name }}</p></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
@@ -444,17 +345,16 @@
                     <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
                   </form>
                 </dialog>
-                <form class="mini-form" method="post" action="{{ url_for('employees.void_certificate', certificate_id=item.id) }}" data-confirm="{{ t('employee.credential_void_confirm') }}"><button class="mini-btn danger-text" type="submit">{{ t("common.void") }}</button></form>
               {% endif %}
             </div>
           </article>
         {% else %}<p class="empty-cell">{{ t("common.not_set") }}</p>{% endfor %}
       </div>
     </article>
-    <article class="panel">
+    <article class="panel current-state-card">
       <div class="section-head">
         <h2>{{ t("employee.visa_records") }}</h2>
-        <button class="secondary-btn" type="button" data-dialog-open="visa-add-dialog">{{ t("employee.add_visa") }}</button>
+        <div class="button-row"><button class="secondary-btn" type="button" data-dialog-open="visa-add-dialog">{{ t("employee.add_visa") }}</button><button class="mini-btn" type="button" data-dialog-open="visa-requirement-dialog">{{ t("employee.edit_visa_requirement") }}</button></div>
         <dialog class="app-dialog record-editor-dialog" id="visa-add-dialog">
           <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.add_visa', employee_id=employee.id) }}" enctype="multipart/form-data">
             <div class="section-head record-editor-head"><div><h2>{{ t("employee.add_visa") }}</h2></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
@@ -470,13 +370,13 @@
         </dialog>
       </div>
       <div class="credential-records">
-        {% for item in employee.visas %}
+        <p class="current-card-note"><strong>{{ t("employee.visa_required") }}：</strong>{{ t("common.yes") if employee.visa_required else t("common.no") }}</p>
+        {% for item in employee.visas if item.status == 'active' %}
           <article class="credential-record {{ 'is-voided' if item.status != 'active' else '' }}" data-record-context>
             <div class="credential-record-main"><div><strong>{{ item.visa_category.display_name }}</strong><span>{{ item.visa_no or "-" }} · {{ fmt_date(item.issue_date) }} – {{ fmt_date(item.expiry_date) }}</span></div><span class="flag">{{ option_t("document_status", item.status, item.status) }}</span></div>
             <div class="row-actions">
               {% if item.document and item.document.status == "active" %}<a class="mini-btn" target="_blank" href="{{ url_for('documents.open_document', document_id=item.document.id) }}">{{ t("common.open") }}</a>{% elif item.status == "active" %}<span class="flag warn">{{ t("common.pending") }}</span>{% endif %}
               {% if item.status == "active" %}
-                <button class="mini-btn" type="button" data-dialog-open="visa-editor-{{ item.id }}" data-record-editor-trigger>{{ t("common.correct") }}</button>
                 <dialog class="app-dialog record-editor-dialog" id="visa-editor-{{ item.id }}">
                   <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.update_visa', visa_id=item.id) }}" enctype="multipart/form-data">
                     <div class="section-head record-editor-head"><div><h2>{{ t("common.correct") }} · {{ t("employee.visa_records") }}</h2><p>{{ item.visa_no or item.visa_category.display_name }}</p></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
@@ -491,17 +391,16 @@
                     <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
                   </form>
                 </dialog>
-                <form class="mini-form" method="post" action="{{ url_for('employees.void_visa', visa_id=item.id) }}" data-confirm="{{ t('employee.credential_void_confirm') }}"><button class="mini-btn danger-text" type="submit">{{ t("common.void") }}</button></form>
               {% endif %}
             </div>
           </article>
         {% else %}<p class="empty-cell">{{ t("common.not_set") }}</p>{% endfor %}
       </div>
     </article>
-    <article class="panel">
+    <article class="panel current-state-card">
       <div class="section-head">
         <h2>{{ t("employee.qualification_records") }}</h2>
-        <button class="secondary-btn" type="button" data-dialog-open="qualification-add-dialog">{{ t("employee.add_qualification") }}</button>
+        <div class="button-row"><button class="secondary-btn" type="button" data-dialog-open="qualification-add-dialog">{{ t("employee.add_qualification") }}</button><button class="mini-btn" type="button" data-dialog-open="education-editor-dialog">{{ t("employee.edit_education") }}</button></div>
         <dialog class="app-dialog record-editor-dialog" id="qualification-add-dialog">
           <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.add_qualification', employee_id=employee.id) }}" enctype="multipart/form-data">
             <div class="section-head record-editor-head"><div><h2>{{ t("employee.add_qualification") }}</h2></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
@@ -518,13 +417,13 @@
         </dialog>
       </div>
       <div class="credential-records">
-        {% for item in employee.qualifications %}
+        <div class="education-summary"><strong>{{ employee.education_level or t("common.not_set") }}</strong><span>{{ employee.graduation_school or "-" }}{% if employee.major %} · {{ employee.major }}{% endif %}</span></div>
+        {% for item in employee.qualifications if item.status == 'active' %}
           <article class="credential-record {{ 'is-voided' if item.status != 'active' else '' }}" data-record-context>
             <div class="credential-record-main"><div><strong>{{ t("documents.qualification_degree") if item.category == "degree" else t("documents.qualification_skill") }} · {{ item.qualification_name }}</strong><span>{{ item.certificate_no or "-" }} · {{ fmt_date(item.expiry_date) }}</span></div><span class="flag">{{ option_t("document_status", item.status, item.status) }}</span></div>
             <div class="row-actions">
               {% if item.document and item.document.status == "active" %}<a class="mini-btn" target="_blank" href="{{ url_for('documents.open_document', document_id=item.document.id) }}">{{ t("common.open") }}</a>{% elif item.status == "active" %}<span class="flag warn">{{ t("common.pending") }}</span>{% endif %}
               {% if item.status == "active" %}
-                <button class="mini-btn" type="button" data-dialog-open="qualification-editor-{{ item.id }}" data-record-editor-trigger>{{ t("common.correct") }}</button>
                 <dialog class="app-dialog record-editor-dialog" id="qualification-editor-{{ item.id }}">
                   <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.update_qualification', qualification_id=item.id) }}" enctype="multipart/form-data">
                     <div class="section-head record-editor-head"><div><h2>{{ t("common.correct") }} · {{ t("employee.qualification_records") }}</h2><p>{{ item.qualification_name }}</p></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
@@ -540,7 +439,6 @@
                     <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
                   </form>
                 </dialog>
-                <form class="mini-form" method="post" action="{{ url_for('employees.void_qualification', qualification_id=item.id) }}" data-confirm="{{ t('employee.credential_void_confirm') }}"><button class="mini-btn danger-text" type="submit">{{ t("common.void") }}</button></form>
               {% endif %}
             </div>
           </article>
@@ -548,10 +446,15 @@
       </div>
     </article>
   </div>
+  <dialog class="app-dialog record-editor-dialog" id="visa-requirement-dialog"><form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.update_personal', employee_id=employee.id) }}"><input type="hidden" name="form_scope" value="visa_requirement"><div class="section-head record-editor-head"><h2>{{ t("employee.edit_visa_requirement") }}</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div><div class="record-editor-body"><label class="check-line"><input type="checkbox" name="visa_required" value="1" {% if employee.visa_required %}checked{% endif %}><span>{{ t("employee.visa_required") }}</span></label></div><div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div></form></dialog>
+  <dialog class="app-dialog record-editor-dialog" id="education-editor-dialog"><form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.update_personal', employee_id=employee.id) }}"><input type="hidden" name="form_scope" value="education"><div class="section-head record-editor-head"><h2>{{ t("employee.edit_education") }}</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div><div class="record-editor-body form-grid"><label>{{ quick_reference_label(t("employee.education"), "education_level", "education_level", "display_name") }}<select name="education_level"><option value="">{{ t("common.not_set") }}</option>{% for item in refs.education_level %}<option value="{{ item.display_name }}" {% if employee.education_level == item.display_name %}selected{% endif %}>{{ item.display_name }}</option>{% endfor %}</select></label><label><span>{{ t("employee.major") }}</span><input name="major" value="{{ employee.major or '' }}"></label><label><span>{{ t("employee.school") }}</span><input name="graduation_school" value="{{ employee.graduation_school or '' }}"></label></div><div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div></form></dialog>
+  <div class="section-head change-history-head"><div><h2>{{ t("employee.credential_change_history") }}</h2><p>{{ t("employee.credential_change_history_hint") }}</p></div></div>
+  {% include "employees/_credential_history.html" %}
 </section>
 
 <section class="profile-tab-panel" data-panel="documents" hidden>
-  <div class="page-head compact"><div><h2>{{ t("employee.documents") }}</h2><p>{{ t("employee.document_status_hint") }}</p></div><div class="button-row"><a class="secondary-btn" href="{{ url_for('documents.new_document', employee_id=employee.id) }}">{{ t("documents.upload_title") }}</a><a class="primary-btn" href="{{ url_for('documents.generate_contract', employee_id=employee.id) }}">{{ t("contract.generate") }}</a></div></div>
+  <div class="page-head compact"><div><h2>{{ t("employee.contracts_documents") }}</h2><p>{{ t("documents.center_hint") }}</p></div><div class="button-row"><a class="secondary-btn" href="{{ url_for('documents.new_document', employee_id=employee.id, scope='general') }}">{{ t("documents.upload_general") }}</a><a class="ghost-btn" href="{{ url_for('documents.employee_document_bundle', employee_id=employee.id) }}">{{ t("exports.attachments") }}</a></div></div>
+  <p class="inline-note">{{ t("documents.domain_management_hint") }}</p>
   <div class="document-card-grid">
     {% for code, label in document_categories.items() %}
       {% set docs = employee.documents|selectattr('category', 'equalto', code)|list %}
@@ -576,7 +479,10 @@
             <td class="row-actions">
               <a class="mini-btn" target="_blank" href="{{ url_for('documents.open_document', document_id=document.id) }}">{{ t("common.open") }}</a>
               <a class="mini-btn" href="{{ url_for('documents.download_document', document_id=document.id) }}">{{ t("common.download") }}</a>
-              {% if document.status == "active" %}
+              {% set management_tab = document_management_tabs.get(document.id) %}
+              {% if management_tab %}
+                <a class="mini-btn" href="{{ url_for('employees.view_employee', employee_id=employee.id, tab=management_tab) }}">{{ t("documents.manage_in_module") }}</a>
+              {% elif document.status == "active" %}
                 <button class="mini-btn" type="button" data-dialog-open="document-replace-{{ document.id }}" data-record-editor-trigger>{{ t("documents.replace_file") }}</button>
                 <dialog class="app-dialog record-editor-dialog" id="document-replace-{{ document.id }}">
                   <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('documents.replace_document', document_id=document.id) }}" enctype="multipart/form-data">
@@ -601,8 +507,55 @@
       </tbody>
     </table>
   </div>
-  <h2>{{ t("contract.generate") }}</h2>
+  <h2>{{ t("documents.generated_contracts") }}</h2>
   <ul class="compact-list">{% for contract in contracts %}<li><a href="{{ url_for('documents.download_contract', contract_id=contract.id) }}">{{ contract.output_filename }}</a><span>{{ fmt_date(contract.contract_date) }} · {{ option_t("workflow_status", contract.status, contract.status) }}</span></li>{% else %}<li><span>{{ t("common.not_set") }}</span></li>{% endfor %}</ul>
+</section>
+
+<section class="profile-tab-panel" data-panel="leave" hidden>
+  <div class="page-head compact">
+    <div><h2>{{ t("leave.employee_detail_title") }}</h2><p>{{ t("leave.employee_detail_hint") }}</p></div>
+    <button class="primary-btn" type="button" data-dialog-open="add-leave-dialog">{{ t("leave.add_request") }}</button>
+  </div>
+  <div class="current-state-strip">
+    <div><span>{{ t("leave.comp_balance") }}</span><strong>{{ fmt_money(comp_leave.remaining) }} {{ t("leave.days") }}</strong></div>
+    <div><span>{{ t("leave.legacy_balance") }}</span><strong>{{ fmt_money(leave.legacy_remaining) }} {{ t("leave.days") }}</strong></div>
+    <div><span>{{ t("leave.current_balance") }}</span><strong>{{ fmt_money(leave.remaining) }} {{ t("leave.days") }}</strong></div>
+  </div>
+  <p class="inline-note">{{ t("leave.consume_priority") }}</p>
+
+  <div class="section-head"><div><h2>{{ t("leave.timeline") }}</h2><p>{{ t("leave.attendance_link_hint") }}</p></div><a class="secondary-btn" href="{{ url_for('leave.leave_home', view='injury', employee_id=employee.id) }}">前往工傷管理</a></div>
+  <div class="table-wrap">
+    <table class="dense-table">
+      <thead><tr><th>{{ t("leave.type") }}</th><th>{{ t("leave.period") }}</th><th>{{ t("leave.days") }}</th><th>{{ t("common.evidence") }}</th><th>{{ t("common.status") }}</th><th>{{ t("common.actions") }}</th></tr></thead>
+      <tbody>
+        {% for item in leave_records %}
+          <tr class="{{ 'muted-row' if item.status != 'active' else '' }}"><td>{{ t("leave.type_" ~ item.leave_type) }}</td><td>{{ fmt_date(item.leave_date) }} – {{ fmt_date(item.end_date or item.leave_date) }}</td><td>{{ item.days }}</td><td>{% if item.evidence_document %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=item.evidence_document.id) }}">{{ item.evidence_document.original_filename }}</a>{% elif item.leave_type == 'sick' and item.status == 'active' %}<span class="flag danger">{{ t("leave.sick_evidence_missing") }}</span>{% else %}-{% endif %}</td><td>{{ option_t("workflow_status", item.status, item.status) }}</td><td><a class="mini-btn" href="{{ url_for('leave.leave_home', employee_id=employee.id) }}#employee-leave">{{ t("common.open") }}</a></td></tr>
+        {% endfor %}
+        {% for item in work_injury_periods %}
+          <tr class="{{ 'muted-row' if item.status != 'active' else '' }}"><td>{{ t("work_injury.title") }}</td><td>{{ fmt_date(item.payroll_start_date) }} – {{ fmt_date(item.payroll_end_date) if item.payroll_end_date else t("employee.long_term") }}</td><td>{{ '4/5' if item.pay_mode == 'four_fifths' else '全薪' }} · {{ t("work_injury.attendance_exempt") }}</td><td>{% if item.evidence_document %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=item.evidence_document.id) }}">{{ item.evidence_document.original_filename }}</a>{% else %}-{% endif %}</td><td>{{ option_t("workflow_status", item.status, item.status) }}</td><td><a class="mini-btn" href="{{ url_for('leave.leave_home', view='injury', employee_id=employee.id) }}">{{ t("common.open") }}</a></td></tr>
+        {% endfor %}
+        {% if not leave_records and not work_injury_periods %}<tr><td colspan="6" class="empty-cell">{{ t("common.not_set") }}</td></tr>{% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <dialog class="app-dialog record-editor-dialog" id="add-leave-dialog">
+    <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.add_annual_leave', employee_id=employee.id) }}" enctype="multipart/form-data">
+      <div class="section-head"><div><h2>{{ t("leave.add_request") }}</h2><p>{{ t("leave.only_three_types") }}</p></div><button class="icon-btn" type="button" data-dialog-close>×</button></div>
+      <div class="form-grid">
+        <label><span>{{ t("leave.type") }} *</span><select name="leave_type" data-leave-type required><option value="annual">{{ t("leave.type_annual") }}</option><option value="sick">{{ t("leave.type_sick") }}</option><option value="unpaid">{{ t("leave.type_unpaid") }}</option></select></label>
+        <label><span>{{ t("leave.start_date") }} *</span><input type="date" name="start_date" required></label>
+        <label><span>{{ t("leave.end_date") }} *</span><input type="date" name="end_date" required></label>
+        <label><span>{{ t("leave.days") }}</span><input name="days" inputmode="decimal" placeholder="0.5"></label>
+        <label><span>{{ t("leave.start_session") }}</span><select name="start_session"><option value="am">AM</option><option value="pm">PM</option></select></label>
+        <label><span>{{ t("leave.end_session") }}</span><select name="end_session"><option value="pm">PM</option><option value="am">AM</option></select></label>
+        <label><span>{{ t("common.evidence") }}</span><input type="file" name="evidence"><small data-leave-rule>{{ t("leave.annual_rule") }}</small></label>
+        <label class="wide"><span>{{ t("common.remarks") }}</span><textarea name="remarks"></textarea></label>
+      </div>
+      <div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
+    </form>
+  </dialog>
+
 </section>
 
 <section class="profile-tab-panel" data-panel="attendance" hidden>
@@ -635,7 +588,7 @@
             <tbody>
               {% for segment in item.segments %}
                 <tr>
-                  <td>{% if segment.period_kind == "current_1_20" %}{{ t("attendance.current_period") }}{% elif segment.period_kind == "current_21_end_forecast" %}{{ t("attendance.current_forecast") }}{% elif segment.period_kind == "previous_21_end" %}{{ t("attendance.previous_tail") }}{% else %}{{ t("attendance.previous_forecast") }}{% endif %}</td>
+                  <td>{{ attendance_period_t(item.year_month, segment.period_kind) }}</td>
                   <td>{{ project_t(segment.project, t("common.unassigned")) }}</td>
                   <td>{{ segment.working_days }}</td>
                   <td>{{ segment.ot_hours }}</td>
@@ -665,21 +618,7 @@
   <article class="panel payroll-adjustment-panel">
     <div class="section-head">
       <div><h2>{{ t("employee.payroll_adjustments") }}</h2><p>{{ t("employee.payroll_adjustment_hint") }}</p></div>
-      <button class="secondary-btn" type="button" data-dialog-open="payroll-adjustment-add-dialog">{{ t("employee.add_payroll_adjustment") }}</button>
-      <dialog class="app-dialog record-editor-dialog" id="payroll-adjustment-add-dialog">
-        <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('payroll.add_adjustment', employee_id=employee.id) }}" enctype="multipart/form-data">
-          <div class="section-head record-editor-head"><div><h2>{{ t("employee.add_payroll_adjustment") }}</h2></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
-          <div class="record-editor-body">
-          <label><span>{{ t("common.month") }}</span><input type="month" name="year_month" value="{{ default_payroll_month }}" required></label>
-          <label><span>{{ t("employee.adjustment_name") }}</span><input name="label" required></label>
-          <label><span>{{ t("common.amount") }}</span><input name="amount" data-money-input required></label>
-          <label><span>{{ t("common.project") }}</span><select name="project_id"><option value="">{{ t("common.unassigned") }}</option>{% for project in projects %}<option value="{{ project.id }}">{{ project.name }}</option>{% endfor %}</select></label>
-          <label><span>{{ t("common.evidence") }}</span><input type="file" name="evidence"></label>
-          <label><span>{{ t("common.remarks") }}</span><textarea name="remarks"></textarea></label>
-          </div>
-          <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.add") }}</button></div>
-        </form>
-      </dialog>
+      <a class="secondary-btn" href="{{ url_for('payroll.attendance_payroll', year_month=default_payroll_month, employee_id=employee.id, status='all') }}">前往工資更正與一次性調整</a>
     </div>
     <div class="table-wrap flat">
       <table class="dense-table">
@@ -694,24 +633,7 @@
               <td>{% if adjustment.evidence_document %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=adjustment.evidence_document.id) }}">{{ adjustment.evidence_document.original_filename }}</a>{% else %}<span class="flag warn">{{ t("common.pending") }}</span>{% endif %}</td>
               <td>{{ option_t("document_status", adjustment.status, adjustment.status) }}</td>
               <td>
-                {% if adjustment.status == "active" %}
-                  <button class="mini-btn" type="button" data-dialog-open="payroll-adjustment-editor-{{ adjustment.id }}" data-record-editor-trigger>{{ t("common.correct") }}</button>
-                  <dialog class="app-dialog record-editor-dialog" id="payroll-adjustment-editor-{{ adjustment.id }}">
-                    <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('payroll.correct_adjustment', adjustment_id=adjustment.id) }}" enctype="multipart/form-data">
-                      <div class="section-head record-editor-head"><div><h2>{{ t("common.correct") }} · {{ t("employee.payroll_adjustments") }}</h2><p>{{ adjustment.label }}</p></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
-                      <div class="record-editor-body">
-                      <label><span>{{ t("common.month") }}</span><input type="month" name="year_month" value="{{ adjustment.year_month }}" required></label>
-                      <label><span>{{ t("employee.adjustment_name") }}</span><input name="label" value="{{ adjustment.label }}" required></label>
-                      <label><span>{{ t("common.amount") }}</span><input name="amount" value="{{ adjustment.amount }}" data-money-input required></label>
-                      <label><span>{{ t("common.project") }}</span><select name="project_id"><option value="">{{ t("common.unassigned") }}</option>{% for project in projects %}<option value="{{ project.id }}" {% if adjustment.project_id == project.id %}selected{% endif %}>{{ project.name }}</option>{% endfor %}</select></label>
-                      <label><span>{{ t("employee.replace_evidence_optional") }}</span><input type="file" name="evidence"></label>
-                      <label><span>{{ t("common.remarks") }}</span><textarea name="remarks">{{ adjustment.remarks or "" }}</textarea></label>
-                      </div>
-                      <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
-                    </form>
-                  </dialog>
-                  <form class="mini-form" method="post" action="{{ url_for('payroll.withdraw_adjustment', adjustment_id=adjustment.id) }}" data-confirm="{{ t('employee.withdraw_confirm') }}"><button class="mini-btn danger-text" type="submit">{{ t("common.withdraw") }}</button></form>
-                {% endif %}
+                <a class="mini-btn" href="{{ url_for('payroll.attendance_payroll', year_month=adjustment.year_month, employee_id=employee.id, status='all') }}">前往 Payroll</a>
               </td>
             </tr>
           {% else %}<tr><td colspan="7" class="empty-cell">{{ t("common.not_set") }}</td></tr>{% endfor %}
@@ -721,57 +643,8 @@
   </article>
 </section>
 
-<section class="profile-tab-panel" data-panel="leave" hidden>
-  <div class="page-head compact">
-    <div>
-      <h2>{{ t("employee.confirmation_termination") }}</h2>
-      <p>{{ t("employee.confirmation_termination_hint") }}</p>
-    </div>
-    <a class="secondary-btn" href="{{ url_for('leave.leave_home', employee_id=employee.id) }}">{{ t("leave.open_employee_leave") }}</a>
-  </div>
-  <div class="card-grid">
-    {% if employee.payroll_group == "management" %}
-      <article class="panel">
-        <h2>{{ t("employee.probation_end") }}</h2>
-        <form class="stack-form" method="post" action="{{ url_for('employees.update_probation', employee_id=employee.id) }}" enctype="multipart/form-data"><label><span>{{ t("employee.probation_end") }}</span><input type="date" name="probation_end_date" value="{{ period.probation_end_date.isoformat() if period and period.probation_end_date else '' }}"></label><label><span>{{ t("employee.confirmation_date") }}</span><input type="date" name="confirmation_date" value="{{ period.confirmation_date.isoformat() if period and period.confirmation_date else '' }}"></label><input type="file" name="evidence"><button class="secondary-btn" type="submit">{{ t("common.save") }}</button></form>
-      </article>
-    {% endif %}
-  </div>
-  <article class="panel termination-panel">
-    <div class="section-head"><div><h2>{{ t("employee.termination") }}</h2><p>{{ t("employee.termination_hint") }}</p></div></div>
-    {% if period and period.end_date %}
-      <div class="current-state-strip">
-        <div><span>{{ t("employee.last_working_day") }}</span><strong>{{ fmt_date(period.end_date) }}</strong></div>
-        <div><span>{{ t("common.reason") }}</span><strong>{{ option_t("termination_reason", period.termination_reason, period.termination_reason or "-") }}</strong></div>
-        <div><span>{{ t("employee.average_wage") }}</span><strong>{{ fmt_money(period.average_wage) }}</strong></div>
-        <div><span>{{ t("employee.payment_in_lieu") }}</span><strong>{{ fmt_money(period.payment_in_lieu) }}</strong></div>
-      </div>
-    {% endif %}
-    {% if employee.derived_status == "active" %}
-      <details class="action-panel" {% if not period or not period.end_date %}open{% endif %}>
-        <summary>{{ t("employee.correct_termination") if period and period.end_date else t("employee.terminate") }}</summary>
-        <form class="form-grid" method="post" action="{{ url_for('employees.terminate_employee', employee_id=employee.id) }}" enctype="multipart/form-data">
-          <label><span>{{ t("employee.last_working_day") }}</span><input type="date" name="end_date" value="{{ period.end_date.isoformat() if period and period.end_date else '' }}" required></label>
-          <label><span>{{ t("common.reason") }}</span><select name="reason">{% for code, label in termination_reasons %}<option value="{{ code }}" {% if period and period.termination_reason == code %}selected{% endif %}>{{ option_t("termination_reason", code, label) }}</option>{% endfor %}</select></label>
-          <label><span>{{ t("employee.average_wage") }}</span><input name="average_wage" value="{{ period.average_wage if period and period.average_wage is not none else average_wage.average }}" data-money-input><small>{{ t("employee.average_wage_hint", count=average_wage.count) }}</small></label>
-          <label><span>{{ t("employee.payment_in_lieu") }}</span><input name="payment_in_lieu" value="{{ period.payment_in_lieu if period and period.payment_in_lieu is not none else '' }}" data-money-input></label>
-          <label><span>{{ t("employee.severance") }}</span><input name="severance_payment" value="{{ period.severance_payment if period and period.severance_payment is not none else '' }}" data-money-input></label>
-          <label><span>{{ t("employee.long_service") }}</span><input name="long_service_payment" value="{{ period.long_service_payment if period and period.long_service_payment is not none else '' }}" data-money-input></label>
-          <label><span>{{ t("employee.termination_evidence") }}</span><input type="file" name="evidence"></label>
-          <button class="danger-btn" type="submit">{{ t("common.save") }}</button>
-        </form>
-      </details>
-      {% if period and period.end_date %}
-        <form method="post" action="{{ url_for('employees.cancel_termination', employee_id=employee.id) }}" data-confirm="{{ t('employee.cancel_termination_confirm') }}"><button class="ghost-btn danger-text" type="submit">{{ t("employee.cancel_termination") }}</button></form>
-      {% endif %}
-    {% else %}
-      <h2>{{ t("employee.rehire") }}</h2>
-      <form class="inline-upload" method="post" action="{{ url_for('employees.rehire_employee', employee_id=employee.id) }}"><label><span>{{ t("employees.start_date") }}</span><input type="date" name="start_date" required></label><button class="primary-btn" type="submit">{{ t("employee.rehire") }} · {{ employee.employee_no }}</button></form>
-    {% endif %}
-  </article>
-  {% if current_user.role == "admin" %}
-    <form method="post" action="{{ url_for('employees.delete_employee', employee_id=employee.id) }}" data-confirm="{{ t('employee.delete_confirm') }}"><button class="danger-btn" type="submit">{{ t("employee.hard_delete") }}</button></form>
-  {% endif %}
+<section class="profile-tab-panel" data-panel="employment_status" hidden>
+  {% include "employees/_employment_status_tab.html" %}
 </section>
 
 <dialog class="app-dialog quick-reference-dialog" id="quick-reference-dialog"
@@ -831,6 +704,31 @@ function selectTab(name, updateUrl = true) {
 tabs.forEach((tab) => tab.addEventListener("click", () => selectTab(tab.dataset.tab)));
 document.querySelectorAll("[data-open-tab]").forEach((button) => button.addEventListener("click", () => selectTab(button.dataset.openTab)));
 selectTab(new URLSearchParams(window.location.search).get("tab") || "overview", false);
+
+const allowanceCurrency = document.querySelector("[data-allowance-currency]");
+const exchangeRateField = document.querySelector("[data-exchange-rate-field]");
+function syncAllowanceExchangeRate() {
+  if (!allowanceCurrency || !exchangeRateField) return;
+  const differs = allowanceCurrency.value !== {{ (employee.current_salary.currency if employee.current_salary else 'HKD')|tojson }};
+  exchangeRateField.hidden = !differs;
+  const input = exchangeRateField.querySelector("input");
+  if (input) input.required = differs;
+}
+allowanceCurrency?.addEventListener("change", syncAllowanceExchangeRate);
+syncAllowanceExchangeRate();
+
+const leaveType = document.querySelector("[data-leave-type]");
+const leaveRule = document.querySelector("[data-leave-rule]");
+const leaveRules = {
+  annual: {{ t("leave.annual_rule")|tojson }},
+  sick: {{ t("leave.sick_rule_short")|tojson }},
+  unpaid: {{ t("leave.unpaid_rule")|tojson }}
+};
+function syncLeaveRule() {
+  if (leaveType && leaveRule) leaveRule.textContent = leaveRules[leaveType.value] || "";
+}
+leaveType?.addEventListener("change", syncLeaveRule);
+syncLeaveRule();
 
 const quickReferenceDialog = document.getElementById("quick-reference-dialog");
 const quickReferenceForm = document.getElementById("quick-reference-form");

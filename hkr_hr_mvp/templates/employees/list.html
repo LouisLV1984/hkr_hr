@@ -1,36 +1,56 @@
 {% extends "base.html" %}
 {% block title %}{{ t("employees.title") }} - HKR HR{% endblock %}
+{% block sidebar_content %}
+<section class="context-panel">
+  <div class="context-panel-head">
+    <strong>{{ t("common.filter") }}</strong>
+    <span>{{ t("employees.filter_hint") }}</span>
+  </div>
+  <form class="stack-form" method="get">
+    <label><span>{{ t("common.month") }}</span><input type="month" name="month" value="{{ year_month }}"></label>
+    <label><span>{{ t("common.search") }}</span><input type="search" name="q" value="{{ request.args.get('q', '') }}" placeholder="{{ t('employees.employee_no') }} / {{ t('employees.chinese_name') }}"></label>
+    <label><span>{{ t("employees.readiness_filter") }}</span><select name="readiness">
+      <option value="" {% if not readiness_filter %}selected{% endif %}>{{ t("common.all") }}</option>
+      <option value="needs_action" {% if readiness_filter == 'needs_action' %}selected{% endif %}>{{ t("employees.needs_action") }}</option>
+      <option value="employee_data" {% if readiness_filter == 'employee_data' %}selected{% endif %}>{{ t("readiness.employee_file") }}</option>
+      <option value="attendance" {% if readiness_filter == 'attendance' %}selected{% endif %}>{{ t("readiness.attendance") }}</option>
+      <option value="payroll" {% if readiness_filter == 'payroll' %}selected{% endif %}>{{ t("readiness.payroll_status") }}</option>
+    </select></label>
+    <label><span>{{ t("common.status") }}</span><select name="status"><option value="all" {% if request.args.get('status') == 'all' %}selected{% endif %}>{{ t("common.all") }}</option><option value="active" {% if request.args.get('status', 'active') == 'active' %}selected{% endif %}>{{ t("common.active") }}</option><option value="departed" {% if request.args.get('status') == 'departed' %}selected{% endif %}>{{ t("common.departed") }}</option></select></label>
+    <label><span>{{ t("employees.payroll_group") }}</span><select name="payroll_group"><option value="">{{ t("common.all") }}</option>{% for code, label in payroll_groups %}<option value="{{ code }}" {% if request.args.get('payroll_group') == code %}selected{% endif %}>{{ option_t("payroll_group", code, label) }}</option>{% endfor %}</select></label>
+    <label><span>{{ t("employees.number_type") }}</span><select name="employee_type_id"><option value="">{{ t("common.all") }}</option>{% for item in employee_types %}<option value="{{ item.id }}" {% if request.args.get('employee_type_id')|int == item.id %}selected{% endif %}>{{ item.display_name }}</option>{% endfor %}</select></label>
+    <label><span>{{ t("common.project") }}</span><select name="project_id"><option value="">{{ t("common.all") }}</option>{% for project in projects %}<option value="{{ project.id }}" {% if request.args.get('project_id')|int == project.id %}selected{% endif %}>{{ project.name }}</option>{% endfor %}</select></label>
+    <div class="button-row"><button class="primary-btn" type="submit">{{ t("common.apply") }}</button><a class="ghost-btn" href="{{ url_for('employees.list_employees') }}">{{ t("common.clear") }}</a></div>
+  </form>
+</section>
+{% endblock %}
 {% block content %}
 <section class="page-head">
-  <div><h1>{{ t("employees.title") }}</h1><p>{{ t("employees.subtitle") }}</p></div>
+  <div><h1>{{ t("employees.title") }}</h1><p>{{ t("employees.status_matrix_hint", month=year_month) }}</p></div>
   <a class="primary-btn" href="{{ url_for('employees.new_employee') }}">{{ t("employees.new") }}</a>
 </section>
-<form class="filter-bar panel compact-panel" method="get">
-  <label><span>{{ t("common.search") }}</span><input type="search" name="q" value="{{ request.args.get('q', '') }}" placeholder="{{ t('employees.employee_no') }} / {{ t('employees.chinese_name') }}"></label>
-  <label><span>{{ t("common.status") }}</span><select name="status"><option value="">{{ t("common.all") }}</option><option value="active" {% if request.args.get('status', 'active') == 'active' %}selected{% endif %}>{{ t("common.active") }}</option><option value="departed" {% if request.args.get('status') == 'departed' %}selected{% endif %}>{{ t("common.departed") }}</option></select></label>
-  <label><span>{{ t("employees.payroll_group") }}</span><select name="payroll_group"><option value="">{{ t("common.all") }}</option>{% for code, label in payroll_groups %}<option value="{{ code }}" {% if request.args.get('payroll_group') == code %}selected{% endif %}>{{ option_t("payroll_group", code, label) }}</option>{% endfor %}</select></label>
-  <label><span>{{ t("employees.number_type") }}</span><select name="employee_type_id"><option value="">{{ t("common.all") }}</option>{% for item in employee_types %}<option value="{{ item.id }}" {% if request.args.get('employee_type_id')|int == item.id %}selected{% endif %}>{{ item.display_name }}</option>{% endfor %}</select></label>
-  <label><span>{{ t("common.project") }}</span><select name="project_id"><option value="">{{ t("common.all") }}</option>{% for project in projects %}<option value="{{ project.id }}" {% if request.args.get('project_id')|int == project.id %}selected{% endif %}>{{ project.name }}</option>{% endfor %}</select></label>
-  <div class="filter-actions"><button class="secondary-btn" type="submit">{{ t("common.apply") }}</button><a class="ghost-btn" href="{{ url_for('employees.list_employees') }}">{{ t("common.clear") }}</a></div>
-</form>
-<div class="table-wrap">
-  <table class="data-table employee-master">
-    <thead><tr><th>{{ t("employees.employee_no") }}</th><th>{{ t("common.employee") }}</th><th>{{ t("common.status") }}</th><th>{{ t("employees.payroll_group") }}</th><th>{{ t("common.project") }}</th><th>{{ t("common.department") }}</th><th>{{ t("common.position") }}</th><th>{{ t("employees.contact") }}</th><th>{{ t("employees.salary") }}</th></tr></thead>
+<div class="table-wrap employee-readiness-wrap">
+  <table class="data-table employee-master readiness-table employee-readiness-table">
+    <thead><tr>
+      <th>{{ t("common.employee") }}</th>
+      <th>{{ t("common.status") }}</th>
+      <th>{{ t("employees.payroll_group") }}</th>
+      <th>{{ t("employee.current_assignment") }}</th>
+      <th>{{ t("readiness.employee_file") }}</th>
+      <th>{{ t("readiness.attendance_payroll_month", month=year_month) }}</th>
+    </tr></thead>
     <tbody>
-      {% for employee in employees %}
-        {% set assignment = employee.current_assignment %}{% set salary = employee.current_salary %}
+      {% for row in readiness_rows %}
+        {% set employee = row.employee %}{% set assignment = employee.current_assignment %}
         <tr data-href="{{ url_for('employees.view_employee', employee_id=employee.id) }}" tabindex="0">
-          <td><a href="{{ url_for('employees.view_employee', employee_id=employee.id) }}">{{ employee.employee_no }}</a></td>
-          <td><strong>{{ employee.display_name }}</strong><br><span class="cell-text">{{ employee.english_name if employee.chinese_name else "" }}</span></td>
+          <td class="readiness-employee"><a href="{{ url_for('employees.view_employee', employee_id=employee.id) }}"><strong>{{ employee.employee_no }}</strong> · {{ employee.display_name }}</a>{% if employee.english_name and employee.chinese_name %}<br><span class="cell-text">{{ employee.english_name }}</span>{% endif %}</td>
           <td><span class="status-pill">{{ t("common.active") if employee.derived_status == "active" else t("common.departed") }}</span></td>
           <td>{{ option_t("payroll_group", employee.payroll_group, dict(payroll_groups).get(employee.payroll_group, employee.payroll_group)) }}</td>
-          <td>{{ project_t(assignment.project, "-") if assignment else "-" }}</td>
-          <td>{{ assignment.department.display_name if assignment and assignment.department else "-" }}</td>
-          <td>{{ assignment.primary_position.display_name if assignment and assignment.primary_position else "-" }}</td>
-          <td>{{ employee.mobile_region_code or "" }} {{ employee.mobile_number or "-" }}</td>
-          <td>{% if salary %}{{ salary.currency }} {{ fmt_money(salary.amount) }} / {{ t("employee.monthly") if salary.salary_basis == "monthly" else t("employee.daily") }}{% else %}<span class="flag danger">{{ t("common.not_set") }}</span>{% endif %}</td>
+          <td><strong>{{ project_t(assignment.project, t("common.unassigned")) if assignment else t("employee.assignment_not_created") }}</strong>{% if assignment %}<br><span class="cell-text">{{ assignment.department.display_name if assignment.department else "-" }} · {{ assignment.positions|map(attribute='position.display_name')|join('、') or "-" }}</span>{% endif %}</td>
+          <td><div class="readiness-strip">{% for item in row.employee_data %}<a class="readiness-chip {{ 'ok' if item.ok else 'missing' }}"{% if item.code == 'mpf' %} data-mpf-status="{{ 'complete' if item.ok else 'missing' }}"{% endif %} href="{{ url_for('employees.view_employee', employee_id=employee.id, tab=item.tab) }}"><span aria-hidden="true">{{ '✓' if item.ok else '!' }}</span>{{ t(item.label_key) }}</a>{% endfor %}</div></td>
+          <td><div class="readiness-strip"><a class="readiness-chip {{ 'ok' if row.attendance.ok else 'missing' }}" href="{{ url_for('attendance.attendance_home', month=year_month, view='details') }}"><span aria-hidden="true">{{ '✓' if row.attendance.ok else '!' }}</span>{{ t(row.attendance.label_key) }}</a>{% for item in row.payroll %}{% if item.label != '考勤未收' %}<a class="readiness-chip {{ 'ok' if item.ok else 'missing' }}" href="{{ url_for('payroll.attendance_payroll', year_month=year_month, employee_id=employee.id) }}"><span aria-hidden="true">{{ '✓' if item.ok else '!' }}</span>{{ t(item.label_key) if item.label_key else message_t(item.label) }}</a>{% endif %}{% endfor %}</div></td>
         </tr>
-      {% else %}<tr><td colspan="9" class="empty-cell">{{ t("employees.no_results") }}</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="6" class="empty-cell">{{ t("employees.no_results") }}</td></tr>{% endfor %}
     </tbody>
   </table>
 </div>

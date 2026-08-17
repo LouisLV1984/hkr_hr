@@ -2,16 +2,24 @@ from datetime import date
 
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
+from sqlalchemy import or_
 
 from models import (
     Employee,
     EmployeeAnnualLeaveBalance,
     EmployeeAnnualLeaveRecord,
+    EmployeeWorkInjuryPeriod,
+    EmployeeWorkInjuryMonthlyExpense,
+    WorkProject,
     db,
 )
+from tools.text_search import chinese_search_variants
 from tools.hr_core import (
+    PAYROLL_GROUPS,
     annual_leave_buckets,
     annual_leave_summary,
+    comp_leave_summary,
+    current_assignment_on,
     ensure_annual_leave_balance,
     parse_date,
     parse_decimal,
@@ -36,9 +44,14 @@ def leave_redirect(employee_id, year):
 @leave_bp.route("/annual-leave")
 @login_required
 def leave_home():
+    view = request.args.get("view", "leave")
+    if view not in {"leave", "injury"}:
+        view = "leave"
     year = request.args.get("year", type=int) or date.today().year
     status = request.args.get("status", "active")
-    search = request.args.get("q", "").strip().casefold()
+    payroll_group = request.args.get("payroll_group", "").strip()
+    project_id = request.args.get("project_id", type=int)
+    search = request.args.get("q", "").strip()
     employees = Employee.query.order_by(Employee.employee_no.asc()).all()
     if status in {"active", "departed"}:
         employees = [
@@ -46,38 +59,62 @@ def leave_home():
             for employee in employees
             if employee.derived_status == status
         ]
-    if search:
+    if payroll_group:
         employees = [
             employee
             for employee in employees
-            if search
-            in " ".join(
-                filter(
-                    None,
-                    (
-                        employee.employee_no,
-                        employee.chinese_name,
-                        employee.english_name,
-                    ),
+            if employee.payroll_group == payroll_group
+        ]
+    if project_id:
+        employees = [
+            employee
+            for employee in employees
+            if (
+                current_assignment_on(employee, date(year, 12, 31))
+                and current_assignment_on(
+                    employee, date(year, 12, 31)
+                ).project_id
+                == project_id
+            )
+        ]
+    if search:
+        variants = [item.casefold() for item in chinese_search_variants(search)]
+        employees = [
+            employee
+            for employee in employees
+            if any(
+                variant in (value or "").casefold()
+                for variant in variants
+                for value in (
+                    employee.employee_no,
+                    employee.chinese_name,
+                    employee.english_name,
                 )
-            ).casefold()
+            )
         ]
     summaries = {
-        employee.id: annual_leave_summary(employee, year)
+        employee.id: {
+            "annual": annual_leave_summary(employee, year),
+            "comp": comp_leave_summary(employee),
+        }
         for employee in employees
     }
     selected_id = request.args.get("employee_id", type=int)
     selected = next(
         (employee for employee in employees if employee.id == selected_id),
-        employees[0] if employees else None,
+        None,
     )
     selected_summary = (
         annual_leave_summary(selected, year) if selected else None
     )
     records = (
-        EmployeeAnnualLeaveRecord.query.filter_by(
-            employee_id=selected.id,
-            entitlement_year=year,
+        EmployeeAnnualLeaveRecord.query.filter(
+            EmployeeAnnualLeaveRecord.employee_id == selected.id,
+            EmployeeAnnualLeaveRecord.leave_date <= date(year, 12, 31),
+            or_(
+                EmployeeAnnualLeaveRecord.end_date.is_(None),
+                EmployeeAnnualLeaveRecord.end_date >= date(year, 1, 1),
+            ),
         )
         .order_by(
             EmployeeAnnualLeaveRecord.leave_date.desc(),
@@ -96,7 +133,17 @@ def leave_home():
         else None
     )
     buckets = (
-        annual_leave_buckets(selected, as_of=date(year, 12, 31))
+        annual_leave_buckets(
+            selected,
+            as_of=(
+                selected_summary.get("termination_date")
+                if selected_summary and selected_summary.get("termination_date")
+                else date(year, 12, 31)
+            ),
+            prorate_current=bool(
+                selected_summary and selected_summary.get("termination_date")
+            ),
+        )
         if selected
         else []
     )
@@ -114,19 +161,49 @@ def leave_home():
             "legacy": legacy,
             "regular": record.days - legacy,
         }
+    work_injury_periods = (
+        EmployeeWorkInjuryPeriod.query.filter_by(employee_id=selected.id)
+        .order_by(
+            EmployeeWorkInjuryPeriod.payroll_start_date.desc(),
+            EmployeeWorkInjuryPeriod.id.desc(),
+        )
+        .all()
+        if selected
+        else []
+    )
+    work_injury_expenses = (
+        EmployeeWorkInjuryMonthlyExpense.query.filter_by(employee_id=selected.id)
+        .order_by(
+            EmployeeWorkInjuryMonthlyExpense.year_month.desc(),
+            EmployeeWorkInjuryMonthlyExpense.id.desc(),
+        )
+        .all()
+        if selected
+        else []
+    )
     return render_template(
         "leave/index.html",
         year=year,
+        view=view,
+        search=search,
         status=status,
-        search=request.args.get("q", "").strip(),
+        payroll_group=payroll_group,
+        project_id=project_id,
+        projects=WorkProject.query.filter_by(active=True).order_by(
+            WorkProject.name
+        ).all(),
+        payroll_groups=PAYROLL_GROUPS,
         employees=employees,
         summaries=summaries,
         selected=selected,
         leave=selected_summary,
+        comp_leave=comp_leave_summary(selected) if selected else None,
         records=records,
         balance=balance,
         buckets=buckets,
         allocation_splits=allocation_splits,
+        work_injury_periods=work_injury_periods,
+        work_injury_expenses=work_injury_expenses,
         default_expiry=date(year + 1, 3, 31) if year >= 2024 else None,
     )
 

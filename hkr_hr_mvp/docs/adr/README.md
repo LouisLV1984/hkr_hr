@@ -18,6 +18,10 @@ ADRs record accepted design tradeoffs. They explain why the system follows a dir
 | [ADR-0012](0012-effective-dated-current-state-and-corrections.md) | Accepted | Derive current state from dates and preserve correction/withdrawal history |
 | [ADR-0013](0013-task-oriented-navigation-and-data-preservation.md) | Accepted | Organize navigation by HR tasks and preserve referenced data |
 | [ADR-0014](0014-annual-leave-buckets-and-final-payment.md) | Accepted | Separate annual-leave buckets and ordinary Payroll from Final Payment |
+| [ADR-0015](0015-shared-readiness-and-production-safety.md) | Accepted | Derive shared readiness and apply unobtrusive production safety controls |
+| [ADR-0016](0016-effective-dated-mpf-schemes-and-exports.md) | Accepted | Store effective-dated MPF schemes and export monthly contribution reports |
+| [ADR-0017](0017-dated-work-injury-payroll-and-visible-rules.md) | Accepted | Use dated work-injury records, reviewed earnings and visible Payroll rules |
+| [ADR-0018](0018-work-injury-pay-modes-final-payment-and-single-payroll-entry.md) | Accepted | Select work-injury pay mode, separate medical reimbursement, replace departure-month Payroll and keep one entry per payment type |
 
 Stable terms and current facts are in [`../../../CONTEXT.md`](../../../CONTEXT.md). Executable rules are in [`../../AGENTS.md`](../../AGENTS.md).
 

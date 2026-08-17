@@ -1,17 +1,26 @@
 {% extends "base.html" %}
 {% block title %}{{ t("attendance.title") }} - HKR HR{% endblock %}
-{% block page_class %}workbench-page{% endblock %}
+{% block page_class %}workbench-page{% if selected_item or edit_summary_mode %} attendance-detail-page{% endif %}{% endblock %}
+{% set attendance_month_label = t("attendance.month_label", year=year_month[:4], month=(year_month[5:7]|int)) %}
 {% block sidebar_content %}
 <div class="attendance-rail">
   <section class="context-panel">
-    <form class="month-switch" method="get">
+    <form class="stack-form" method="get">
       <label>
-        <span>{{ t("common.month") }}</span>
-        <input type="month" name="month" value="{{ year_month }}" onchange="this.form.submit()">
+        <span>{{ t("attendance.current_attendance_month") }}</span>
+        <input type="month" name="month" value="{{ year_month }}" {% if view not in ['policies', 'monthly_exemptions'] %}onchange="this.form.submit()"{% endif %}>
       </label>
+      <input type="hidden" name="view" value="{{ view }}">
+      {% if view == "details" %}<input type="hidden" name="status" value="{{ detail_status }}">{% endif %}
+      {% if view in ["policies", "monthly_exemptions"] %}
+        <label><span>{{ t("common.position") }}</span><select name="position_id"><option value="">{{ t("common.all") }}</option>{% for item in position_options %}<option value="{{ item.id }}" {% if position_id == item.id %}selected{% endif %}>{{ item.display_name }}</option>{% endfor %}</select></label>
+        <label><span>{{ t("employees.payroll_group") }}</span><select name="payroll_group"><option value="">{{ t("common.all") }}</option>{% for code, label in payroll_groups %}<option value="{{ code }}" {% if payroll_group_filter == code %}selected{% endif %}>{{ option_t("payroll_group", code, label) }}</option>{% endfor %}</select></label>
+        <button class="primary-btn" type="submit">{{ t("common.apply") }}</button>
+      {% endif %}
     </form>
   </section>
 
+  {% if view == "collection" %}
   <section class="context-panel attendance-upload-panel">
     <div class="context-panel-head">
       <strong>{{ t("attendance.upload_batch") }}</strong>
@@ -37,47 +46,16 @@
     </div>
   </section>
 
-  {% if selected_batch %}
-    {% set processed_count = selected_batch.items|rejectattr("status", "equalto", "pending")|list|length %}
-    <section class="context-panel current-batch-panel">
-      <div class="context-panel-head split">
-        <div>
-          <strong>{{ t("attendance.current_batch") }}</strong>
-          <span>{{ selected_batch.batch_no }}</span>
-        </div>
-        <form method="post" action="{{ url_for('attendance.delete_batch', batch_id=selected_batch.id) }}" data-confirm="{{ t('attendance.delete_confirm') }}">
-          <button class="icon-btn danger-text" type="submit" title="{{ t('attendance.delete_batch') }}" aria-label="{{ t('attendance.delete_batch') }}">×</button>
-        </form>
-      </div>
-      <div class="batch-progress">
-        <span>{{ t("attendance.batch_progress", done=processed_count, total=selected_batch.items|length) }}</span>
-        <progress value="{{ processed_count }}" max="{{ selected_batch.items|length or 1 }}"></progress>
-      </div>
-      <nav class="batch-file-list" aria-label="{{ t('attendance.batch_files') }}">
-        {% for item in selected_batch.items %}
-          <a class="{% if selected_item and item.id == selected_item.id %}active{% endif %}" href="{{ url_for('attendance.attendance_home', month=year_month, batch_id=selected_batch.id, item_id=item.id) }}">
-            <span class="batch-file-index">{{ loop.index }}</span>
-            <span class="batch-file-copy">
-              <strong>{{ item.original_filename }}</strong>
-              <small>{{ option_t("workflow_status", item.status, item.status) }}{% if item.employee %} · {{ item.employee.display_name }}{% endif %}</small>
-            </span>
-          </a>
-        {% endfor %}
-      </nav>
-    </section>
-  {% endif %}
-
   <section class="context-panel recent-batches-panel">
     <div class="context-panel-head">
       <strong>{{ t("attendance.recent_batches") }}</strong>
       <span>{{ t("attendance.recent_batches_hint") }}</span>
     </div>
-    {% set other_batches = recent_batches|rejectattr("id", "equalto", selected_batch.id)|list if selected_batch else recent_batches %}
     <div class="recent-batch-list">
-      {% for batch in other_batches %}
+      {% for batch in recent_batches %}
           {% set batch_done = batch.items|rejectattr("status", "equalto", "pending")|list|length %}
-          <article class="recent-batch-card">
-            <a href="{{ url_for('attendance.attendance_home', month=batch.year_month, batch_id=batch.id) }}">
+          <article class="recent-batch-card {% if selected_batch and selected_batch.id == batch.id %}active{% endif %}">
+            <a href="{{ url_for('attendance.attendance_home', month=batch.year_month, view='collection', batch_id=batch.id) }}">
               <strong>{{ batch.batch_no }}</strong>
               <span>{{ batch.year_month }} · {{ batch.items|length }} PDF · {{ batch_done }}/{{ batch.items|length }}</span>
             </a>
@@ -90,27 +68,104 @@
       {% endfor %}
     </div>
   </section>
+  {% endif %}
 </div>
 {% endblock %}
 {% block content %}
+<section class="period-context-bar attendance-period-context" aria-label="{{ t('attendance.current_attendance_month') }}">
+  <div><span>{{ t("attendance.current_attendance_month") }}</span><strong>{{ month_t(year_month) }}</strong></div>
+  <small>{{ t("attendance.period_context_hint") }}</small>
+</section>
+{% if selected_item or edit_summary_mode %}
+<section class="attendance-detail-head">
+  {% if edit_summary_mode %}
+    <a class="secondary-btn" href="{{ url_for('employees.view_employee', employee_id=selected_summary.employee_id, tab='attendance') }}">← {{ t("attendance.exit_detail") }}</a>
+  {% else %}
+    <a class="secondary-btn" href="{{ url_for('attendance.attendance_home', month=year_month, view='collection', batch_id=selected_batch.id) }}">← {{ t("attendance.exit_detail") }}</a>
+  {% endif %}
+  <div><strong>{{ selected_item.original_filename if selected_item else selected_summary.document.original_filename }}</strong><span>{{ year_month }}{% if selected_batch %} · {{ selected_batch.batch_no }}{% endif %}</span></div>
+</section>
+{% else %}
 <section class="page-head compact workbench-head">
-  <div><h1>{{ t("attendance.title") }}</h1><p>{{ t("attendance.subtitle") }}</p></div>
+  {% if view == "policies" %}
+    <div><h1>{{ t("attendance.long_term_policy") }}</h1><p>{{ t("attendance.long_term_policy_hint") }}</p></div>
+  {% elif view == "monthly_exemptions" %}
+    <div><h1>{{ t("attendance.monthly_exemptions") }}</h1><p>{{ t("attendance.monthly_exemptions_hint") }}</p></div>
+  {% elif view == "collection" %}
+    <div><h1>{{ t("attendance.collection") }}</h1><p>{{ t("attendance.collection_hint") }}</p></div>
+  {% else %}
+    <div><h1>{{ t("attendance.details") }}</h1><p>{{ t("attendance.details_hint") }}</p></div>
+  {% endif %}
 </section>
+{% endif %}
+{% if view in ["policies", "monthly_exemptions"] %}
+<section class="panel attendance-policy-panel">
+  <div class="section-head policy-actions-head">
+    <div>
+      <h2>{{ t("attendance.employee_requirement") }}</h2>
+      <p>{{ t("attendance.policy_effective_hint") if view == "policies" else t("attendance.monthly_exemptions_short_hint") }}</p>
+    </div>
+    <div class="button-row">
+      <button class="secondary-btn" type="button" data-policy-action="require" disabled>{{ t("attendance.batch_require") if view == "policies" else t("attendance.monthly_batch_require") }}</button>
+      <button class="primary-btn" type="button" data-policy-action="exempt" disabled>{{ t("attendance.batch_exempt") if view == "policies" else t("attendance.monthly_batch_exempt") }}</button>
+    </div>
+  </div>
+  <div class="table-wrap flat">
+    <table class="dense-table attendance-policy-table">
+      <thead><tr>
+        <th class="check-cell"><input type="checkbox" data-policy-select-all aria-label="{{ t('common.select_all') }}"></th>
+        <th><a class="table-sort-link" href="{{ url_for('attendance.attendance_home', month=year_month, view=view, position_id=position_id, payroll_group=payroll_group_filter, sort='employee', direction='desc' if policy_sort == 'employee' and policy_direction == 'asc' else 'asc') }}" title="{{ t('attendance.sort_hint') }}">{{ t("common.employee") }}{% if policy_sort == "employee" %} {{ "↑" if policy_direction == "asc" else "↓" }}{% endif %}</a></th>
+        <th><a class="table-sort-link" href="{{ url_for('attendance.attendance_home', month=year_month, view=view, position_id=position_id, payroll_group=payroll_group_filter, sort='payroll_group', direction='desc' if policy_sort == 'payroll_group' and policy_direction == 'asc' else 'asc') }}" title="{{ t('attendance.sort_hint') }}">{{ t("employees.payroll_group") }}{% if policy_sort == "payroll_group" %} {{ "↑" if policy_direction == "asc" else "↓" }}{% endif %}</a></th>
+        <th>{{ t("attendance.current_requirement") }}</th>{% if view == "policies" %}<th>{{ t("attendance.effective_month") }}</th>{% endif %}
+      </tr></thead>
+      <tbody>
+        {% for row in policy_rows %}
+        <tr>
+          <td class="check-cell"><input type="checkbox" value="{{ row.employee.id }}" data-policy-employee aria-label="{{ row.employee.employee_no }} {{ row.employee.display_name }}"></td>
+          <td><a href="{{ url_for('employees.view_employee', employee_id=row.employee.id) }}"><strong>{{ row.employee.employee_no }}</strong> · {{ row.employee.display_name }}</a></td>
+          <td>{{ option_t("payroll_group", row.employee.payroll_group, row.employee.payroll_group) }}</td>
+          <td>
+            {% if row.monthly_status == "received" %}<span class="flag success">{{ t("attendance.received") }}</span>
+            {% elif row.monthly_status == "not_required" %}<span class="flag warn">{{ t("attendance.monthly_exempt") }}</span>
+            {% elif row.monthly_status == "required" %}<span class="flag info">{{ t("attendance.monthly_required") }}</span>
+            {% elif row.requires_attendance %}<span class="flag info">{{ t("attendance.required") }}</span>
+            {% else %}<span class="flag warn">{{ t("attendance.long_term_exempt") }}</span>{% endif %}
+          </td>
+          {% if view == "policies" %}<td>{{ row.policy.effective_from_month if row.policy else t("attendance.default_required") }}</td>{% endif %}
+        </tr>
+        {% else %}<tr><td colspan="{{ 5 if view == 'policies' else 4 }}" class="empty-cell">{{ t("common.no_results") }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+<dialog class="app-dialog" id="attendance-policy-dialog">
+  <form class="dialog-panel stack-form" method="post" action="{{ url_for('attendance.update_attendance_policies') if view == 'policies' else url_for('attendance.update_monthly_exemptions') }}" data-policy-form>
+    <div class="section-head"><div><span class="eyebrow">{{ t("attendance.long_term_policy") if view == "policies" else t("attendance.monthly_exemptions") }}</span><h2 data-policy-title></h2></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
+    <p class="form-note strong-note" data-policy-message></p>
+    <div data-policy-employee-inputs></div>
+    <input type="hidden" name="action" data-policy-action-input>
+    {% if view == "policies" %}<label><span>{{ t("attendance.effective_month") }}</span><input type="month" name="effective_from_month" value="{{ year_month }}" required></label><label><span>{{ t("common.remarks") }}</span><textarea name="remarks"></textarea></label>{% else %}<input type="hidden" name="year_month" value="{{ year_month }}">{% endif %}
+    <div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.confirm") }}</button></div>
+  </form>
+</dialog>
+{% else %}
+{% if view == "details" and not selected_item and not edit_summary_mode %}
 <section class="attendance-stats">
-  <a href="#expected"><span>{{ t("attendance.expected") }}</span><strong>{{ expected|length }}</strong></a>
-  <a href="#received"><span>{{ t("attendance.received") }}</span><strong>{{ received|length }}</strong></a>
-  <a href="#missing"><span>{{ t("attendance.missing") }}</span><strong>{{ missing|length }}</strong></a>
+  <a class="{{ 'active' if detail_status == 'expected' else '' }}" href="{{ url_for('attendance.attendance_home', month=year_month, view='details', status='expected') }}"><span>{{ t("attendance.expected_total") }}</span><strong>{{ expected|length }}</strong><small>{{ t("attendance.expected_equation") }}</small></a>
+  <a class="{{ 'active' if detail_status == 'missing' else '' }}" href="{{ url_for('attendance.attendance_home', month=year_month, view='details', status='missing') }}"><span>{{ t("attendance.missing") }}</span><strong>{{ missing|length }}</strong></a>
+  <a class="{{ 'active' if detail_status == 'received' else '' }}" href="{{ url_for('attendance.attendance_home', month=year_month, view='details', status='received') }}"><span>{{ t("attendance.received") }}</span><strong>{{ received|length }}</strong></a>
 </section>
+{% endif %}
 
 {% if selected_item or edit_summary_mode %}
 <section class="attendance-workbench">
   <section class="workbench-preview">
     {% if selected_item %}
       <div class="preview-toolbar"><div><strong>{{ selected_item.original_filename }}</strong><span>{{ selected_batch.year_month }} · {{ option_t("workflow_status", selected_item.status, selected_item.status) }}</span></div><a href="{{ url_for('attendance.open_item', item_id=selected_item.id) }}" target="_blank">{{ t("common.open") }}</a></div>
-      <iframe title="{{ selected_item.original_filename }}" src="{{ url_for('attendance.open_item', item_id=selected_item.id) }}"></iframe>
+      <iframe title="{{ selected_item.original_filename }}" src="{{ url_for('attendance.open_item', item_id=selected_item.id) }}#page=1&view=FitH&navpanes=0&pagemode=none"></iframe>
     {% elif selected_summary and selected_summary.document %}
       <div class="preview-toolbar"><div><strong>{{ selected_summary.document.original_filename }}</strong><span>{{ selected_summary.year_month }} · {{ t("attendance.correction_mode") }}</span></div><a href="{{ url_for('documents.open_document', document_id=selected_summary.document.id) }}" target="_blank">{{ t("common.open") }}</a></div>
-      <iframe title="{{ selected_summary.document.original_filename }}" src="{{ url_for('documents.open_document', document_id=selected_summary.document.id) }}"></iframe>
+      <iframe title="{{ selected_summary.document.original_filename }}" src="{{ url_for('documents.open_document', document_id=selected_summary.document.id) }}#page=1&view=FitH&navpanes=0&pagemode=none"></iframe>
     {% else %}
       <div class="empty-preview"><h2>{{ t("attendance.upload_batch") }}</h2><p>{{ t("attendance.subtitle") }}</p></div>
     {% endif %}
@@ -120,34 +175,57 @@
     {% if selected_item or edit_summary_mode %}
       <form id="attendance-review-form" class="stack-form" method="post" action="{{ url_for('attendance.save_item', item_id=selected_item.id) if selected_item else url_for('attendance.correct_summary', summary_id=selected_summary.id) }}">
         <section class="review-section">
-          <h2>{{ t("common.employee") }}</h2>
-          <label><span>{{ t("common.employee") }} *</span><select name="employee_id" required data-attendance-employee><option value="">{{ t("common.not_set") }}</option>{% for employee in employees %}<option value="{{ employee.id }}" {% if selected_employee_id == employee.id or (not selected_employee_id and selected_summary and selected_summary.employee_id == employee.id) %}selected{% endif %}>{{ employee.employee_no }} · {{ employee.display_name }}</option>{% endfor %}</select></label>
-          <p class="form-note">{{ t("attendance.filename_hint") }}</p>
+          <label><span>{{ t("attendance.select_employee") }}</span><select name="employee_id" required data-attendance-employee><option value="">{{ t("common.not_set") }}</option>{% for employee in employees %}<option value="{{ employee.id }}" data-payroll-group="{{ employee.payroll_group }}" data-payroll-label="{{ option_t('payroll_group', employee.payroll_group, employee.payroll_group) }}" {% if selected_employee_id == employee.id or (not selected_employee_id and selected_summary and selected_summary.employee_id == employee.id) %}selected{% endif %}>{{ employee.employee_no }} · {{ employee.display_name }}</option>{% endfor %}</select><small>{{ t("attendance.filename_hint") }}</small></label>
+          <div class="attendance-payroll-context" data-attendance-payroll-context hidden>
+            <span>{{ t("attendance.payroll_category") }}</span>
+            <strong data-attendance-payroll-label></strong>
+            <p data-payroll-rule="site_daily">{{ t("attendance.rule_site_daily") }}</p>
+            <p data-payroll-rule="site_monthly">{{ t("attendance.rule_site_monthly") }}</p>
+            <p data-payroll-rule="management">{{ t("attendance.rule_management") }}</p>
+          </div>
           {% if selected_item and duplicate_document %}
             <div class="duplicate-warning">
               <span class="flag warn">{{ t("documents.duplicate_badge") }}</span>
               <h2>{{ t("documents.duplicate_title") }}</h2>
               <p>{{ t("documents.duplicate_attendance") }}</p>
               <p><strong>{{ duplicate_document.original_filename }}</strong></p>
-              <a class="ghost-btn" href="{{ url_for('attendance.attendance_home', month=year_month, batch_id=selected_batch.id, item_id=selected_item.id) }}">{{ t("documents.duplicate_cancel") }}</a>
+              <a class="ghost-btn" href="{{ url_for('attendance.attendance_home', month=year_month, view='collection', batch_id=selected_batch.id, item_id=selected_item.id) }}">{{ t("documents.duplicate_cancel") }}</a>
             </div>
           {% endif %}
         </section>
-        <p class="form-note strong-note">{{ t("attendance.four_part_hint") }}</p>
+        {% if linked_absences %}
+        <section class="review-section linked-absence-panel">
+          <h2>假期／工傷聯動</h2>
+          {% for item in linked_absences %}
+            <div class="status-line"><strong>{{ {'annual':'年假','sick':'病假','unpaid':'無薪假','work_injury':'工傷'}.get(item.kind, item.kind) }}</strong><span>{{ fmt_date(item.start) }} 至 {{ fmt_date(item.end) }} · {{ item.days }} 日</span></div>
+          {% endfor %}
+          <p class="form-note">{{ t("leave.sick_rule_short") }}</p>
+          {% if selected_employee and selected_employee.payroll_group == 'site_daily' %}<p class="form-note strong-note">日工無薪假只供核對：請勿把無薪假日計入「一般工作日實際出勤日數」。系統以 HR 輸入的實際出勤日數為唯一工資依據，不會再因假期記錄重複扣薪。</p>{% else %}<p class="form-note strong-note">月工／OFFICE 無薪假由假期記錄按當月曆日薪金率扣薪一次；考勤頁無需另行扣減，也不要自行調整其他數字重複扣薪。</p>{% endif %}
+          <p class="form-note">以上資料由假期管理或員工工傷記錄帶入，不允許在考勤頁修改；如需更改，請返回相應來源記錄。</p>
+        </section>
+        {% endif %}
+        <p class="form-note strong-note">{{ t("attendance.four_part_hint", current_actual=attendance_period_t(year_month, "current_1_20"), current_forecast=attendance_period_t(year_month, "current_21_end_forecast"), previous_actual=attendance_period_t(year_month, "previous_21_end"), previous_forecast=attendance_period_t(year_month, "previous_21_end_forecast")) }}</p>
         {% for kind, title, actual in [
-          ("current_1_20", t("attendance.current_period"), true),
-          ("current_21_end_forecast", t("attendance.current_forecast"), false),
-          ("previous_21_end", t("attendance.previous_tail"), true),
-          ("previous_21_end_forecast", t("attendance.previous_forecast"), false)
+          ("current_1_20", attendance_period_t(year_month, "current_1_20"), true),
+          ("current_21_end_forecast", attendance_period_t(year_month, "current_21_end_forecast"), false),
+          ("previous_21_end", attendance_period_t(year_month, "previous_21_end"), true),
+          ("previous_21_end_forecast", attendance_period_t(year_month, "previous_21_end_forecast"), false)
         ] %}
           <section class="review-section">
             <div class="section-head compact">
               <h2>{{ title }}</h2>
               <div class="button-row">
-                {% if kind == "previous_21_end" and previous_summary and previous_summary.document %}
-                  <a class="mini-btn" target="_blank" href="{{ url_for('documents.open_document', document_id=previous_summary.document.id) }}">{{ t("attendance.open_previous_pdf") }}</a>
+                {% if kind == "previous_21_end_forecast" %}
+                  <div class="section-action-stack">
+                    {% if previous_summary and previous_summary.document %}
+                      <a class="mini-btn" target="_blank" rel="noopener" href="{{ url_for('documents.open_document', document_id=previous_summary.document.id) }}">{{ t("attendance.open_previous_pdf", year=period_bounds["previous_21_end"][0].year, month=period_bounds["previous_21_end"][0].month) }}</a>
+                    {% else %}
+                      <button class="mini-btn" type="button" disabled aria-disabled="true">{{ t("attendance.open_previous_pdf", year=period_bounds["previous_21_end"][0].year, month=period_bounds["previous_21_end"][0].month) }}</button>
+                      <small>{{ t("attendance.previous_pdf_missing", year=period_bounds["previous_21_end"][0].year, month=period_bounds["previous_21_end"][0].month) }}</small>
+                    {% endif %}
+                  </div>
                 {% endif %}
-                <button class="mini-btn add-segment" type="button" data-kind="{{ kind }}" data-forecast="{{ '0' if actual else '1' }}">{{ t("attendance.add_project") }}</button>
+                <button class="mini-btn add-segment" type="button" data-kind="{{ kind }}" data-forecast="{{ '0' if actual else '1' }}" data-min-date="{{ period_bounds[kind][0].isoformat() }}" data-max-date="{{ period_bounds[kind][1].isoformat() }}">{{ t("attendance.add_project") }}</button>
               </div>
             </div>
             <p class="form-note">{{ t("attendance.ecall_hint") if actual else t("attendance.forecast_hint") }}</p>
@@ -156,19 +234,42 @@
               {% for segment in existing or [none] %}
                 <div class="segment-row {{ 'forecast-row' if not actual else '' }}">
                   <label class="segment-project"><span>{{ t("common.project") }}</span><select name="{{ kind }}_project_id"><option value="">{{ t("common.not_set") }}</option>{% for project in projects %}<option value="{{ project.id }}" {% if segment and segment.project_id == project.id %}selected{% endif %}>{{ project.name }}</option>{% endfor %}</select></label>
-                  <label><span>{{ t("attendance.working_days") if actual else t("attendance.forecast_days") }}</span><input type="number" min="0" step="0.5" name="{{ kind }}_working_days" value="{{ segment.working_days if segment else 0 }}"></label>
-                  <label><span>{{ t("attendance.holiday_days") }}</span><input type="number" min="0" step="0.5" name="{{ kind }}_holiday_days" value="{{ segment.sunday_holiday_days if segment else 0 }}"></label>
+                  {% if actual %}
+                    <label class="actual-daily-attendance-field"><span>一般工作日實際出勤日數</span><input type="number" min="0" step="0.5" name="{{ kind }}_working_days" value="{{ segment.working_days if segment else 0 }}"></label>
+                    <label class="special-work-days-count"><span>{{ t("attendance.sunday_holiday_work_days") }}</span><input class="special-work-days-input actual-special-work-days-input" type="number" min="0" step="1" name="{{ kind }}_holiday_days" value="{{ segment.sunday_holiday_days if segment else 0 }}"><small>{{ t("attendance.sunday_holiday_count_first") }}</small></label>
+                    <div class="special-work-date-picker" data-special-work-picker data-min-date="{{ period_bounds[kind][0].isoformat() }}" data-max-date="{{ period_bounds[kind][1].isoformat() }}" hidden>
+                      <input type="hidden" name="{{ kind }}_special_work_entries" data-special-work-entries value="[]">
+                      <div class="special-work-date-head"><strong>{{ t("attendance.sunday_holiday_dates") }}</strong><span>{{ t("attendance.sunday_holiday_dates_hint") }}</span></div>
+                      <div class="special-work-date-rows" data-special-work-rows>
+                        {% if segment and segment.id %}{% for special_day in segment_special_days[segment.id] %}
+                        <div class="special-work-date-row"><label><span>{{ t("common.date") }}</span><input type="date" value="{{ special_day.work_date.isoformat() }}" min="{{ period_bounds[kind][0].isoformat() }}" max="{{ period_bounds[kind][1].isoformat() }}" data-special-work-date required></label></div>
+                        {% endfor %}{% endif %}
+                      </div>
+                    </div>
+                  {% else %}
+                    <label><span>{{ t("attendance.forecast_days") }}</span><input type="number" min="0" step="0.5" name="{{ kind }}_working_days" value="{{ segment.working_days if segment else 0 }}"></label>
+                    <label><span>{{ t("attendance.sunday_holiday_forecast_days") }}</span><input type="number" min="0" step="1" name="{{ kind }}_holiday_days" value="{{ segment.sunday_holiday_days if segment else 0 }}"><small>{{ t("attendance.forecast_no_ot_ecall") }}</small></label>
+                    <input type="hidden" name="{{ kind }}_special_work_entries" value="[]">
+                  {% endif %}
                   {% if actual %}
                     <label><span>{{ t("attendance.ot_hours") }}</span><input type="number" min="0" step="0.5" name="{{ kind }}_ot_hours" value="{{ segment.ot_hours if segment else 0 }}"></label>
                     <label><span>{{ t("attendance.large_ecall_count") }}</span><input type="number" min="0" step="1" name="{{ kind }}_large_ecall_count" value="{{ segment.large_ecall_count if segment else 0 }}"></label>
                     <label><span>{{ t("attendance.ecall_count") }}</span><input type="number" min="0" step="1" name="{{ kind }}_ecall_count" value="{{ segment.ecall_count if segment else 0 }}"></label>
+                    <label class="wide attendance-other-allowance-field"><span>替班其他津貼（HKD）</span><input type="number" min="0" step="0.01" name="{{ kind }}_other_allowance_amount" value="{{ segment.other_allowance_amount if segment else 0 }}"><small>只填寫該項目在本段實際發生的替班額外津貼，例如代替工傷同事當值所得的額外補貼。固定餐補、交通補貼、特殊津貼及一般工資更正不可填在此欄；金額會匯入 Payroll 的 Other Payment／其他付款。</small></label>
                   {% endif %}
-                  <button class="icon-btn remove-segment" type="button" title="{{ t('common.delete') }}">×</button>
                 </div>
               {% endfor %}
             </div>
           </section>
         {% endfor %}
+        <section class="review-section special-day-handling-section" data-special-day-handling hidden>
+          <h2>{{ t("attendance.sunday_holiday_handling") }}</h2>
+          <label><span>{{ t("attendance.pay_or_comp") }}</span><select name="special_day_handling">
+            <option value="pay" {% if not selected_summary or selected_summary.special_day_handling == 'pay' %}selected{% endif %}>{{ t("attendance.payroll") }}</option>
+            <option value="comp_leave" {% if selected_summary and selected_summary.special_day_handling == 'comp_leave' %}selected{% endif %}>{{ t("leave.comp_balance") }}</option>
+          </select></label>
+          <p class="form-note">{{ t("attendance.sunday_holiday_handling_hint") }}</p>
+        </section>
         <label><span>{{ t("common.remarks") }}</span><textarea name="remarks">{{ selected_summary.remarks if selected_summary else '' }}</textarea></label>
       </form>
       {% if selected_item %}
@@ -189,13 +290,14 @@
           <form method="post" action="{{ url_for('attendance.withdraw_summary', summary_id=selected_summary.id) }}" data-confirm="{{ t('attendance.withdraw_confirm') }}"><button class="ghost-btn danger-text" type="submit">{{ t("common.withdraw") }}</button></form>
           <button class="primary-btn" type="submit" form="attendance-review-form">{{ t("common.save") }}</button>
         {% else %}
-          {% if previous_item %}<a class="ghost-btn" href="{{ url_for('attendance.attendance_home', month=year_month, batch_id=selected_batch.id, item_id=previous_item.id) }}">{{ t("attendance.previous") }}</a>{% else %}<span></span>{% endif %}
+          {% if previous_item %}<a class="ghost-btn" href="{{ url_for('attendance.attendance_home', month=year_month, view='collection', batch_id=selected_batch.id, item_id=previous_item.id) }}">{{ t("attendance.previous") }}</a>{% else %}<a class="ghost-btn" href="{{ url_for('attendance.attendance_home', month=year_month, view='collection', batch_id=selected_batch.id) }}">{{ t("attendance.exit_detail") }}</a>{% endif %}
           <form method="post" action="{{ url_for('attendance.skip_item', item_id=selected_item.id) }}"><button class="ghost-btn" type="submit">{{ t("attendance.skip") }}</button></form>
           {% if duplicate_document %}
             <button class="primary-btn" type="submit" name="confirm_duplicate" value="1" form="attendance-review-form">{{ t("documents.duplicate_attendance_replace") }}</button>
           {% else %}
             <button class="primary-btn" type="submit" form="attendance-review-form">{{ t("attendance.save_next") }}</button>
           {% endif %}
+          {% if next_item %}<a class="mini-btn" href="{{ url_for('attendance.attendance_home', month=year_month, view='collection', batch_id=selected_batch.id, item_id=next_item.id) }}">{{ t("attendance.next") }}</a>{% endif %}
         {% endif %}
       </div>
     {% else %}
@@ -203,48 +305,160 @@
     {% endif %}
   </aside>
 </section>
-{% else %}
-<section class="onboarding-empty attendance-start-empty">
-  <div>
-    <h2>{{ t("attendance.start_title") }}</h2>
-    <p>{{ t("attendance.start_hint") }}</p>
-  </div>
-</section>
+{% elif view == "collection" %}
+  {% if selected_batch %}
+    {% set processed_count = selected_batch.items|rejectattr("status", "equalto", "pending")|list|length %}
+    <section class="attendance-batch-overview">
+      <div class="attendance-batch-overview-head">
+        <div>
+          <span class="eyebrow">{{ t("attendance.current_batch") }}</span>
+          <h2>{{ selected_batch.batch_no }}</h2>
+          <p>{{ selected_batch.year_month }} · {{ t("attendance.batch_progress", done=processed_count, total=selected_batch.items|length) }}</p>
+        </div>
+        <form method="post" action="{{ url_for('attendance.delete_batch', batch_id=selected_batch.id) }}" data-confirm="{{ t('attendance.delete_confirm') }}">
+          <button class="secondary-btn danger-text" type="submit">{{ t("attendance.delete_batch") }}</button>
+        </form>
+      </div>
+      <progress class="attendance-batch-overview-progress" value="{{ processed_count }}" max="{{ selected_batch.items|length or 1 }}"></progress>
+      <div class="attendance-pdf-card-grid">
+        {% for item in selected_batch.items %}
+          <a class="attendance-pdf-card" href="{{ url_for('attendance.attendance_home', month=selected_batch.year_month, view='collection', batch_id=selected_batch.id, item_id=item.id) }}">
+            <span class="attendance-pdf-mark">PDF</span>
+            <span class="attendance-pdf-card-copy">
+              <strong>{{ item.original_filename }}</strong>
+              <small>{{ loop.index }} / {{ selected_batch.items|length }}</small>
+              <span class="flag {% if item.status == 'saved' %}success{% elif item.status == 'skipped' %}warn{% else %}info{% endif %}">{{ option_t("workflow_status", item.status, item.status) }}</span>
+              {% if item.employee %}<small>{{ item.employee.employee_no }} · {{ item.employee.display_name }}</small>{% endif %}
+            </span>
+            <span class="attendance-pdf-open">{{ t("attendance.open_entry") }} →</span>
+          </a>
+        {% else %}
+          <div class="empty-cell">{{ t("attendance.no_batch_files") }}</div>
+        {% endfor %}
+      </div>
+    </section>
+  {% else %}
+    <section class="onboarding-empty attendance-start-empty">
+      <div>
+        <h2>{{ t("attendance.start_title") }}</h2>
+        <p>{{ t("attendance.start_hint") }}</p>
+      </div>
+    </section>
+  {% endif %}
 {% endif %}
 
+{% if view == "details" and not selected_item and not edit_summary_mode and detail_status %}
 <section class="attendance-roster">
-  <article class="panel" id="missing"><div class="section-head"><h2>{{ t("attendance.missing") }}</h2><strong>{{ missing|length }}</strong></div><div class="chip-list">{% for employee in missing %}<a href="{{ url_for('employees.view_employee', employee_id=employee.id) }}">{{ employee.employee_no }} · {{ employee.display_name }}</a>{% else %}<span>{{ t("dashboard.no_tasks") }}</span>{% endfor %}</div></article>
-  <article class="panel" id="received"><div class="section-head"><h2>{{ t("attendance.received") }}</h2><strong>{{ received|length }}</strong></div><div class="chip-list">{% for summary in received %}<a href="{{ url_for('employees.view_employee', employee_id=summary.employee.id) }}">{{ summary.employee.employee_no }} · {{ summary.employee.display_name }}</a>{% else %}<span>{{ t("common.not_set") }}</span>{% endfor %}</div></article>
+  {% if detail_status in ["expected", "missing"] %}
+  {% set roster_employees = expected if detail_status == "expected" else missing %}
+  <article class="panel" id="{{ detail_status }}">
+    <div class="section-head"><h2>{{ t("attendance.expected_total") if detail_status == "expected" else t("attendance.missing") }}</h2><strong>{{ roster_employees|length }}</strong></div>
+    <div class="attendance-status-list">
+      {% for employee in roster_employees %}
+        <div class="attendance-status-row">
+          <a href="{{ url_for('employees.view_employee', employee_id=employee.id) }}"><strong>{{ employee.employee_no }} · {{ employee.display_name }}</strong><span>{{ t("employees.payroll_group") }}：{{ option_t("payroll_group", employee.payroll_group, employee.payroll_group) }}</span><small>{{ t("common.project") }}：{{ attendance_roster_projects.get(employee.id, [])|join("、") or t("common.not_set") }}</small></a>
+        </div>
+      {% else %}
+        <span>{{ t("dashboard.no_tasks") }}</span>
+      {% endfor %}
+    </div>
+  </article>
+  {% elif detail_status == "received" %}
+  <article class="panel" id="received">
+    <div class="section-head"><h2>{{ t("attendance.received") }}</h2><strong>{{ received|length }}</strong></div>
+    <div class="attendance-status-list">{% for summary in received %}<div class="attendance-status-row"><a href="{{ url_for('employees.view_employee', employee_id=summary.employee.id, tab='attendance') }}"><strong>{{ summary.employee.employee_no }} · {{ summary.employee.display_name }}</strong><span>{{ t("employees.payroll_group") }}：{{ option_t("payroll_group", summary.employee.payroll_group, summary.employee.payroll_group) }}</span><small>{{ t("common.project") }}：{{ attendance_roster_projects.get(summary.employee.id, [])|join("、") or t("common.not_set") }}</small></a>{% if summary.document %}<a class="mini-btn" target="_blank" href="{{ url_for('documents.open_document', document_id=summary.document.id) }}">{{ t("attendance.open_pdf") }}</a>{% endif %}</div>{% else %}<span>{{ t("dashboard.no_tasks") }}</span>{% endfor %}</div>
+  </article>
+  {% endif %}
 </section>
+{% endif %}
 <template id="segment-template">
   <div class="segment-row">
     <label class="segment-project"><span>{{ t("common.project") }}</span><select data-name="project_id"><option value="">{{ t("common.not_set") }}</option>{% for project in projects %}<option value="{{ project.id }}">{{ project.name }}</option>{% endfor %}</select></label>
-    <label><span>{{ t("attendance.working_days") }}</span><input type="number" min="0" step="0.5" value="0" data-name="working_days"></label>
+    <label class="actual-daily-attendance-field"><span>一般工作日實際出勤日數</span><input type="number" min="0" step="0.5" value="0" data-name="working_days"></label>
+    <label class="special-work-days-count"><span>{{ t("attendance.sunday_holiday_work_days") }}</span><input class="special-work-days-input actual-special-work-days-input" type="number" min="0" step="1" value="0" data-name="holiday_days"><small>{{ t("attendance.sunday_holiday_count_first") }}</small></label>
+    <div class="special-work-date-picker" data-special-work-picker hidden><input type="hidden" value="[]" data-name="special_work_entries" data-special-work-entries><div class="special-work-date-head"><strong>{{ t("attendance.sunday_holiday_dates") }}</strong><span>{{ t("attendance.sunday_holiday_dates_hint") }}</span></div><div class="special-work-date-rows" data-special-work-rows></div></div>
     <label><span>{{ t("attendance.ot_hours") }}</span><input type="number" min="0" step="0.5" value="0" data-name="ot_hours"></label>
-    <label><span>{{ t("attendance.holiday_days") }}</span><input type="number" min="0" step="0.5" value="0" data-name="holiday_days"></label>
     <label><span>{{ t("attendance.large_ecall_count") }}</span><input type="number" min="0" step="1" value="0" data-name="large_ecall_count"></label>
     <label><span>{{ t("attendance.ecall_count") }}</span><input type="number" min="0" step="1" value="0" data-name="ecall_count"></label>
-    <button class="icon-btn remove-segment" type="button" title="{{ t('common.delete') }}">×</button>
+    <label class="wide attendance-other-allowance-field"><span>替班其他津貼（HKD）</span><input type="number" min="0" step="0.01" value="0" data-name="other_allowance_amount"><small>只填寫該項目本段實際發生的替班額外津貼；固定補貼及一般工資更正不可填在此欄。金額匯入 Other Payment／其他付款。</small></label>
   </div>
 </template>
 <template id="forecast-segment-template">
   <div class="segment-row forecast-row">
     <label class="segment-project"><span>{{ t("common.project") }}</span><select data-name="project_id"><option value="">{{ t("common.not_set") }}</option>{% for project in projects %}<option value="{{ project.id }}">{{ project.name }}</option>{% endfor %}</select></label>
     <label><span>{{ t("attendance.forecast_days") }}</span><input type="number" min="0" step="0.5" value="0" data-name="working_days"></label>
-    <label><span>{{ t("attendance.holiday_days") }}</span><input type="number" min="0" step="0.5" value="0" data-name="holiday_days"></label>
-    <button class="icon-btn remove-segment" type="button" title="{{ t('common.delete') }}">×</button>
+    <label><span>{{ t("attendance.sunday_holiday_forecast_days") }}</span><input type="number" min="0" step="1" value="0" data-name="holiday_days"><small>{{ t("attendance.forecast_no_ot_ecall") }}</small></label>
+    <input type="hidden" value="[]" data-name="special_work_entries">
   </div>
 </template>
+<template id="special-work-date-template">
+  <div class="special-work-date-row">
+    <label><span>{{ t("common.date") }}</span><input type="date" data-special-work-date required></label>
+  </div>
+</template>
+{% endif %}
 {% endblock %}
 {% block scripts %}
 <script>
+const policyCheckboxes = [...document.querySelectorAll("[data-policy-employee]")];
+const policySelectAll = document.querySelector("[data-policy-select-all]");
+const policyActionButtons = [...document.querySelectorAll("[data-policy-action]")];
+const policyDialog = document.getElementById("attendance-policy-dialog");
+function updatePolicySelection() {
+  const selected = policyCheckboxes.filter((item) => item.checked);
+  policyActionButtons.forEach((button) => { button.disabled = selected.length === 0; });
+  if (policySelectAll) policySelectAll.checked = selected.length > 0 && selected.length === policyCheckboxes.length;
+}
+policySelectAll?.addEventListener("change", () => {
+  policyCheckboxes.forEach((item) => { item.checked = policySelectAll.checked; });
+  updatePolicySelection();
+});
+policyCheckboxes.forEach((item) => item.addEventListener("change", updatePolicySelection));
+policyActionButtons.forEach((button) => button.addEventListener("click", () => {
+  const selected = policyCheckboxes.filter((item) => item.checked);
+  if (!selected.length || !policyDialog) return;
+  const action = button.dataset.policyAction;
+  policyDialog.querySelector("[data-policy-action-input]").value = action;
+  policyDialog.querySelector("[data-policy-title]").textContent = action === "exempt"
+    ? "{{ t('attendance.batch_exempt') if view == 'policies' else t('attendance.monthly_batch_exempt') }}"
+    : "{{ t('attendance.batch_require') if view == 'policies' else t('attendance.monthly_batch_require') }}";
+  policyDialog.querySelector("[data-policy-message]").textContent = action === "exempt"
+    ? "{{ t('attendance.batch_exempt_confirm') if view == 'policies' else t('attendance.monthly_batch_exempt_confirm') }}".replace("__COUNT__", selected.length)
+    : "{{ t('attendance.batch_require_confirm') if view == 'policies' else t('attendance.monthly_batch_require_confirm') }}".replace("__COUNT__", selected.length);
+  const inputRoot = policyDialog.querySelector("[data-policy-employee-inputs]");
+  inputRoot.replaceChildren(...selected.map((item) => {
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = "employee_ids";
+    input.value = item.value;
+    return input;
+  }));
+  policyDialog.showModal();
+}));
 const attendanceUploadForm = document.querySelector("[data-attendance-upload-form]");
 const attendanceDropZone = document.querySelector("[data-attendance-drop-zone]");
 const attendanceFileInput = document.querySelector("[data-attendance-file-input]");
 const attendanceFileSummary = document.querySelector("[data-attendance-file-summary]");
 const attendanceUploadProgress = document.querySelector("[data-attendance-upload-progress]");
 const attendanceEmployee = document.querySelector("[data-attendance-employee]");
-
+const attendancePayrollContext = document.querySelector("[data-attendance-payroll-context]");
+const specialDayHandling = document.querySelector("[data-special-day-handling]");
+function applyPayrollGroupFields() {
+  const group = attendanceEmployee?.selectedOptions?.[0]?.dataset.payrollGroup || "";
+  document.querySelectorAll(".actual-daily-attendance-field").forEach((field) => {
+    field.hidden = Boolean(group && group !== "site_daily");
+    const input = field.querySelector("input");
+    if (input) input.disabled = Boolean(group && group !== "site_daily");
+  });
+  if (attendancePayrollContext) {
+    attendancePayrollContext.hidden = !group;
+    const label = attendancePayrollContext.querySelector("[data-attendance-payroll-label]");
+    if (label) label.textContent = attendanceEmployee?.selectedOptions?.[0]?.dataset.payrollLabel || "";
+    attendancePayrollContext.querySelectorAll("[data-payroll-rule]").forEach((rule) => {
+      rule.hidden = rule.dataset.payrollRule !== group;
+    });
+  }
+}
 if (attendanceEmployee) {
   attendanceEmployee.addEventListener("change", () => {
     const url = new URL(window.location.href);
@@ -255,6 +469,7 @@ if (attendanceEmployee) {
     }
     window.location.href = url.toString();
   });
+  applyPayrollGroupFields();
 }
 
 function updateAttendanceFileSummary() {
@@ -305,12 +520,65 @@ if (attendanceUploadForm) {
   });
 }
 
-function bindRemove(root = document) {
-  root.querySelectorAll(".remove-segment").forEach((button) => {
-    button.onclick = () => {
-      const list = button.closest(".segment-list");
-      if (list.children.length > 1) button.closest(".segment-row").remove();
-    };
+function updateSpecialDayHandlingVisibility() {
+  if (!specialDayHandling) return;
+  const total = [...document.querySelectorAll(".actual-special-work-days-input")]
+    .reduce((sum, input) => sum + (Number.parseFloat(input.value) || 0), 0);
+  specialDayHandling.hidden = total <= 0;
+}
+
+function serializeSpecialWorkPicker(picker) {
+  const entries = [...picker.querySelectorAll(".special-work-date-row")].map((row) => ({
+    date: row.querySelector("[data-special-work-date]")?.value || "",
+    session: "full_day",
+  }));
+  const hidden = picker.querySelector("[data-special-work-entries]");
+  if (hidden) hidden.value = JSON.stringify(entries);
+  const usedDates = new Set();
+  picker.querySelectorAll("[data-special-work-date]").forEach((input) => {
+    const duplicate = input.value && usedDates.has(input.value);
+    input.setCustomValidity(duplicate ? "{{ t('attendance.duplicate_sunday_holiday_date') }}" : "");
+    if (input.value) usedDates.add(input.value);
+  });
+}
+
+function makeSpecialWorkDateRow(picker) {
+  const fragment = document.getElementById("special-work-date-template").content.cloneNode(true);
+  const row = fragment.querySelector(".special-work-date-row");
+  const dateInput = row.querySelector("[data-special-work-date]");
+  dateInput.min = picker.dataset.minDate || "";
+  dateInput.max = picker.dataset.maxDate || "";
+  row.querySelectorAll("input").forEach((input) => {
+    input.addEventListener("change", () => serializeSpecialWorkPicker(picker));
+  });
+  return row;
+}
+
+function syncSpecialWorkPicker(input) {
+  const row = input.closest(".segment-row");
+  const picker = row?.querySelector("[data-special-work-picker]");
+  if (!picker) return;
+  const days = Math.max(0, Math.round(Number.parseFloat(input.value) || 0));
+  input.value = days;
+  const wantedRows = days;
+  const rowsRoot = picker.querySelector("[data-special-work-rows]");
+  while (rowsRoot.children.length < wantedRows) rowsRoot.append(makeSpecialWorkDateRow(picker));
+  while (rowsRoot.children.length > wantedRows) rowsRoot.lastElementChild.remove();
+  picker.hidden = wantedRows === 0;
+  serializeSpecialWorkPicker(picker);
+  updateSpecialDayHandlingVisibility();
+}
+
+function bindSpecialWorkPickers(root = document) {
+  root.querySelectorAll("[data-special-work-picker]").forEach((picker) => {
+    picker.querySelectorAll("[data-special-work-date]").forEach((control) => {
+      control.addEventListener("change", () => serializeSpecialWorkPicker(picker));
+    });
+  });
+  root.querySelectorAll(".special-work-days-input").forEach((input) => {
+    input.addEventListener("input", () => syncSpecialWorkPicker(input));
+    input.addEventListener("change", () => syncSpecialWorkPicker(input));
+    syncSpecialWorkPicker(input);
   });
 }
 document.querySelectorAll(".add-segment").forEach((button) => {
@@ -323,11 +591,21 @@ document.querySelectorAll(".add-segment").forEach((button) => {
     fragment.querySelectorAll("[data-name]").forEach((input) => {
       input.name = `${kind}_${input.dataset.name}`;
     });
+    const picker = fragment.querySelector("[data-special-work-picker]");
+    if (picker) {
+      picker.dataset.minDate = button.dataset.minDate || "";
+      picker.dataset.maxDate = button.dataset.maxDate || "";
+    }
     const list = document.querySelector(`[data-segments="${kind}"]`);
     list.append(fragment);
-    bindRemove(list);
+    applyPayrollGroupFields();
+    bindSpecialWorkPickers(list.lastElementChild);
   });
 });
-bindRemove();
+bindSpecialWorkPickers();
+document.getElementById("attendance-review-form")?.addEventListener("submit", () => {
+  document.querySelectorAll("[data-special-work-picker]").forEach(serializeSpecialWorkPicker);
+});
+updateSpecialDayHandlingVisibility();
 </script>
 {% endblock %}

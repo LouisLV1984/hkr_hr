@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ t("mpf.export_title") }} - HKR HR{% endblock %}
+{% block sidebar_content %}
+<form class="sidebar-filter" method="get" data-auto-submit>
+  <label><span>{{ t("payroll.current_payroll_month") }}</span><input type="month" name="year_month" value="{{ year_month }}"></label>
+</form>
+<section class="sidebar-summary-list">
+  {% for item in summaries %}
+    <article><span>{{ item.scheme.name }}</span><div><strong>{{ item.ready }} / {{ item.employees }}</strong><small>{{ t("mpf.ready_vs_total") }}</small></div></article>
+  {% endfor %}
+</section>
+{% endblock %}
+{% block content %}
+<section class="period-context-bar payroll-period-context" aria-label="{{ t('payroll.current_payroll_month') }}">
+  <div><span>{{ t("payroll.current_payroll_month") }}</span><strong>{{ month_t(year_month) }}</strong></div>
+  <small>{{ t("mpf.period_context_hint") }}</small>
+</section>
+<section class="page-head compact">
+  <div><h1>{{ t("mpf.export_title") }}</h1><p>{{ t("mpf.export_hint") }}</p></div>
+</section>
+<div class="inline-alert info"><strong>{{ t("mpf.final_payment_rule_title") }}</strong><span>{{ t("mpf.final_payment_rule") }}</span></div>
+
+<section class="metric-grid mpf-metric-grid">
+  {% for item in summaries %}
+    <article class="panel">
+      <span>{{ item.scheme.name }}</span>
+      <strong>{{ item.ready }} {{ t("common.people") }}</strong>
+      <small>{{ t("mpf.relevant_income") }} HKD {{ fmt_money(item.relevant_income) }}</small>
+      <small>{{ t("mpf.employee_contribution") }} {{ fmt_money(item.employee_mpf) }} · {{ t("mpf.employer_contribution") }} {{ fmt_money(item.employer_mpf) }}</small>
+      <form method="post" action="{{ url_for('payroll.export_mpf_contributions') }}"><input type="hidden" name="year_month" value="{{ year_month }}"><input type="hidden" name="scheme_code" value="{{ item.scheme.code }}"><button class="secondary-btn" type="submit" {% if not item.ready %}disabled{% endif %}>{{ t("mpf.export_scheme") }}</button></form>
+    </article>
+  {% endfor %}
+</section>
+
+<section class="panel mpf-export-all">
+  <div class="section-head"><div><h2>{{ t("mpf.export_all") }}</h2><p>{{ t("mpf.export_all_hint") }}</p></div><form method="post" action="{{ url_for('payroll.export_mpf_contributions') }}"><input type="hidden" name="year_month" value="{{ year_month }}"><input type="hidden" name="scheme_code" value="all"><button class="primary-btn" type="submit">{{ t("mpf.download_zip") }}</button></form></div>
+</section>
+
+<section class="panel">
+  <div class="section-head"><div><h2>{{ t("mpf.employee_details") }}</h2><p>{{ t("mpf.employee_details_hint") }}</p></div></div>
+  <div class="table-wrap flat">
+    <table class="dense-table">
+      <thead><tr><th>{{ t("common.employee") }}</th><th>{{ t("mpf.scheme_name") }}</th><th>Member Account No.</th><th>{{ t("mpf.relevant_income") }}</th><th>{{ t("mpf.employee_contribution") }}</th><th>{{ t("mpf.employer_contribution") }}</th><th>{{ t("common.status") }}</th></tr></thead>
+      <tbody>
+        {% for row in rows %}<tr class="{% if row.mpf_issues %}blocked-row{% endif %}">
+          <td><a href="{{ url_for('employees.view_employee', employee_id=row.employee.id, tab='employment') }}">{{ row.employee.employee_no }} · {{ row.employee.display_name }}</a></td>
+          <td>{% if row.mpf_enrollment and row.mpf_enrollment.scheme %}{{ row.mpf_enrollment.scheme.name }}{% else %}−{% endif %}</td>
+          <td>{% if row.mpf_enrollment %}{{ row.mpf_enrollment.member_account_no or '−' }}{% else %}−{% endif %}</td>
+          <td>{% if not row.blockers %}{{ row.currency }} {{ fmt_money(row.gross_amount) }}{% else %}−{% endif %}</td>
+          <td>{% if not row.blockers %}{{ fmt_money(row.employee_mpf) }}{% else %}−{% endif %}</td>
+          <td>{% if not row.blockers %}{{ fmt_money(row.employer_mpf) }}{% else %}−{% endif %}</td>
+          <td>{% if row.mpf_issues %}<span class="flag danger">{{ row.mpf_issues|join(' / ') }}</span>{% else %}<span class="flag success">{{ t("mpf.ready") }}</span>{% endif %}</td>
+        </tr>{% else %}<tr><td colspan="7" class="empty-cell">{{ t("common.no_results") }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}<script>document.querySelectorAll("[data-auto-submit] input").forEach((input)=>input.addEventListener("change",()=>input.form.requestSubmit()));</script>{% endblock %}

@@ -13,6 +13,7 @@
       <label><span>{{ t("employees.payroll_group") }} *</span><select name="payroll_group" required>{% for code, label in payroll_groups %}<option value="{{ code }}">{{ option_t("payroll_group", code, label) }}</option>{% endfor %}</select></label>
       <label><span>{{ t("employees.chinese_name") }}</span><input name="chinese_name"></label>
       <label><span>{{ t("employees.english_name") }}</span><input name="english_name"></label>
+      <label><span>{{ t("attendance.monthly_required_field") }}</span><select name="requires_attendance"><option value="1" selected>{{ t("common.yes") }}</option><option value="0">{{ t("common.no") }}</option></select><small>{{ t("attendance.monthly_required_field_hint") }}</small></label>
       <p class="form-note">{{ t("employees.new_hint") }}</p>
       <button class="primary-btn" type="submit">{{ t("employees.new") }}</button>
     </form>

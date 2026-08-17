@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}{{ t(title_key) }} - HKR HR{% endblock %}
+{% block content %}
+<section class="error-state panel">
+  <span class="error-code">{{ status_code }}</span>
+  <h1>{{ t(title_key) }}</h1>
+  <p>{{ t(detail_key) }}</p>
+  <div class="button-row">
+    <button class="secondary-btn" type="button" onclick="history.back()">{{ t("error.back") }}</button>
+    {% if current_user.is_authenticated %}<a class="primary-btn" href="{{ url_for('dashboard.dashboard') }}">{{ t("error.dashboard") }}</a>{% endif %}
+  </div>
+</section>
+{% endblock %}

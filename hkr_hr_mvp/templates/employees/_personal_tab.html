@@ -1,0 +1,63 @@
+<div class="current-state-grid profile-current-grid">
+  <article class="panel current-state-card">
+    <div class="section-head">
+      <div><span class="eyebrow">{{ t("employee.current_basic_profile") }}</span><h2>{{ employee.display_name }}</h2></div>
+      <div class="button-row"><button class="mini-btn" type="button" data-dialog-open="edit-personal-dialog">{{ t("employee.edit_personal") }}</button><button class="mini-btn" type="button" data-dialog-open="edit-name-dialog">{{ t("employee.correct_name") }}</button></div>
+    </div>
+    <dl class="detail-grid">
+      <div><dt>{{ t("employees.chinese_name") }}</dt><dd>{{ employee.chinese_name or "-" }}</dd></div>
+      <div><dt>{{ t("employees.english_name") }}</dt><dd>{{ employee.english_name or "-" }}</dd></div>
+      <div><dt>{{ t("employee.gender") }}</dt><dd>{{ t("employee.gender_" ~ employee.gender) if employee.gender else "-" }}</dd></div>
+      <div><dt>{{ t("employee.birth_date") }}</dt><dd>{{ fmt_date(employee.date_of_birth) if employee.date_of_birth else "-" }}</dd></div>
+      <div class="wide"><dt>{{ t("common.remarks") }}</dt><dd>{{ employee.remarks or "-" }}</dd></div>
+    </dl>
+  </article>
+  <article class="panel current-state-card">
+    <div class="section-head"><div><span class="eyebrow">{{ t("employee.current_contact") }}</span><h2>{{ employee.mobile_region_code or "" }} {{ employee.mobile_number or t("common.not_set") }}</h2></div><button class="mini-btn" type="button" data-dialog-open="edit-personal-dialog">{{ t("employee.edit_personal") }}</button></div>
+    <dl class="detail-grid">
+      <div><dt>{{ t("employee.email") }}</dt><dd>{{ employee.email or "-" }}</dd></div>
+      <div><dt>{{ t("employee.address") }}</dt><dd>{{ employee.residential_address or "-" }}</dd></div>
+      <div><dt>{{ t("employee.emergency_contact") }}</dt><dd>{{ employee.emergency_contact_name or "-" }}{% if employee.emergency_contact_relation %} · {{ employee.emergency_contact_relation }}{% endif %}</dd></div>
+      <div><dt>{{ t("employee.emergency_phone") }}</dt><dd>{{ employee.emergency_contact_region_code or "" }} {{ employee.emergency_contact_phone or "-" }}</dd></div>
+    </dl>
+  </article>
+  <article class="panel current-state-card">
+    <div class="section-head"><div><span class="eyebrow">{{ t("employee.current_bank") }}</span><h2>{% if current_bank %}{{ current_bank.bank_name }} · {{ masked_bank }}{% else %}{{ t("common.not_set") }}{% endif %}</h2></div><button class="mini-btn" type="button" data-dialog-open="add-bank-dialog">{{ t("employee.add_bank_account") }}</button></div>
+    <dl class="detail-grid">
+      <div><dt>{{ t("employee.effective_date") }}</dt><dd>{{ fmt_date(current_bank.effective_from) if current_bank else "-" }}</dd></div>
+      <div><dt>{{ t("common.currency") }}</dt><dd>{{ current_bank.currency if current_bank else "-" }}</dd></div>
+      <div><dt>{{ t("common.evidence") }}</dt><dd>{% if current_bank and current_bank.evidence_document %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=current_bank.evidence_document.id) }}">{{ current_bank.evidence_document.original_filename }}</a>{% elif current_bank %}<span class="flag warn">{{ t("common.pending") }}</span>{% else %}-{% endif %}</dd></div>
+    </dl>
+  </article>
+</div>
+
+<dialog class="app-dialog record-editor-dialog" id="edit-personal-dialog">
+  <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.update_personal', employee_id=employee.id) }}">
+    <input type="hidden" name="form_scope" value="profile">
+    <div class="section-head record-editor-head"><div><h2>{{ t("employee.edit_personal") }}</h2><p>{{ t("employee.personal_history_hint") }}</p></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
+    <div class="record-editor-body form-grid">
+      <label><span>{{ t("employee.gender") }}</span><select name="gender"><option value="">{{ t("common.not_set") }}</option><option value="male" {% if employee.gender == "male" %}selected{% endif %}>{{ t("employee.gender_male") }}</option><option value="female" {% if employee.gender == "female" %}selected{% endif %}>{{ t("employee.gender_female") }}</option></select></label>
+      <label><span>{{ t("employee.birth_date") }}</span><input type="date" name="date_of_birth" value="{{ employee.date_of_birth.isoformat() if employee.date_of_birth else '' }}"></label>
+      <label class="wide"><span>{{ t("employees.contact") }}</span><div class="phone-inputs"><select name="mobile_region_code">{% for item in refs.phone_region %}{% set phone_code = item.display_name.split(' ')[0] %}<option value="{{ phone_code }}" {% if mobile_region == phone_code %}selected{% endif %}>{{ phone_code }}</option>{% endfor %}</select><input name="mobile_number" value="{{ employee.mobile_number or '' }}"></div></label>
+      <label><span>{{ t("employee.email") }}</span><input type="email" name="email" value="{{ employee.email or '' }}"></label>
+      <label class="wide"><span>{{ t("employee.address") }}</span><textarea name="residential_address">{{ employee.residential_address or '' }}</textarea></label>
+      <label><span>{{ t("employee.emergency_contact") }}</span><input name="emergency_contact_name" value="{{ employee.emergency_contact_name or '' }}"></label>
+      <label><span>{{ t("employee.emergency_relation") }}</span><input name="emergency_contact_relation" value="{{ employee.emergency_contact_relation or '' }}"></label>
+      <label class="wide"><span>{{ t("employee.emergency_phone") }}</span><div class="phone-inputs"><select name="emergency_contact_region_code">{% for item in refs.phone_region %}{% set phone_code = item.display_name.split(' ')[0] %}<option value="{{ phone_code }}" {% if emergency_region == phone_code %}selected{% endif %}>{{ phone_code }}</option>{% endfor %}</select><input name="emergency_contact_phone" value="{{ employee.emergency_contact_phone or '' }}"></div></label>
+      <label class="wide"><span>{{ t("common.remarks") }}</span><textarea name="remarks">{{ employee.remarks or '' }}</textarea></label>
+    </div>
+    <div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
+  </form>
+</dialog>
+<dialog class="app-dialog record-editor-dialog" id="edit-name-dialog">
+  <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.update_name', employee_id=employee.id) }}" enctype="multipart/form-data">
+    <div class="section-head record-editor-head"><h2>{{ t("employee.correct_name") }}</h2><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
+    <div class="record-editor-body form-grid"><label><span>{{ t("employees.chinese_name") }}</span><input name="chinese_name" value="{{ employee.chinese_name or '' }}"></label><label><span>{{ t("employees.english_name") }}</span><input name="english_name" value="{{ employee.english_name or '' }}"></label><label><span>{{ t("common.reason") }}</span><select name="reason"><option value="correction">{{ t("employee.name_reason_correction") }}</option><option value="legal_change">{{ t("employee.name_reason_legal") }}</option></select></label><label><span>{{ t("employee.name_change_evidence") }}</span><input type="file" name="evidence"></label></div>
+    <div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
+  </form>
+</dialog>
+<dialog class="app-dialog record-editor-dialog" id="add-bank-dialog"><form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.add_bank_account', employee_id=employee.id) }}" enctype="multipart/form-data"><div class="section-head record-editor-head"><h2>{{ t("employee.add_bank_account") }}</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div><div class="record-editor-body form-grid"><label><span>{{ t("employee.effective_date") }} *</span><input type="date" name="effective_from" required></label><label>{{ quick_reference_label(t("employee.bank"), "bank", "bank_name_new", "display_name") }}<input name="bank_name" list="bank-options" required><datalist id="bank-options">{% for item in refs.bank %}<option value="{{ item.display_name }}"></option>{% endfor %}</datalist></label><label><span>{{ t("employee.bank_account") }} *</span><input name="account_no" required></label><label><span>{{ t("common.currency") }}</span><input name="currency" value="{{ default_currency }}" required></label><label><span>{{ t("common.evidence") }}</span><input type="file" name="evidence"><small>{{ t("employee.evidence_optional_hint") }}</small></label><label class="wide"><span>{{ t("common.remarks") }}</span><textarea name="remarks"></textarea></label></div><div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div></form></dialog>
+{% for item in bank_accounts if item.status == 'active' %}<dialog class="app-dialog record-editor-dialog" id="bank-editor-{{ item.id }}"><form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.correct_bank_account', account_id=item.id) }}" enctype="multipart/form-data"><div class="section-head record-editor-head"><h2>{{ t("common.correct") }} · {{ t("employee.current_bank") }}</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div><div class="record-editor-body form-grid"><label><span>{{ t("employee.effective_date") }} *</span><input type="date" name="effective_from" value="{{ item.effective_from.isoformat() }}" required></label><label><span>{{ t("employee.bank") }} *</span><input name="bank_name" list="bank-options" value="{{ item.bank_name }}" required></label><label><span>{{ t("employee.bank_account") }} *</span><input name="account_no" value="{{ item.account_no }}" required></label><label><span>{{ t("common.currency") }}</span><input name="currency" value="{{ item.currency }}" required></label><label><span>{{ t("common.evidence") }}</span><input type="file" name="evidence"><small>{{ t("employee.replace_evidence_optional") }}</small></label><label class="wide"><span>{{ t("common.remarks") }}</span><textarea name="remarks">{{ item.remarks or '' }}</textarea></label></div><div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div></form></dialog>{% endfor %}
+
+<div class="section-head change-history-head"><div><h2>{{ t("employee.personal_change_history") }}</h2><p>{{ t("employee.personal_change_history_hint") }}</p></div></div>
+{% include "employees/_personal_history.html" %}

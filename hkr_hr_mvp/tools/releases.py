@@ -1,5 +1,634 @@
 RELEASES = [
     {
+        "version": "V0.2.8",
+        "date": "2026-08-17",
+        "title": {
+            "zh-Hant": "工傷、離職結算與月度薪酬規則",
+            "zh-Hans": "工伤、离职结算与月度薪酬规则",
+            "en": "Work injury, final payment and monthly payroll rules",
+        },
+        "features": {
+            "zh-Hant": [
+                "「假期管理」升級為「假期與工傷」，左欄並列假期管理與工傷管理；工傷管理成為工傷期間、是否按工傷 4/5 計薪或全薪、免考勤及憑證的唯一維護入口，員工檔案只保留摘要、歷史與前往管理的連結。",
+                "工傷記錄可按月份登記復診／醫療開支實銷；金額匯入工傷補償金／醫療開支欄（日工 AM；月工／OFFICE AN）並增加實發金額，但不納入 MPF 有關入息。",
+                "考勤實際項目行新增「替班其他津貼」，以常駐提示限定為代替工傷等同事當值的額外津貼，匯入 Other Payment；固定補貼卡片改名「固定補貼」，補發、追扣及一次性更正則集中到每月 Payroll 的單一入口。",
+                "離職月份以已確認的 Final Payment 作為唯一工資來源；每月 MPF 同月保留離職員工並採用 Final Payment 的 MPF 金額，避免普通 Payroll 與離職結算重複出糧或重複供款。",
+            ],
+            "zh-Hans": [
+                "“假期管理”升级为“假期与工伤”，左栏并列假期管理与工伤管理；工伤管理成为工伤期间、是否按工伤 4/5 计薪或全薪、免考勤及凭证的唯一维护入口，员工档案只保留摘要、历史与前往管理的链接。",
+                "工伤记录可按月份登记复诊／医疗开支实销；金额导入工伤补偿金／医疗开支栏（日工 AM；月工／OFFICE AN）并增加实发金额，但不纳入 MPF 有关入息。",
+                "考勤实际项目行新增“替班其他津贴”，以常驻提示限定为代替工伤等同事当值的额外津贴，导入 Other Payment；固定补贴卡片改名“固定补贴”，补发、追扣及一次性更正集中到每月 Payroll 的单一入口。",
+                "离职月份以已确认的 Final Payment 作为唯一工资来源；每月 MPF 同月保留离职员工并采用 Final Payment 的 MPF 金额，避免普通 Payroll 与离职结算重复出粮或重复供款。",
+            ],
+            "en": [
+                "Leave Management becomes Leave & Work Injury with peer leave and injury cards. Work Injury Management is the sole maintenance entry for dated periods, 4/5 work-injury pay or full pay, attendance exemption and evidence; the employee profile keeps only a summary, history and management link.",
+                "Monthly follow-up and medical reimbursement can be recorded against a work injury. It exports to Work Injury Compensation / Medical Expenses (AM for Daily; AN for Monthly and OFFICE), increases net pay and is excluded from MPF relevant income.",
+                "Actual Attendance project rows add a clearly scoped substitute-shift other allowance that exports to Other Payment. Fixed allowances are renamed accordingly, while arrears, clawbacks and one-off wage corrections move to one employee/month entry in Monthly Payroll.",
+                "Confirmed Final Payment is the sole wage source in the departure month. Monthly MPF retains the departing employee in that month using the Final Payment contribution, preventing duplicate wages or contributions from ordinary Payroll.",
+            ],
+        },
+        "improvements": {
+            "zh-Hant": [
+                "離職年度年假按含頭尾兩日的當年在職日數除以 365／366 自動折算；超用先抵扣其他可用年假，仍不足部分在 Final Payment 追扣。年假補薪日薪率改為前 12 個月工資合計除以 365，並顯示找到的 Payroll 月數及 HR 核實提示。",
+                "假期與工傷新增姓名／員工編號搜尋，支援中文繁簡體及英文姓名；考勤聯動框分別說明日工的實際出勤日數是唯一計薪依據、不會再因無薪假重複扣薪，而月工／OFFICE 的無薪假只按假期記錄扣減一次。",
+                "工傷、離職結算、MPF、病假／無薪假及各類補貼的計算規則在相應頁面常駐顯示；工傷計薪基礎預填合約底薪，並提示 HR 按意外發生時每月收入核實。",
+                "工傷計薪方式、每月醫療實銷、離職年假折算及 Payroll 結果均保留結構化資料與審計軌跡；資料庫升級採加法式欄位，不覆蓋既有員工記錄。",
+            ],
+            "zh-Hans": [
+                "离职年度年假按含头尾两日的当年在职日数除以 365／366 自动折算；超用先抵扣其他可用年假，仍不足部分在 Final Payment 追扣。年假补薪日薪率改为前 12 个月工资合计除以 365，并显示找到的 Payroll 月数及 HR 核实提示。",
+                "假期与工伤新增姓名／员工编号搜索，支持中文繁简体及英文姓名；考勤联动框分别说明日工的实际出勤日数是唯一计薪依据、不会再因无薪假重复扣薪，而月工／OFFICE 的无薪假只按假期记录扣减一次。",
+                "工伤、离职结算、MPF、病假／无薪假及各类补贴的计算规则在相应页面常驻显示；工伤计薪基础预填合同底薪，并提示 HR 按意外发生时每月收入核实。",
+                "工伤计薪方式、每月医疗实销、离职年假折算及 Payroll 结果均保留结构化资料与审计轨迹；数据库升级采用加法式栏位，不覆盖既有员工记录。",
+            ],
+            "en": [
+                "Departure-year annual leave is prorated by inclusive employment days over 365/366. Overuse first offsets other leave and any remainder is deducted in Final Payment. Leave pay uses the verified previous-12-month wage total divided by 365, with the Payroll-month count and HR verification shown.",
+                "Leave & Work Injury adds Simplified/Traditional Chinese, English-name and employee-number search. Linked Attendance notes explain that a daily worker's entered attendance days are the sole pay basis and are not reduced again for unpaid leave, while Monthly/OFFICE unpaid leave is deducted once from leave records.",
+                "Work-injury, Final Payment, MPF, sick/unpaid leave and allowance rules remain visible in their owning pages. Work-injury earnings prefill contract salary and remind HR to verify monthly earnings at the accident date.",
+                "Work-injury pay mode, monthly medical reimbursement, departure leave proration and Payroll results retain structured data and audit history. Additive schema upgrades preserve existing employee records.",
+            ],
+        },
+        "limitations": {"zh-Hant": [], "zh-Hans": [], "en": []},
+    },
+    {
+        "version": "V0.2.7",
+        "date": "2026-08-14",
+        "title": {
+            "zh-Hant": "發薪單位、薪酬計算與員工資料時間線",
+            "zh-Hans": "发薪单位、薪酬计算与员工资料时间线",
+            "en": "Payroll entities, payroll calculation and employee-record timelines",
+        },
+        "features": {
+            "zh-Hant": [
+                "每月 Payroll 新增發薪單位篩選；正式導出限定一個發薪單位，未設定者不會混入任何公司工資表，導出檔名同步標示發薪單位。",
+                "個人資料新增有生效日期的銀行賬戶當前狀態與變更歷史，可更正、撤回、後補或替換附件；撤回後會自動恢復使用上一筆仍有效的銀行資料。",
+                "三寶改為同一來源下的身份證、平安卡及工人註冊證三項結構化資料；平安卡與工人註冊證均可記錄到期日並納入看板提醒。",
+                "VISA 介面統一稱為「簽證／工作許可」；工作許可名稱與其他簽證類型一樣由資料選項維護，HR 可按實際證件名稱新增選項。",
+            ],
+            "zh-Hans": [
+                "每月 Payroll 新增发薪单位筛选；正式导出限定一个发薪单位，未设置者不会混入任何公司工资表，导出文件名同步标示发薪单位。",
+                "个人资料新增有生效日期的银行账户当前状态与变更历史，可更正、撤回、后补或替换附件；撤回后会自动恢复使用上一笔仍有效的银行资料。",
+                "三宝改为同一来源下的身份证、平安卡及工人注册证三项结构化资料；平安卡与工人注册证均可记录到期日并纳入看板提醒。",
+                "VISA 界面统一称为“签证／工作许可”；工作许可名称与其他签证类型一样由资料选项维护，HR 可按实际证件名称新增选项。",
+            ],
+            "en": [
+                "Monthly Payroll filters by payroll entity. A formal export contains exactly one entity, excludes employees with no entity, and includes the entity code in the filename.",
+                "Personal Data now has effective-dated current bank details and history with correction, withdrawal, later evidence upload and attachment replacement. Withdrawing a record restores the previous effective bank details.",
+                "Three Treasures is one source for structured identity, safety-card and worker-registration facts. Safety cards and worker registrations both support expiry dates and Dashboard reminders.",
+                "VISA is renamed Visa / Work Permit. HR can maintain actual work-permit and visa names through Data Options.",
+            ],
+        },
+        "improvements": {
+            "zh-Hant": [
+                "修正月工／OFFICE 的曆日薪金率與計薪曆日：曆日薪金率固定按月薪除以當月曆日，計薪曆日按實際有薪日計算，預估工作日不再重複增加月薪分母。",
+                "上月 OT、E-CALL 及星期日／法定節假日出薪改用各自欄位對比原預估，避免相同款項再次落入少付／多付薪金；日工與月工 Payroll 回歸測試均覆蓋此規則。",
+                "病假薪酬重新核對並加入回歸測試：通過試用期後，同一曆月首 1 日全薪，其後日數按 4/5；未通過試用期由首日起按 4/5。年假維持全薪，無薪假按無出勤扣薪。",
+                "修正新增工傷記錄時因可選欄位處理不完整而出現的 500 錯誤；工傷期間仍由首日起按 HR 核實月入的 4/5 計薪。",
+                "看板到期提示按已到期、30 日內及 31–60 日分為紅、橙、黃三級，已到期的 VISA、平安卡及工人註冊證更容易辨認。",
+                "員工檔案統一採用任職與薪酬的『當前狀態＋變更歷史』模式：個人資料以基本、聯絡及銀行卡片顯示，普通資料按『編輯個人資料』開啟大視窗，不再預設鋪開表單。",
+                "證件與資歷上方按類別顯示全部有效記錄，下方統一保留新增、更正、作廢與憑證歷史；學歷背景及工作許可要求亦歸入此頁。轉正／離職改名任職狀態，離職表單改為按鈕開啟，並新增任職期間歷史。",
+                "考勤詳情的應收總數改為清楚顯示『應收＝未收＋已收』；三個統計預設不展開，點擊後才顯示員工、Payroll 組別及所選月份內曾隸屬的項目。",
+                "考勤、每月 Payroll 及每月 MPF 共用同一操作月份並以醒目固定列顯示完整年月；四段考勤改用實際年月日期，不再使用模糊的本月／上月標題。歷史月份的整體、已選及單人 Payroll 導出均嚴格沿用畫面所選月份。",
+                "合約與附件改為文件總覽及下載中心：CV／其他一般附件可直接維護；銀行、證件、任職薪酬、假期／工傷及考勤附件返回所屬專項模組管理。生成雇傭合約移至任職與薪酬，避免同一資料出現兩套修改入口。",
+            ],
+            "zh-Hans": [
+                "修正月工／OFFICE 的日历日薪金率与计薪日历日：日历日薪金率固定按月薪除以当月日历日，计薪日历日按实际有薪日计算，预计工作日不再重复增加月薪分母。",
+                "上月 OT、E-CALL 及星期日／法定节假日出薪改用各自栏位对比原预计，避免相同款项再次落入少付／多付薪金；日工与月工 Payroll 回归测试均覆盖此规则。",
+                "病假薪酬重新核对并加入回归测试：通过试用期后，同一日历月首 1 日全薪，其后日数按 4/5；未通过试用期由首日起按 4/5。年假维持全薪，无薪假按无出勤扣薪。",
+                "修正新增工伤记录时因可选栏位处理不完整而出现的 500 错误；工伤期间仍由首日起按 HR 核实月入的 4/5 计薪。",
+                "看板到期提示按已到期、30 日内及 31–60 日分为红、橙、黄三级，已到期的 VISA、平安卡及工人注册证更容易辨认。",
+                "员工档案统一采用任职与薪酬的“当前状态＋变更历史”模式：个人资料以基本、联络及银行卡片显示，普通资料按“编辑个人资料”打开大窗口，不再默认铺开表单。",
+                "证件与资历上方按类别显示全部有效记录，下方统一保留新增、更正、作废与凭证历史；学历背景及工作许可要求亦归入此页。转正／离职改名任职状态，离职表单改为按钮打开，并新增任职期间历史。",
+                "考勤详情的应收总数改为清楚显示“应收＝未收＋已收”；三个统计默认不展开，点击后才显示员工、Payroll 组别及所选月份内曾隶属的项目。",
+                "考勤、每月 Payroll 及每月 MPF 共用同一操作月份并以醒目固定栏显示完整年月；四段考勤改用实际年月日期，不再使用模糊的本月／上月标题。历史月份的整体、已选及单人 Payroll 导出均严格沿用画面所选月份。",
+                "合约与附件改为文件总览及下载中心：CV／其他一般附件可直接维护；银行、证件、任职薪酬、假期／工伤及考勤附件返回所属专项模块管理。生成雇佣合同移至任职与薪酬，避免同一资料出现两套修改入口。",
+            ],
+            "en": [
+                "Monthly/OFFICE calendar-day rates and paid calendar days are corrected: the rate is monthly salary divided by calendar days in the month, paid days follow actual paid days, and forecast workdays no longer inflate the divisor.",
+                "Prior OT, E-CALL and Sunday/statutory-holiday pay are compared through their dedicated forecast fields instead of being duplicated under overpayment or underpayment; daily and monthly regression cases cover the rule.",
+                "Sick pay is rechecked and regression-tested: after probation the first aggregate day in a calendar month is fully paid and later days pay at 4/5; before probation every sick day pays at 4/5. Annual leave remains paid and unpaid leave is treated as no attendance.",
+                "Creating a work-injury record no longer fails when optional fields are left blank. Covered days continue to pay at 4/5 of HR-verified accident-time monthly earnings from day one.",
+                "Dashboard expiry alerts use red for expired, orange for 30 days or less and yellow for 31–60 days, covering VISA, safety cards and worker registrations.",
+                "Employee tabs now follow the same current-state then change-history pattern as Employment & Salary. Personal details use basic, contact and bank cards, and ordinary edits open in a large dialog instead of an always-open form.",
+                "Credentials shows every active record by category above a unified correction, void and evidence history. Education and work-permit requirements move there. Confirmation / Termination is renamed Employment Status, with button-opened forms and employment-period history.",
+                "Attendance due is explicitly defined as missing plus received. All three totals start collapsed and reveal employee, Payroll group and every project held during the selected month only when clicked.",
+                "Attendance, Monthly Payroll and Monthly MPF share one operating month with a prominent sticky full-month display. Four-part periods use exact dates, while every historical bulk, selected or single-employee Payroll export preserves the month selected on screen.",
+                "Contracts & Attachments is now the document overview and download centre. CV/other general files remain editable there, while bank, credential, employment/pay, leave/work-injury and attendance evidence returns to its owning module. Contract generation moves to Employment & Salary.",
+            ],
+        },
+        "limitations": {"zh-Hant": [], "zh-Hans": [], "en": []},
+    },
+    {
+        "version": "V0.2.6",
+        "date": "2026-08-13",
+        "title": {
+            "zh-Hant": "假期、星期日／法定節假日、工傷與補貼薪酬聯動",
+            "zh-Hans": "假期、星期日／法定节假日、工伤与补贴薪酬联动",
+            "en": "Leave, Sunday/statutory-holiday, work-injury and allowance payroll integration",
+        },
+        "features": {
+            "zh-Hant": [
+                "導覽重新按 HR 工作目的整理：工作總覽改為看板、員工管理改為員工總覽、年假管理改為假期管理、考勤管理改為考勤錄入；薪酬及資料匯出亦重新分組，每月 MPF 供款表移至每月 Payroll 下方。",
+                "假期管理統一處理年假、病假及無薪假，支援 0.5 日單位、日期範圍、憑證與員工假期詳情；考勤頁只在當月確有記錄時顯示唯讀假期資料，任何改動必須返回假期管理完成。",
+                "補休與普通請假分帳：補休不能在新增請假中直接建立，只由考勤錄入的休息日／法定假日工作選擇「補休」後自動產生，永久保留來源日期及時間線且暫不設到期日；放年假時優先扣除補休，再扣 2023 年及以前結餘，最後扣最早到期的 2024 年起結餘。",
+                "考勤錄入按 Payroll 組別顯示不同欄位：日工錄入普通計薪工作日，月工及 OFFICE 以合約月薪為基礎而不再要求普通出勤日數；三組均以實際日期記錄休息日／法定假日工作，並整份考勤統一選擇「出薪」或「補休」。",
+                "月工與 OFFICE 採曆日月薪；平日下班後 OT 按時薪 1.5 倍，星期日／法定節假日如選擇出薪按日薪率額外 1 倍，如選擇補休則不另付當日工資。日工同樣可選出薪 1 倍或只增加補休。",
+                "病假按同一曆月累計：只有已通過試用期的員工享有首 1 日全薪，其後日數按 4/5 計薪；未通過試用期者由首日起按 4/5。月工與日工均適用，病假憑證可後補且不阻止 Payroll 匯出。",
+                "工傷改為員工的有效日期記錄而不是在職狀態：合約底薪只作預填，HR 應按意外發生時每月收入核實及調整；工傷期由首日起按 4/5 計薪並豁免相關考勤，整月工傷時無需提交該月考勤。計算規則及勞工處提示會常駐顯示。",
+                "任職與薪酬新增餐補、交通補貼及特殊津貼時間線，支援生效／結束日期、幣種、跨幣種匯率、附件、更正及撤回；餐補與交通補貼匯入 Traffic Allowance / Meal Allowance，特殊津貼保留匯入 Bonus / Fixed Allowance。",
+                "指定月份的補發、扣減及一次性調整改名為「指定月份調整」，繼續匯入 Other Payment，與長期固定補貼清楚分工。",
+            ],
+            "zh-Hans": [
+                "导航重新按 HR 工作目的整理：工作总览改为看板、员工管理改为员工总览、年假管理改为假期管理、考勤管理改为考勤录入；薪酬及资料导出亦重新分组，每月 MPF 供款表移至每月 Payroll 下方。",
+                "假期管理统一处理年假、病假及无薪假，支持 0.5 日单位、日期范围、凭证与员工假期详情；考勤页只在当月确有记录时显示只读假期资料，任何改动必须返回假期管理完成。",
+                "补休与普通请假分账：补休不能在新增请假中直接建立，只由考勤录入的休息日／法定假日工作选择“补休”后自动产生，永久保留来源日期及时间线且暂不设到期日；放年假时优先扣除补休，再扣 2023 年及以前结余，最后扣最早到期的 2024 年起结余。",
+                "考勤录入按 Payroll 组别显示不同栏位：日工录入普通计薪工作日，月工及 OFFICE 以合约月薪为基础而不再要求普通出勤日数；三组均以实际日期记录休息日／法定假日工作，并整份考勤统一选择“出薪”或“补休”。",
+                "月工与 OFFICE 采用日历日月薪；平日下班后 OT 按时薪 1.5 倍，星期日／法定节假日如选择出薪按日薪率额外 1 倍，如选择补休则不另付当日工资。日工同样可选出薪 1 倍或只增加补休。",
+                "病假按同一日历月累计：只有已通过试用期的员工享有首 1 日全薪，其后日数按 4/5 计薪；未通过试用期者由首日起按 4/5。月工与日工均适用，病假凭证可后补且不阻止 Payroll 导出。",
+                "工伤改为员工的有效日期记录而不是在职状态：合约底薪只作预填，HR 应按意外发生时每月收入核实及调整；工伤期由首日起按 4/5 计薪并豁免相关考勤，整月工伤时无需提交该月考勤。计算规则及劳工处提示会常驻显示。",
+                "任职与薪酬新增餐补、交通补贴及特殊津贴时间线，支持生效／结束日期、币种、跨币种汇率、附件、更正及撤回；餐补与交通补贴导入 Traffic Allowance / Meal Allowance，特殊津贴保留导入 Bonus / Fixed Allowance。",
+                "指定月份的补发、扣减及一次性调整改名为“指定月份调整”，继续导入 Other Payment，与长期固定补贴清楚分工。",
+            ],
+            "en": [
+                "Navigation is reorganized around HR tasks: Dashboard, Employee Overview, Leave Management, Attendance Entry, Payroll Analytics & Export, and Data Settings & Export; the Monthly MPF Contribution Report now sits directly below Monthly Payroll.",
+                "Leave Management handles annual, sick and unpaid leave in 0.5-day units with date ranges, evidence and employee-focused detail. Attendance shows linked leave only when the selected month has records and keeps it read-only.",
+                "Comp leave is separate from leave entry. It is created only when dated rest-day/statutory-holiday attendance is treated as Comp Leave, retains its source timeline without expiry, and is consumed before legacy and regular annual-leave balances.",
+                "Attendance fields now follow Payroll group: daily workers enter ordinary paid workdays, while Monthly and OFFICE staff use calendar-based contract salary. Every group records actual special-work dates and applies one Payroll/Comp Leave treatment to the attendance record.",
+                "Weekday overtime for Monthly and OFFICE staff remains 1.5x hourly rate. Paid Sunday/statutory-holiday work adds 1x daily rate; selecting Comp Leave adds no extra payment. Daily workers follow the same Payroll-or-Comp-Leave choice.",
+                "After probation, sick leave pays the first aggregate day in each calendar month in full and later days at 4/5; before probation it pays 4/5 from day one. This applies to monthly and daily staff, and missing evidence remains a visible non-blocking warning.",
+                "Work injury is an effective-dated record rather than an employment status. Contract salary is only a prefill for HR-verified accident-time monthly earnings; covered days pay at 4/5 from day one and are exempt from attendance, including full-month exemption.",
+                "Employment & Salary now includes effective-dated meal, transport and special allowances with currency conversion, evidence, correction and withdrawal history. Meal/transport map to Traffic Allowance / Meal Allowance; special allowance remains under Bonus / Fixed Allowance.",
+                "One-off arrears, deductions and adjustments are renamed Month-specific adjustments and continue to map to Other Payment, keeping them separate from fixed allowances.",
+            ],
+        },
+        "improvements": {
+            "zh-Hant": [
+                "員工詳情移除重複的頂部快捷鍵；附件改為「合約與附件」，上傳、生成合約及附件打包集中在同一頁，並新增與獨立假期管理互相聯動的個人假期頁。",
+                "當前任職、當前薪酬及 MPF、當前補貼各自在卡片內提供新增／調整按鈕，改用較大的彈窗填寫，避免原有窄小下拉區域。",
+                "假期總覽可按年份、狀態、項目及 Payroll 組別篩選；點擊員工後進入單一員工詳情，再以返回按鈕回到原篩選結果。",
+                "考勤選定員工後直接顯示 Payroll 類別及該組別的簡明計薪規則，日工、月工與 OFFICE 的輸入欄位和預估提示會同步切換。",
+                "考勤員工欄合併為「請選擇員工」，文件名提示置於同一欄內；星期日／法定節假日錄入改為先填整日總數，再逐日使用日期選擇器指定日期，暫不選擇上午／下午。只有實際日數大於 0 時才顯示整份考勤的出薪／補休選項。",
+                "本月 21 日至月底預估及上月 21 日至月底原預估均可填預估工作日出勤日數及星期日／法定節假日預估出勤日數，不設 OT 或 E-CALL。上月原預估優先帶入上月已保存數值，沒有上月記錄時預設為 0。",
+                "四段考勤的固定資料列移除沒有必要的刪除叉號；如涉及多個項目，仍可使用新增項目分列填寫。",
+                "考勤頁與 Payroll 計算規則均常駐顯示病假、工傷、星期日／法定節假日出薪／補休及 OT 規則，減少 HR 需要憑記憶判斷。",
+                "月工、OFFICE、日工三張 Payroll 工作表更新月薪標準、曆日薪金率、計薪日及星期日／法定節假日欄名；病假／工傷共用原有區塊，以合計日數、平均計薪率及合計金額輸出。",
+                "Payroll 公式同步納入星期日／法定節假日出薪、固定補貼、病假、工傷及指定月份調整，並保留 Excel 公式供覆核。",
+                "假期總覽恢復多欄員工卡片排列；基礎資料改名為資料選項。補貼不再另設時間線，而是與任職、薪酬及 MPF 一同按生效日期列入變更歷史。",
+                "補貼新增及更正視窗加入結束日期可留空提示；記錄彈窗放寬並支援由邊緣或四角縮放，內部表單隨視窗尺寸自動調整。",
+                "資料模型與加法式資料庫遷移已擴充假期類別、補休來源與扣帳、星期日／法定節假日日期、工傷期間、固定補貼及 Payroll 計算快照，保留既有資料和審計軌跡；目前考勤介面只接受整日星期日／法定節假日。",
+                "上月 21 日至月底原預估提供上月考勤 PDF 新視窗對照；未找到時按鍵會自動置灰並明確提示。全系統表單欄位改為頂部對齊，統一提示文字的字體、顏色、行距及位置，避免有提示的輸入框被推移。",
+            ],
+            "zh-Hans": [
+                "员工详情移除重复的顶部快捷键；附件改为“合约与附件”，上传、生成合约及附件打包集中在同一页，并新增与独立假期管理互相联动的个人假期页。",
+                "当前任职、当前薪酬及 MPF、当前补贴各自在卡片内提供新增／调整按钮，改用较大的弹窗填写，避免原有窄小下拉区域。",
+                "假期总览可按年份、状态、项目及 Payroll 组别筛选；点击员工后进入单一员工详情，再以返回按钮回到原筛选结果。",
+                "考勤选定员工后直接显示 Payroll 类别及该组别的简明计薪规则，日工、月工与 OFFICE 的输入栏位和预计提示会同步切换。",
+                "考勤员工栏合并为“请选择员工”，文件名提示置于同一栏内；星期日／法定节假日录入改为先填整日总数，再逐日使用日期选择器指定日期，暂不选择上午／下午。只有实际日数大于 0 时才显示整份考勤的出薪／补休选项。",
+                "本月 21 日至月底预计及上月 21 日至月底原预计均可填预计工作日出勤日数及星期日／法定节假日预计出勤日数，不设 OT 或 E-CALL。上月原预计优先带入上月已保存数值，没有上月记录时预设为 0。",
+                "四段考勤的固定资料列移除没有必要的删除叉号；如涉及多个项目，仍可使用新增项目分列填写。",
+                "考勤页与 Payroll 计算规则均常驻显示病假、工伤、星期日／法定节假日出薪／补休及 OT 规则，减少 HR 需要凭记忆判断。",
+                "月工、OFFICE、日工三张 Payroll 工作表更新月薪标准、日历日薪金率、计薪日及星期日／法定节假日栏名；病假／工伤共用原有区块，以合计天数、平均计薪率及合计金额输出。",
+                "Payroll 公式同步纳入星期日／法定节假日出薪、固定补贴、病假、工伤及指定月份调整，并保留 Excel 公式供复核。",
+                "假期总览恢复多栏员工卡片排列；基础资料改名为资料选项。补贴不再另设时间线，而是与任职、薪酬及 MPF 一同按生效日期列入变更历史。",
+                "补贴新增及更正窗口加入结束日期可留空提示；记录弹窗放宽并支持由边缘或四角缩放，内部表单随窗口尺寸自动调整。",
+                "资料模型与加法式数据库迁移已扩充假期类别、补休来源与扣账、星期日／法定节假日日期、工伤期间、固定补贴及 Payroll 计算快照，保留既有资料和审计轨迹；目前考勤界面只接受整日星期日／法定节假日。",
+                "上月 21 日至月底原预计提供上月考勤 PDF 新窗口对照；未找到时按钮会自动置灰并明确提示。全系统表单栏位改为顶部对齐，统一提示文字的字体、颜色、行距及位置，避免有提示的输入框被推移。",
+            ],
+            "en": [
+                "Employee details remove duplicate top actions and centralize uploads, contract generation and bundling under Contracts & Attachments, with a linked personal Leave page.",
+                "Current Assignment, Salary & MPF and Allowances use in-card actions and larger record-entry dialogs.",
+                "Leave Overview filters by year, status, project and Payroll group, then opens a focused employee view with a return action.",
+                "Selecting an employee in Attendance now shows the Payroll group and a concise rule for that group; daily, monthly and OFFICE inputs and forecast guidance switch together.",
+                "The Attendance employee field is consolidated as Select employee with the filename reminder inside the same field. Sunday/statutory-holiday actual work is entered as whole days first and then dated, with AM/PM selection temporarily removed. Payroll/Comp Leave appears only when actual days exceed zero.",
+                "Current 21-end and original prior 21-end forecasts both accept forecast workdays and forecast Sunday/statutory-holiday days, without OT or E-CALL. The original prior forecast comes from the saved prior-month forecast and defaults to zero when none exists.",
+                "The unnecessary delete crosses are removed from the four fixed attendance sections; Add project remains available when work must be split across projects.",
+                "Attendance and Payroll pages keep sick-leave, work-injury, Sunday/statutory-holiday and overtime rules visible for HR review.",
+                "All three Payroll sheets use clearer salary basis, calendar/paid-day and Sunday/statutory-holiday labels. Sick leave/work injury share the established block using combined days, average rate and total amount.",
+                "Payroll formulas cover Sunday/statutory-holiday pay, fixed allowances, sick leave, work injury and month-specific adjustments while remaining visible in Excel for review.",
+                "Leave Overview restores a dense multi-column employee-card grid; Reference Data is renamed Data Options. Allowances now join Assignment, Salary and MPF in one effective-dated Change History.",
+                "Allowance add/correct dialogs mark End date as optional. Record dialogs are wider and resizable from their edges or corners, with forms adapting to the selected size.",
+                "Additive schema migration extends leave, comp-credit allocation, dated Sunday/statutory-holiday work, work-injury periods, allowances and Payroll snapshots without replacing existing HR records or audit history; Attendance currently accepts whole-day Sunday/statutory-holiday entries only.",
+                "The original prior-month 21-end forecast now opens the previous attendance PDF in a new window, or shows a disabled action and a clear not-found note. Forms across the system use top-aligned controls and consistent hint typography, colour, spacing and placement so helper text no longer shifts adjacent inputs.",
+            ],
+        },
+        "limitations": {
+            "zh-Hant": ["兼職考勤及薪酬規則尚未實作，待有實際安排後另行確認"],
+            "zh-Hans": ["兼职考勤及薪酬规则尚未实现，待有实际安排后另行确认"],
+            "en": ["Part-time attendance and payroll remain deferred until an actual arrangement is confirmed"],
+        },
+    },
+    {
+        "version": "V0.2.5",
+        "date": "2026-08-12",
+        "title": {
+            "zh-Hant": "員工總表 MPF 資料狀態",
+            "zh-Hans": "员工总表 MPF 资料状态",
+            "en": "MPF data status in the employee register",
+        },
+        "features": {
+            "zh-Hant": [
+                "員工總表的員工檔案欄顯示 MPF 資料已填寫或未填寫，並可直接開啟任職與薪酬頁處理",
+            ],
+            "zh-Hans": [
+                "员工总表的员工档案栏显示 MPF 资料已填写或未填写，并可直接打开任职与薪酬页处理",
+            ],
+            "en": [
+                "The Employee File column shows whether MPF details are entered and links directly to Employment & Salary",
+            ],
+        },
+        "improvements": {
+            "zh-Hant": ["MPF 狀態按所選月份的有效記錄判定，離職後月份不再顯示"],
+            "zh-Hans": ["MPF 状态按所选月份的有效记录判定，离职后月份不再显示"],
+            "en": ["MPF status follows the selected month's effective record and is hidden after employment ends"],
+        },
+        "limitations": {"zh-Hant": [], "zh-Hans": [], "en": []},
+    },
+    {
+        "version": "V0.2.4",
+        "date": "2026-08-12",
+        "title": {
+            "zh-Hant": "統一任職、薪酬及 MPF 變更歷史",
+            "zh-Hans": "统一任职、薪酬及 MPF 变更历史",
+            "en": "Unified assignment, salary and MPF change history",
+        },
+        "features": {
+            "zh-Hant": [
+                "任職、薪酬及 MPF 按生效日期合併為一張變更歷史表",
+                "每筆記錄直接顯示生效內容、憑證、錄入或最近更正人及操作日期",
+            ],
+            "zh-Hans": [
+                "任职、薪酬及 MPF 按生效日期合并为一张变更历史表",
+                "每笔记录直接显示生效内容、凭证、录入或最近更正人及操作日期",
+            ],
+            "en": [
+                "Assignment, salary and MPF now share one effective-date ordered change history",
+                "Each record shows its effective details, evidence, latest editor and operation date",
+            ],
+        },
+        "improvements": {
+            "zh-Hant": [
+                "更正與撤回審計附在原業務記錄下方，不再重複顯示為另一條平級時間線",
+                "員工詳情首頁移除重複的完整時間線，當前資料與各頁籤記錄分工更清楚",
+            ],
+            "zh-Hans": [
+                "更正与撤回审计附在原业务记录下方，不再重复显示为另一条平级时间线",
+                "员工详情首页移除重复的完整时间线，当前资料与各页签记录分工更清楚",
+            ],
+            "en": [
+                "Correction and withdrawal audit details stay beneath the originating business record instead of appearing as a duplicate timeline event",
+                "The duplicate full timeline was removed from the employee overview so current data and domain records have clearer roles",
+            ],
+        },
+        "limitations": {"zh-Hant": [], "zh-Hans": [], "en": []},
+    },
+    {
+        "version": "V0.2.3",
+        "date": "2026-08-12",
+        "title": {
+            "zh-Hant": "MPF 計劃記錄與每月供款表",
+            "zh-Hans": "MPF 计划记录与每月供款表",
+            "en": "MPF scheme records and monthly contribution reports",
+        },
+        "features": {
+            "zh-Hant": [
+                "員工檔案顯示當前 MPF 計劃、Member Account No. 及生效日期；轉換計劃時保留舊記錄",
+                "基礎資料可維護 MPF 計劃名稱、僱主帳戶號碼及工資組別編號",
+                "MPF 供款表按計劃下載 XLSX，全部計劃下載 ZIP；供款金額直接採用同月 Payroll 結果",
+            ],
+            "zh-Hans": [
+                "员工档案显示当前 MPF 计划、Member Account No. 及生效日期；转换计划时保留旧记录",
+                "基础资料可维护 MPF 计划名称、雇主账户号码及工资组别编号",
+                "MPF 供款表按计划下载 XLSX，全部计划下载 ZIP；供款金额直接采用同月 Payroll 结果",
+            ],
+            "en": [
+                "Employee files show the current MPF scheme, Member Account No. and effective date while retaining prior scheme records",
+                "Reference Data maintains MPF scheme name, employer account number and payroll group ID",
+                "Download one MPF XLSX per scheme or a ZIP for all schemes, using the same month's Payroll contribution results",
+            ],
+        },
+        "improvements": {
+            "zh-Hant": [
+                "任職、薪酬及 MPF 操作統一為「新增記錄」，後續變動合併於「變更歷史」查看",
+                "MPF 資料缺失只阻止 MPF 供款表，不阻止已齊備考勤、薪酬及銀行資料的 Payroll",
+            ],
+            "zh-Hans": [
+                "任职、薪酬及 MPF 操作统一为“新增记录”，后续变动合并在“变更历史”查看",
+                "MPF 资料缺失只阻止 MPF 供款表，不阻止已齐备考勤、薪酬及银行资料的 Payroll",
+            ],
+            "en": [
+                "Assignment, salary and MPF actions use Add record wording, with later activity consolidated under Change history",
+                "Missing MPF metadata blocks only MPF reports, not otherwise payroll-ready employees",
+            ],
+        },
+        "limitations": {
+            "zh-Hant": ["MPF 計劃月中轉換本版不拆分同月供款；請由 HR 核對後處理。"],
+            "zh-Hans": ["MPF 计划月中转换本版不拆分同月供款；请由 HR 核对后处理。"],
+            "en": ["A mid-month MPF scheme change is not split within one contribution month and requires HR review."],
+        },
+    },
+    {
+        "version": "V0.2.2",
+        "date": "2026-08-11",
+        "title": {
+            "zh-Hant": "員工狀態工作區與考勤免交流程",
+            "zh-Hans": "员工状态工作区与考勤免交流程",
+            "en": "Employee readiness workspace and attendance exemptions",
+        },
+        "features": {
+            "zh-Hant": [
+                "員工總表集中顯示員工檔案、所選月份考勤及出糧狀態，工作總覽只保留需處理摘要",
+                "員工、年假與考勤管理採用左側條件、右側結果的統一工作區；考勤新增單月免交與長期免交子版塊",
+                "新建及個人資料可設定每月是否需要考勤，預設需要；長期免交按全勤及零 OT／E-CALL 計算",
+            ],
+            "zh-Hans": [
+                "员工总表集中显示员工档案、所选月份考勤及出粮状态，工作总览只保留需处理摘要",
+                "员工、年假与考勤管理采用左侧条件、右侧结果的统一工作区；考勤新增单月免交与长期免交子板块",
+                "新建及个人资料可设置每月是否需要考勤，默认需要；长期免交按全勤及零 OT／E-CALL 计算",
+            ],
+            "en": [
+                "The employee register is the full Employee File, selected-month Attendance and Payroll Status matrix; the Dashboard keeps a compact action summary",
+                "Employee, annual-leave and attendance workspaces use left-side context and filters with right-side results; attendance has separate monthly and long-term exemption views",
+                "Employee creation and personal details can set whether monthly attendance is required; exemptions use full attendance with zero OT and E-CALL",
+            ],
+        },
+        "improvements": {
+            "zh-Hant": [
+                "出糧銀行資料與可選的銀行賬戶文件分開；後者不再阻止出糧",
+                "雇傭合約、已填寫／未填寫、已存檔／未存檔、已收／未收／免交及可出糧／不可出糧用語已統一",
+                "銀行名稱及帳號由 HR 儲存後直接供 Payroll 使用，不再要求重複核對新銀行資料",
+                "員工總表欄位標題固定於名單頂端，向下查看員工時仍可辨認各狀態欄位",
+                "員工總表將同月份的考勤及出糧結果合併為一個狀態欄",
+            ],
+            "zh-Hans": [
+                "出粮银行资料与可选的银行账户文件分开；后者不再阻止出粮",
+                "雇佣合同、已填写／未填写、已存档／未存档、已收／未收／免交及可出粮／不可出粮用语已统一",
+                "银行名称及账号由 HR 保存后直接供 Payroll 使用，不再要求重复核对新银行资料",
+                "员工总表字段标题固定在名单顶部，向下查看员工时仍可辨认各状态字段",
+                "员工总表将同月份的考勤及出粮结果合并为一个状态字段",
+            ],
+            "en": [
+                "Required payroll bank details are separated from the optional bank account document, which no longer blocks payroll",
+                "Employment Contract and source-specific status wording are consistent across the UI",
+                "Bank name and account details are ready for Payroll once HR saves them, without a second verification step",
+                "Employee-register column headers remain visible while scrolling through the roster",
+                "The employee register combines attendance and payroll results for the selected month in one status column",
+            ],
+        },
+        "limitations": {
+            "zh-Hant": [],
+            "zh-Hans": [],
+            "en": [],
+        },
+    },
+    {
+        "version": "V0.2.1",
+        "date": "2026-08-11",
+        "title": {
+            "zh-Hant": "共用資料完整度與正式環境保護",
+            "zh-Hans": "共用资料完整度与正式环境保护",
+            "en": "Shared readiness and production safeguards",
+        },
+        "features": {
+            "zh-Hant": [
+                "工作總覽以每名員工一行顯示員工資料、當月考勤及 Payroll 阻塞項，齊備為綠色、缺失為紅色",
+                "缺項直接連到員工檔案、考勤或 Payroll 處理位置，不再維護與真實資料分離的進度備註",
+            ],
+            "zh-Hans": [
+                "工作总览以每名员工一行显示员工资料、当月考勤及 Payroll 阻塞项，齐备为绿色、缺失为红色",
+                "缺项直接连到员工档案、考勤或 Payroll 处理位置，不再维护与真实资料分离的进度备注",
+            ],
+            "en": [
+                "The Dashboard shows employee data, selected-month attendance and Payroll blockers in one compact row per employee",
+                "Each missing item links to its source workflow instead of maintaining separate progress notes",
+            ],
+        },
+        "improvements": {
+            "zh-Hant": ["附件上傳、登入及錯誤頁加入一致而可理解的安全提示"],
+            "zh-Hans": ["附件上传、登录及错误页面加入一致且易懂的安全提示"],
+            "en": ["Uploads, login and error pages now use consistent safeguards and clear messages"],
+        },
+        "limitations": {
+            "zh-Hant": [],
+            "zh-Hans": [],
+            "en": [],
+        },
+    },
+    {
+        "version": "V0.2.0",
+        "date": "2026-08-10",
+        "title": {
+            "zh-Hant": "考勤詳情分類檢視",
+            "zh-Hans": "考勤详情分类查看",
+            "en": "Focused attendance status views",
+        },
+        "features": {
+            "zh-Hant": [
+                "考勤詳情以摘要卡切換未收、已收及本月無需考勤，右側每次只顯示一類名單",
+                "工作總覽待辦按員工彙整為一行，點擊後才展開缺失項目、進度及備註",
+            ],
+            "zh-Hans": [
+                "考勤详情以摘要卡切换未收、已收及本月无需考勤，右侧每次只显示一类名单",
+                "工作总览待办按员工汇总为一行，点击后才展开缺失项目、进度及备注",
+            ],
+            "en": [
+                "Attendance Details switches between Missing, Received and Not required summaries, showing one roster at a time",
+                "Dashboard tasks are grouped into one collapsed row per employee, with missing items, progress and notes shown on demand",
+            ],
+        },
+        "improvements": {
+            "zh-Hant": ["預設打開未收名單；設定或恢復本月考勤要求後，自動返回相應分類"],
+            "zh-Hans": ["默认打开未收名单；设置或恢复本月考勤要求后，自动返回相应分类"],
+            "en": ["Missing opens by default, and attendance requirement changes return to the relevant category"],
+        },
+        "limitations": {
+            "zh-Hant": ["應收只顯示總數；人員會按實際狀態出現在未收、已收或本月無需考勤名單。"],
+            "zh-Hans": ["应收只显示总数；人员会按实际状态出现在未收、已收或本月无需考勤名单。"],
+            "en": ["Expected is a total only; employees appear under Missing, Received or Not required according to their status."],
+        },
+    },
+    {
+        "version": "V0.1.9",
+        "date": "2026-08-10",
+        "title": {
+            "zh-Hant": "可出糧員工預覽與彈性導出",
+            "zh-Hans": "可出粮员工预览与灵活导出",
+            "en": "Ready-employee payroll review and flexible export",
+        },
+        "features": {
+            "zh-Hant": [
+                "Payroll 員工清單可勾選單人或多人直接導出，跨組別時自動下載 ZIP",
+                "左側可一鍵導出目前全部可出糧員工，待補資料員工不會阻塞或混入",
+            ],
+            "zh-Hans": [
+                "Payroll 员工清单可勾选单人或多人直接导出，跨组别时自动下载 ZIP",
+                "左侧可一键导出目前全部可出粮员工，待补资料员工不会阻塞或混入",
+            ],
+            "en": [
+                "Export one or more selected employees directly from the Payroll list, with automatic ZIP output across groups",
+                "The side rail exports all currently ready employees without blockers stopping or entering the output",
+            ],
+        },
+        "improvements": {
+            "zh-Hant": ["項目 Payroll 摘要移到員工明細上方；清單本身即為本月預覽，不再開啟額外預覽面板"],
+            "zh-Hans": ["项目 Payroll 摘要移到员工明细上方；清单本身即为本月预览，不再打开额外预览面板"],
+            "en": ["Project payroll totals now sit above employee details, and the list itself is the monthly preview"],
+        },
+        "limitations": {
+            "zh-Hant": ["單人導出仍使用所屬 Payroll 組別的正式工作表範本，不是獨立薪金單格式。"],
+            "zh-Hans": ["单人导出仍使用所属 Payroll 组别的正式工作表模板，不是独立工资单格式。"],
+            "en": ["Single-employee export uses the employee's group payroll workbook template rather than a separate payslip format."],
+        },
+    },
+    {
+        "version": "V0.1.8",
+        "date": "2026-08-10",
+        "title": {
+            "zh-Hant": "考勤管理三區導航與批次卡片總覽",
+            "zh-Hans": "考勤管理三区导航与批次卡片总览",
+            "en": "Attendance navigation and batch card overview",
+        },
+        "features": {
+            "zh-Hant": [
+                "考勤管理左側分為考勤詳情、長期免交考勤及考勤收集三個子版塊",
+                "考勤收集右側以卡片顯示所選批次的全部 PDF 及處理狀態",
+            ],
+            "zh-Hans": [
+                "考勤管理左侧分为考勤详情、长期免交考勤及考勤收集三个子版块",
+                "考勤收集右侧以卡片显示所选批次的全部 PDF 及处理状态",
+            ],
+            "en": [
+                "Attendance Management now has separate Details, Long-term Exemptions and Collection sections",
+                "Attendance Collection shows every PDF in the selected batch as a status card",
+            ],
+        },
+        "improvements": {
+            "zh-Hant": ["上傳及最近批次只在考勤收集顯示；退出詳情會返回同一批次卡片總覽"],
+            "zh-Hans": ["上传及最近批次只在考勤收集显示；退出详情会返回同一批次卡片总览"],
+            "en": ["Upload and recent batches appear only in Collection, and exiting detail returns to the same batch overview"],
+        },
+        "limitations": {
+            "zh-Hant": ["批次卡片顯示文件名稱及狀態，不產生 PDF 頁面縮圖。"],
+            "zh-Hans": ["批次卡片显示文件名称及状态，不生成 PDF 页面缩略图。"],
+            "en": ["Batch cards show filenames and status without generating PDF page thumbnails."],
+        },
+    },
+    {
+        "version": "V0.1.7",
+        "date": "2026-08-10",
+        "title": {
+            "zh-Hant": "長期免交考勤與單人薪酬預覽",
+            "zh-Hans": "长期免交考勤与单人薪酬预览",
+            "en": "Long-term attendance exemptions and employee payroll preview",
+        },
+        "features": {
+            "zh-Hant": [
+                "考勤管理集中提供長期免交及批量恢復，按生效月份保存並記錄操作",
+                "薪酬摘要人數可點擊查看員工清單，並提供單人薪酬明細預覽",
+                "考勤批次卡片進入專注詳情後隱藏左欄，PDF 預設關閉縮圖導航",
+            ],
+            "zh-Hans": [
+                "考勤管理集中提供长期免交及批量恢复，按生效月份保存并记录操作",
+                "薪酬摘要人数可点击查看员工清单，并提供单人薪酬明细预览",
+                "考勤批次卡片进入专注详情后隐藏左栏，PDF 默认关闭缩略图导航",
+            ],
+            "en": [
+                "Attendance Management now provides effective-dated long-term exemptions and batch restoration with audit records",
+                "Payroll headcounts open employee lists with individual payroll breakdown previews",
+                "Attendance batch cards open a focused detail view with the side rail and PDF thumbnails hidden",
+            ],
+        },
+        "improvements": {
+            "zh-Hant": ["待補資料員工不顯示推測金額；月度考勤設定仍優先於長期政策"],
+            "zh-Hans": ["待补资料员工不显示推测金额；月度考勤设置仍优先于长期政策"],
+            "en": ["Employees with hard blockers show no estimated pay, and month-specific attendance settings still override long-term policy"],
+        },
+        "limitations": {
+            "zh-Hant": ["長期免交仍須由 HR 核對預設全勤、項目及法定假日是否符合實際。"],
+            "zh-Hans": ["长期免交仍须由 HR 核对默认全勤、项目及法定假日是否符合实际。"],
+            "en": ["HR must still verify default attendance, project allocation and statutory holidays for long-term exemptions."],
+        },
+    },
+    {
+        "version": "V0.1.6",
+        "date": "2026-08-10",
+        "title": {
+            "zh-Hant": "員工搜尋與離職後考勤名單修正",
+            "zh-Hans": "员工搜索与离职后考勤名单修正",
+            "en": "Employee search and post-departure attendance fixes",
+        },
+        "features": {
+            "zh-Hant": [
+                "員工總表支援繁體、簡體中文姓名互相搜尋",
+                "考勤未收名單按所選月份及實際任職期間判斷",
+            ],
+            "zh-Hans": [
+                "员工总表支持繁体、简体中文姓名互相搜索",
+                "考勤未收名单按所选月份及实际任职期间判断",
+            ],
+            "en": [
+                "Employee search now matches names across Traditional and Simplified Chinese",
+                "Missing attendance now follows the selected month and actual employment periods",
+            ],
+        },
+        "improvements": {
+            "zh-Hant": ["離職當月仍保留應收考勤；離職後月份不再顯示為未收"],
+            "zh-Hans": ["离职当月仍保留应收考勤；离职后月份不再显示为未收"],
+            "en": ["Attendance remains due for the departure month but not for later months"],
+        },
+        "limitations": {
+            "zh-Hant": ["英文姓名及員工編號仍按原輸入內容搜尋。"],
+            "zh-Hans": ["英文姓名及员工编号仍按原输入内容搜索。"],
+            "en": ["English names and employee numbers continue to use their original text."],
+        },
+    },
+    {
+        "version": "V0.1.5",
+        "date": "2026-08-07",
+        "title": {
+            "zh-Hant": "可逆的免交考勤表設定",
+            "zh-Hans": "可逆的免交考勤表设置",
+            "en": "Reversible attendance exemption",
+        },
+        "features": {
+            "zh-Hant": [
+                "考勤預設仍為必須；HR 可按員工及月份標記本月無需考勤表",
+                "免交考勤表時按預設全勤計算，OT、大 E-CALL及普通 E-CALL均為 0",
+                "可隨時改回需要考勤，再按正常流程導入考勤 PDF",
+            ],
+            "zh-Hans": [
+                "考勤默认仍为必须；HR 可按员工及月份标记本月无需考勤表",
+                "免交考勤表时按默认全勤计算，OT、大 E-CALL 及普通 E-CALL 均为 0",
+                "可随时改回需要考勤，再按正常流程导入考勤 PDF",
+            ],
+            "en": [
+                "Attendance remains required by default; HR can exempt an employee for a selected month",
+                "An exemption uses default full attendance with OT, Large E-CALL and ordinary E-CALL set to zero",
+                "HR can require attendance again and then import the attendance PDF normally",
+            ],
+        },
+        "improvements": {
+            "zh-Hant": [
+                "標記免交及改回需要考勤均保存操作記錄",
+                "Payroll 頁常駐顯示免交考勤表計算規則，受影響員工另有核對提示",
+                "免交及恢復考勤使用站內確認視窗，清楚顯示員工及考勤年月",
+            ],
+            "zh-Hans": [
+                "标记免交及改回需要考勤均保存操作记录",
+                "Payroll 页面常驻显示免交考勤表计算规则，受影响员工另有核对提示",
+                "免交及恢复考勤使用站内确认窗口，清楚显示员工及考勤年月",
+            ],
+            "en": [
+                "Both exemption and restoration are recorded in the audit trail",
+                "Payroll keeps the exemption rule visible and adds a warning to affected employees",
+                "In-app confirmations show the employee and attendance month before either change",
+            ],
+        },
+        "limitations": {
+            "zh-Hant": ["HR 仍須在導出前核對預設全勤日數、項目及法定假日。"],
+            "zh-Hans": ["HR 仍须在导出前核对默认全勤天数、项目及法定假日。"],
+            "en": ["HR must still verify default attendance days, project allocation and statutory holidays before export."],
+        },
+    },
+    {
         "version": "V0.1.4",
         "date": "2026-08-07",
         "title": {
@@ -29,16 +658,19 @@ RELEASES = [
                 "登記年假可分別指定使用舊年假及 2024 起年假；後者自動先扣最早到期且仍有效的年度",
                 "離職結算頁常駐顯示假期補薪、2025-05-01 轉制、款額上限及 MPF 抵銷規則",
                 "Final Payment 使用清理後的正式範本，保留基本工資、OT、假日、總額及實發金額 Excel 公式",
+                "Final Payment 頁面清楚標示勞工處官方來源，匯出檔新增「計算說明」工作表保存相同規則摘要",
             ],
             "zh-Hans": [
                 "登记年假可分别指定使用旧年假及 2024 起年假；后者自动先扣最早到期且仍有效的年度",
                 "离职结算页常驻显示假期补薪、2025-05-01 转制、款额上限及 MPF 抵销规则",
                 "Final Payment 使用清理后的正式模板，保留基本工资、OT、假日、总额及实发金额 Excel 公式",
+                "Final Payment 页面清楚标示劳工处官方来源，导出文件新增“计算说明”工作表保存相同规则摘要",
             ],
             "en": [
                 "A leave entry can split usage between legacy and post-2024 leave; post-2024 leave uses the oldest valid balance first",
                 "Final Payment keeps leave-pay, 2025-05-01 transition, payment-cap and MPF-offset rules visible on the page",
                 "The cleaned Final Payment template retains Excel formulas for basic pay, OT, holidays, totals and actual payment",
+                "Final Payment identifies the Labour Department sources and adds a Calculation Notes sheet to every exported workbook",
             ],
         },
         "limitations": {
@@ -827,4 +1459,4 @@ RELEASES = [
 CURRENT_VERSION = RELEASES[0]["version"]
 
 # The next published release follows the current version without skipping.
-NEXT_VERSION = "V0.1.5"
+NEXT_VERSION = "V0.2.9"

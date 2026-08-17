@@ -1,25 +1,66 @@
 {% extends "base.html" %}
 {% block title %}{{ t("admin.audit") }} - HKR HR{% endblock %}
 {% block content %}
-<section class="page-head"><div><h1>{{ t("admin.audit") }}</h1><p>{{ t("admin.audit_hint") }}</p></div></section>
-<div class="table-wrap">
-  <table class="data-table">
-    <thead><tr><th>{{ t("common.date") }}</th><th>{{ t("auth.username") }}</th><th>{{ t("common.employee") }}</th><th>{{ t("admin.action") }}</th><th>{{ t("admin.entity") }}</th><th>{{ t("common.details") }}</th></tr></thead>
-    <tbody>
-      {% for log in logs.items %}
-        <tr>
-          <td>{{ log.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
-          <td>{{ log.user.username if log.user else "system" }}</td>
-          <td>{% if log.employee %}<a href="{{ url_for('employees.view_employee', employee_id=log.employee.id, tab='timeline') }}">{{ log.employee.employee_no }}</a>{% else %}-{% endif %}</td>
-          <td>{{ message_t(log.action) }}</td>
-          <td>{{ option_t("audit_entity", log.entity_type, log.entity_type) }}{% if log.entity_id %} #{{ log.entity_id }}{% endif %}</td>
-          <td>{{ log.detail or "-" }}</td>
-        </tr>
-      {% else %}
-        <tr><td colspan="6" class="empty-cell">{{ t("common.not_set") }}</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-<div class="pagination">{% if logs.has_prev %}<a class="ghost-btn" href="{{ url_for('admin.audit', page=logs.prev_num) }}">←</a>{% endif %}<span>{{ logs.page }} / {{ logs.pages or 1 }}</span>{% if logs.has_next %}<a class="ghost-btn" href="{{ url_for('admin.audit', page=logs.next_num) }}">→</a>{% endif %}</div>
+<section class="page-head">
+  <div>
+    <h1>{{ t("admin.audit") }}</h1>
+    <p>{{ t("admin.audit_hint") }}</p>
+  </div>
+</section>
+
+<section class="panel user-activity-page">
+  <div class="activity-view-switch" role="tablist" aria-label="{{ t('admin.audit') }}">
+    <a class="{{ 'active' if audit_view == 'activity' else '' }}" href="{{ url_for('admin.audit', view='activity', username=audit_username, limit=audit_limit) }}">{{ t("admin.activity_view") }}</a>
+    <a class="{{ 'active' if audit_view == 'logins' else '' }}" href="{{ url_for('admin.audit', view='logins', username=audit_username, limit=audit_limit) }}">{{ t("admin.login_view") }}</a>
+  </div>
+
+  <form class="activity-toolbar" method="get">
+    <input type="hidden" name="view" value="{{ audit_view }}">
+    <label>
+      <span>{{ t("admin.filter_user") }}</span>
+      <input name="username" value="{{ audit_username }}" list="audit-usernames" autocomplete="off" placeholder="{{ t('auth.username') }}">
+      <datalist id="audit-usernames">{% for username in usernames %}<option value="{{ username }}">{% endfor %}</datalist>
+    </label>
+    <label>
+      <span>{{ t("admin.show_count") }}</span>
+      <select name="limit">{% for value in (20, 50, 100) %}<option value="{{ value }}" {% if audit_limit == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select>
+    </label>
+    <div class="button-row">
+      <button class="secondary-btn" type="submit">{{ t("common.apply") }}</button>
+      <a class="ghost-btn" href="{{ url_for('admin.audit', view=audit_view) }}">{{ t("common.clear") }}</a>
+    </div>
+  </form>
+
+  <div class="section-head compact activity-count-head">
+    <div><h2>{{ t("admin.activity_count", count=logs|length) }}</h2></div>
+  </div>
+  <div class="user-activity-list">
+    {% for log in logs %}
+      {% set actor = log.user.username if log.user else (log.detail if log.action == 'auth_login_failed' else t('common.system')) %}
+      <details class="user-activity-card {{ 'danger' if log.action == 'auth_login_failed' else 'success' if log.action == 'auth_login_success' else '' }}">
+        <summary>
+          <span class="activity-avatar">{{ actor[:1]|upper }}</span>
+          <span class="activity-main">
+            <strong>{{ actor }}</strong>
+            <span>{{ message_t(log.action) }}</span>
+          </span>
+          <time datetime="{{ log.display_created_at.isoformat() }}">{{ log.display_created_at.strftime("%Y-%m-%d %H:%M") }}</time>
+          <span class="activity-expand-label"><span class="when-closed">{{ t("admin.activity_expand") }}</span><span class="when-open">{{ t("admin.activity_collapse") }}</span></span>
+        </summary>
+        <div class="activity-detail-grid">
+          <div><small>{{ t("common.date") }}</small><strong>{{ log.display_created_at.strftime("%Y-%m-%d %H:%M:%S") }}</strong></div>
+          <div><small>{{ t("admin.entity") }}</small><strong>{{ option_t("audit_entity", log.entity_type, log.entity_type) }}{% if log.entity_id %} #{{ log.entity_id }}{% endif %}</strong></div>
+          {% if log.employee %}
+            <div><small>{{ t("common.employee") }}</small><a href="{{ url_for('employees.view_employee', employee_id=log.employee.id, tab='timeline') }}">{{ log.employee.employee_no }} · {{ log.employee.display_name }}</a></div>
+          {% endif %}
+          {% if log.detail and log.action not in ('auth_login_success', 'auth_login_failed', 'auth_logout') %}
+            <div class="wide"><small>{{ t("common.details") }}</small><strong>{{ log.detail }}</strong></div>
+          {% endif %}
+        </div>
+      </details>
+    {% else %}
+      <p class="empty-cell">{{ t("common.not_set") }}</p>
+    {% endfor %}
+  </div>
+</section>
 {% endblock %}

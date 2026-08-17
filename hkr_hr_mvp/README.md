@@ -34,8 +34,16 @@ runtime assets, routes, data and services are never shared.
    data.
 5. Upload attendance PDFs in a batch. For each PDF, select the employee and
    enter current-month days 1–20 plus prior-month days 21–end.
-6. Review payroll, create an immutable calculation snapshot and export one
-   XLSX group or all three groups as a ZIP.
+6. Review payroll and export one XLSX group or all three groups as a ZIP; the
+   export creates an immutable calculation snapshot automatically.
+7. Maintain each employee's effective-dated MPF scheme and Member Account No.,
+   then export one monthly MPF XLSX per scheme or all schemes as a ZIP.
+8. Maintain annual, sick and unpaid leave in Leave Management. Comp leave is
+   generated only from rest-day/statutory-holiday attendance; work injury is a
+   separate dated attendance-exemption and payroll record.
+9. Maintain meal, transport and special allowances as effective-dated monthly
+   amounts under Employment & Salary. One-off Payroll changes remain
+   month-specific adjustments.
 
 ## Routes
 
@@ -44,12 +52,13 @@ runtime assets, routes, data and services are never shared.
 - `/employees/new`
 - `/employees/<id>`
 - `/employees/<id>/documents/new`
+- `/annual-leave`
 - `/attendance`
 - `/attendance-payroll`
+- `/mpf-contributions`
 - `/exports`
 - `/references`
 - `/admin/users`
-- `/admin/import`
 - `/admin/audit`
 - `/updates`
 
@@ -101,6 +110,36 @@ D:\HKR_HR\scripts\mini_pc_upgrade_hkr_hr_v1_and_restart.bat
 ```
 
 After that one-time rebuild, use only the normal restart file.
+
+## Backup And Restore
+
+Production uses two encrypted, deduplicated Restic repositories. The mini PC
+keeps seven daily short-term snapshots under `D:\HKR_HR\04.Backups`; the
+laptop keeps longer incremental history under
+`%USERPROFILE%\HKR_HR_Backups`. Unchanged multi-gigabyte attachments are not
+copied again in every snapshot.
+
+Run each setup once on the relevant machine:
+
+```powershell
+# On the mini PC
+powershell -NoProfile -ExecutionPolicy Bypass -File D:\HKR_HR\scripts\setup_hkr_hr_backup.ps1 -Mode MiniPc
+
+# On the laptop, from this workspace
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup_hkr_hr_backup.ps1 -Mode Laptop
+```
+
+The scheduled tasks run daily when the machine is available. Verify an actual
+restore periodically; mini-PC mode also restores PostgreSQL into a temporary,
+isolated database and queries the employee table:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File D:\HKR_HR\scripts\verify_hkr_hr_backup_restore.ps1 -Mode MiniPc
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify_hkr_hr_backup_restore.ps1 -Mode Laptop
+```
+
+The generated Restic password files are machine-local secrets and must not be
+committed or copied into the application folder.
 
 ## Validation
 

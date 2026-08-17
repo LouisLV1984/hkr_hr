@@ -11,6 +11,7 @@ from tools.hr_core import (
     annual_leave_buckets,
     average_wage_prefill,
     current_assignment_on,
+    current_mpf_on,
     current_salary_on,
     parse_year_month,
 )
@@ -26,7 +27,7 @@ from tools.payroll_engine import (
 TRANSITION_DATE = date(2025, 5, 1)
 SP_LSP_ANNUAL_CAP = Decimal("15000")
 SP_LSP_TOTAL_CAP = Decimal("390000")
-FINAL_PAYMENT_RULE_VERSION = "V1.0-2026-08-07"
+FINAL_PAYMENT_RULE_VERSION = "V1.1-2026-08-17"
 
 
 def periods_for_final_payment(year_month, payroll_group="all"):
@@ -91,7 +92,12 @@ def attendance_defaults(period):
 
 def payroll_average(employee, end_date):
     details = average_wage_prefill(employee, end_date)
-    return details["average"], details["count"], details["months"]
+    return (
+        details["average"],
+        details["total"],
+        details["count"],
+        details["months"],
+    )
 
 
 def last_full_month_salary(employee, reference_date):
@@ -140,15 +146,20 @@ def leave_defaults(period):
         include_expired=False,
         prorate_current=True,
     )
-    legacy = sum(
-        (max(Decimal("0"), item["remaining"]) for item in buckets if item["is_legacy"]),
+    legacy_raw = sum(
+        (item["remaining"] for item in buckets if item["is_legacy"]),
         Decimal("0"),
     )
-    regular = sum(
-        (max(Decimal("0"), item["remaining"]) for item in buckets if not item["is_legacy"]),
+    regular_raw = sum(
+        (item["remaining"] for item in buckets if not item["is_legacy"]),
         Decimal("0"),
     )
-    return legacy, regular, buckets
+    total = legacy_raw + regular_raw
+    payable_total = max(Decimal("0"), total)
+    legacy = min(max(Decimal("0"), legacy_raw), payable_total)
+    regular = max(Decimal("0"), payable_total - legacy)
+    overused = max(Decimal("0"), -total)
+    return legacy, regular, overused, buckets
 
 
 def selected_basis(case, defaults, prefix):
@@ -252,7 +263,7 @@ def calculate_final_payment(period):
     group = group_for_period(period)
     attendance = attendance_defaults(period)
     benefit_defaults = default_benefit_inputs(period)
-    legacy_default, regular_default, leave_buckets = leave_defaults(period)
+    legacy_default, regular_default, leave_overused_days, leave_buckets = leave_defaults(period)
     _, month_end = parse_year_month(period.end_date.strftime("%Y-%m"))
     assignment = current_assignment_on(employee, period.end_date)
     project = assignment.project if assignment else None
@@ -307,35 +318,31 @@ def calculate_final_payment(period):
     )
 
     service_days = max(0, (period.end_date - period.start_date).days + 1)
-    average_wage, average_count, average_months = payroll_average(employee, period.end_date)
+    average_wage, wage_total, average_count, average_months = payroll_average(employee, period.end_date)
     leave_average = decimal_value(
         case.leave_average_wage
         if case and case.leave_average_wage is not None
         else average_wage if average_count == 12 else 0
     )
+    leave_wage_total = decimal_value(
+        case.leave_wage_total
+        if case and case.leave_wage_total is not None
+        else wage_total if average_count == 12 else 0
+    )
     if case and case.leave_daily_rate_override is not None:
         leave_rate = decimal_value(case.leave_daily_rate_override)
         leave_rate_source = "manual"
-    elif salary and salary.salary_basis == "daily":
-        leave_rate = decimal_value(salary.amount)
-        leave_rate_source = "daily_salary"
-    elif service_days < 365 and salary:
-        leave_rate = decimal_value(salary.amount) / Decimal(
-            calendar.monthrange(period.end_date.year, period.end_date.month)[1]
-        )
-        leave_rate_source = "current_monthly_salary"
-    elif leave_average > 0:
-        leave_rate = leave_average / Decimal(
-            calendar.monthrange(period.end_date.year, period.end_date.month)[1]
-        )
-        leave_rate_source = "twelve_month_average"
+    elif leave_wage_total > 0:
+        leave_rate = leave_wage_total / Decimal("365")
+        leave_rate_source = "twelve_month_wage_total"
     else:
         leave_rate = Decimal("0")
         leave_rate_source = "missing"
         if legacy_days + regular_days > 0:
-            blockers.append("缺年假補薪平均工資或日薪率")
+            blockers.append("缺前 12 個月工資合計或年假補薪日薪率")
 
     annual_leave_pay = (legacy_days + regular_days) * leave_rate
+    annual_leave_overuse_deduction = leave_overused_days * leave_rate
     statutory_holiday_pay = statutory_days * holiday_rate
     benefit = calculate_benefit(period, case, benefit_defaults, group)
     blockers.extend(benefit["blockers"])
@@ -351,9 +358,16 @@ def calculate_final_payment(period):
         + underpay
         + annual_leave_pay
         + statutory_holiday_pay
+        - annual_leave_overuse_deduction
+    )
+    mpf_enrollment = current_mpf_on(employee, month_end)
+    mpf_mode = (
+        mpf_enrollment.contribution_mode
+        if mpf_enrollment
+        else employee.mpf_mode
     )
     casual_components = None
-    if employee.mpf_mode == "casual":
+    if mpf_mode == "casual":
         casual_components = [
             {
                 "income": wage_income,
@@ -367,6 +381,7 @@ def calculate_final_payment(period):
         working_days + holiday_days + statutory_days,
         month_end,
         casual_components=casual_components,
+        contribution_mode=mpf_mode,
     )
     net = (
         wage_income
@@ -406,11 +421,16 @@ def calculate_final_payment(period):
         "statutory_holiday_days": statutory_days,
         "leave_buckets": leave_buckets,
         "leave_average_wage": rounded(leave_average),
+        "leave_wage_total": rounded(leave_wage_total),
         "leave_average_count": average_count,
         "leave_average_months": average_months,
         "leave_rate": leave_rate.quantize(Decimal("0.0001")),
         "leave_rate_source": leave_rate_source,
         "annual_leave_pay": rounded(annual_leave_pay),
+        "annual_leave_overused_days": leave_overused_days,
+        "annual_leave_overuse_deduction": rounded(
+            annual_leave_overuse_deduction
+        ),
         "statutory_holiday_pay": rounded(statutory_holiday_pay),
         "payment_in_lieu": rounded(payment_in_lieu),
         "benefit": benefit,
@@ -418,6 +438,8 @@ def calculate_final_payment(period):
         "wage_income": rounded(wage_income),
         "employee_mpf": rounded(employee_mpf),
         "employer_mpf": rounded(employer_mpf),
+        "mpf_enrollment": mpf_enrollment,
+        "mpf_calculation_mode": mpf_mode,
         "net_amount": rounded(net),
         "benefit_defaults": benefit_defaults,
         "blockers": list(dict.fromkeys(blockers)),

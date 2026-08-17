@@ -1,7 +1,9 @@
+from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
 from dotenv import load_dotenv
-from flask import Flask, redirect, request, session, url_for
+from flask import Flask, redirect, render_template, request, session, url_for
+from flask_login import current_user
 
 
 load_dotenv()
@@ -18,7 +20,13 @@ from routes.exports import exports_bp
 from routes.leave import leave_bp
 from routes.payroll import payroll_bp
 from routes.references import references_bp
-from tools.hr_core import format_date, format_money
+from tools.hr_core import (
+    attendance_period_bounds,
+    current_month,
+    format_date,
+    format_money,
+    parse_year_month,
+)
 from tools.i18n import (
     LANGUAGE_OPTIONS,
     OPTION_TRANSLATION_KEYS,
@@ -27,6 +35,14 @@ from tools.i18n import (
     translate_system_message,
 )
 from tools.releases import CURRENT_VERSION
+from tools.security import UploadValidationError, get_csrf_token, protect_csrf
+
+
+WEAK_PRODUCTION_SECRETS = {
+    "",
+    "dev-change-me",
+    "change-me-before-production",
+}
 
 
 def create_app(config_overrides=None):
@@ -34,6 +50,13 @@ def create_app(config_overrides=None):
     app.config.from_object(Config)
     if config_overrides:
         app.config.update(config_overrides)
+    if (
+        app.config.get("HKR_HR_ENV") == "production"
+        and app.config.get("SECRET_KEY") in WEAK_PRODUCTION_SECRETS
+    ):
+        raise RuntimeError(
+            "Production SECRET_KEY is missing or still uses a placeholder."
+        )
 
     db.init_app(app)
     login_manager.init_app(app)
@@ -56,6 +79,23 @@ def create_app(config_overrides=None):
         language = request.args.get("lang")
         if language:
             session["lang"] = normalize_language(language)
+
+    @app.before_request
+    def verify_csrf():
+        if app.config.get("CSRF_ENABLED", True):
+            protect_csrf()
+
+    @app.before_request
+    def record_recent_user_activity():
+        if not current_user.is_authenticated or request.endpoint == "static":
+            return
+        now = datetime.utcnow()
+        if (
+            current_user.last_seen_at is None
+            or now - current_user.last_seen_at >= timedelta(minutes=2)
+        ):
+            current_user.last_seen_at = now
+            db.session.commit()
 
     @app.context_processor
     def inject_ui_helpers():
@@ -91,6 +131,27 @@ def create_app(config_overrides=None):
                 return project.name
             return fallback if fallback is not None else t("common.not_set")
 
+        def month_t(year_month):
+            start, _ = parse_year_month(year_month)
+            return t("common.year_month", year=start.year, month=start.month)
+
+        def attendance_period_t(year_month, period_kind):
+            start, end = attendance_period_bounds(year_month)[period_kind]
+            suffix_key = {
+                "current_1_20": "attendance.period_actual_suffix",
+                "current_21_end_forecast": "attendance.period_forecast_suffix",
+                "previous_21_end": "attendance.period_actual_suffix",
+                "previous_21_end_forecast": "attendance.period_original_forecast_suffix",
+            }[period_kind]
+            return t(
+                "attendance.period_date_range",
+                year=start.year,
+                month=start.month,
+                start=start.day,
+                end=end.day,
+                suffix=t(suffix_key),
+            )
+
         return {
             "t": t,
             "active_lang": language,
@@ -99,10 +160,61 @@ def create_app(config_overrides=None):
             "option_t": option_t,
             "message_t": message_t,
             "project_t": project_t,
+            "month_t": month_t,
+            "attendance_period_t": attendance_period_t,
             "fmt_money": format_money,
             "fmt_date": format_date,
             "current_version": CURRENT_VERSION,
+            "operating_month": session.get("operating_month") or current_month(),
+            "csrf_token": get_csrf_token,
         }
+
+    def render_http_error(error, status_code):
+        detail_key = (
+            str(error)
+            if isinstance(error, UploadValidationError)
+            else getattr(error, "description", "")
+        )
+        if not isinstance(detail_key, str) or not (
+            detail_key.startswith("security.")
+            or detail_key.startswith("upload.")
+        ):
+            detail_key = f"error.{status_code}.message"
+        return (
+            render_template(
+                "errors/error.html",
+                status_code=status_code,
+                title_key=f"error.{status_code}.title",
+                detail_key=detail_key,
+            ),
+            status_code,
+        )
+
+    @app.errorhandler(400)
+    def bad_request(error):
+        return render_http_error(error, 400)
+
+    @app.errorhandler(403)
+    def forbidden(error):
+        return render_http_error(error, 403)
+
+    @app.errorhandler(404)
+    def not_found(error):
+        return render_http_error(error, 404)
+
+    @app.errorhandler(413)
+    def too_large(error):
+        return render_http_error(error, 413)
+
+    @app.errorhandler(UploadValidationError)
+    def invalid_upload(error):
+        return render_http_error(error, 400)
+
+    @app.errorhandler(500)
+    def internal_error(error):
+        db.session.rollback()
+        app.logger.error("Unhandled HKR HR request error", exc_info=True)
+        return render_http_error(error, 500)
 
     @app.route("/")
     def index():

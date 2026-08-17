@@ -24,6 +24,10 @@ Attendance contains collection and entry only. Payroll calculation, Payroll expo
 
 Pages show a purposeful start state until data exists. Workbenches appear only after the operator has selected or uploaded a record.
 
+List and management workspaces use a consistent two-part layout. The fixed left rail contains the active submodule, selected month or year, filters, and the current work context. The right pane displays filtered results and the actions that change those results. Filters appear only under the active submodule and default to `All`. Work Overview has no left rail. Focused preview workbenches, employee forms and dialogs may use a task-specific layout instead of adding an empty rail.
+
+Employee Management and Annual Leave Management follow this layout. Attendance Management has four peer submodules: Attendance Details, Attendance Collection, Specific-month Attendance Exemption, and Long-term Attendance Exemption. The two exemption views retain the selected month and filter by position/trade and Payroll group; bulk changes are performed above the right-side result list. A specific-month exemption automatically returns to attendance-required in the following month.
+
 Reference values and projects with existing usage cannot be deleted. HR can disable them for new records without changing historical records. Only unused values may be deleted.
 
 ## Consequences
@@ -33,3 +37,4 @@ Reference values and projects with existing usage cannot be deleted. HR can disa
 - Admin and HR maintenance remain visibly separate.
 - Existing employee and payroll history cannot be damaged by deleting a dropdown option.
 - Disabling a value is the normal retirement operation; deletion is reserved for unused setup mistakes.
+- Filters and actions have predictable ownership across list workspaces, while focused forms are not forced into an unsuitable sidebar layout.

@@ -1,14 +1,16 @@
 import io
+import json
 import re
 import tempfile
 import unittest
 import zipfile
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
-from openpyxl import Workbook, load_workbook
+from openpyxl import load_workbook
 from sqlalchemy import inspect, text
+from werkzeug.datastructures import FileStorage
 
 from app import create_app
 from models import (
@@ -17,11 +19,16 @@ from models import (
     AttendanceBatchItem,
     AttendanceMonthlySummary,
     AttendanceSegment,
+    AttendanceSpecialDay,
     Employee,
+    EmployeeAttendancePolicy,
     EmployeeAnnualLeaveBalance,
     EmployeeAnnualLeaveAllocation,
     EmployeeAnnualLeaveRecord,
+    EmployeeAllowance,
+    EmployeeBankAccount,
     EmployeeCertificate,
+    EmployeeCompLeaveCredit,
     EmployeeDocument,
     EmployeeEmploymentPeriod,
     EmployeeFinalPaymentCase,
@@ -29,13 +36,15 @@ from models import (
     EmployeeAssignment,
     EmployeeQualification,
     EmployeeSalary,
-    EmployeeTaskNote,
+    EmployeeMpfEnrollment,
     EmployeeVisa,
+    EmployeeWorkInjuryPeriod,
+    EmployeeWorkInjuryMonthlyExpense,
     GeneratedContract,
-    ImportBatch,
     PayrollAdjustment,
     PayrollEmployeeResult,
     PayrollRun,
+    MpfScheme,
     ReferenceList,
     ReferenceValue,
     User,
@@ -45,6 +54,8 @@ from models import (
 from tools.hr_core import (
     annual_leave_buckets,
     annual_leave_days_between,
+    annual_leave_summary,
+    create_mpf_enrollment,
     employee_type_by_code,
     ensure_reference_seed,
     reference_by_code,
@@ -59,10 +70,20 @@ from tools.payroll_engine import (
     casual_daily_mpf,
     employee_warnings,
 )
+from routes.payroll import mpf_preview_rows
+from tools.completeness import employee_data_items
 from tools.releases import CURRENT_VERSION, NEXT_VERSION, RELEASES
 from tools.schema_migrations import (
     apply_additive_migrations,
+    retire_obsolete_audit_events,
+    retire_legacy_tables,
     schema_compatibility_issues,
+)
+from tools.security import (
+    LoginRateLimiter,
+    UploadValidationError,
+    safe_next_url,
+    validate_uploaded_file,
 )
 
 
@@ -86,6 +107,7 @@ class V1WorkflowTests(unittest.TestCase):
         self.app = create_app(
             {
                 "TESTING": True,
+                "CSRF_ENABLED": False,
                 "SECRET_KEY": "test-secret",
                 "SQLALCHEMY_DATABASE_URI": (
                     f"sqlite:///{(temp_root / 'test.db').as_posix()}"
@@ -95,7 +117,6 @@ class V1WorkflowTests(unittest.TestCase):
                 "CONTRACT_TEMPLATE_ROOT": APP_ROOT / "contract_templates",
                 "PAYROLL_TEMPLATE_ROOT": APP_ROOT / "payroll_templates",
                 "ATTENDANCE_BATCH_ROOT": temp_root / "attendance",
-                "IMPORT_ROOT": temp_root / "imports",
                 "PAYROLL_OUTPUT_ROOT": temp_root / "payroll",
             }
         )
@@ -238,16 +259,24 @@ class V1WorkflowTests(unittest.TestCase):
                 "residential_address": "Acceptance test address",
                 "bank_name": "BANK OF CHINA (HONG KONG) LIMITED",
                 "bank_account_no": f"QA-{identity_number}",
-                "mpf_mode": mpf_mode,
             },
             follow_redirects=True,
         )
         self.assertEqual(response.status_code, 200)
-        response = self.client.post(
-            f"/employees/{employee_id}/bank-confirm",
-            follow_redirects=True,
-        )
-        self.assertEqual(response.status_code, 200)
+        with self.app.app_context():
+            employee = db.session.get(Employee, employee_id)
+            scheme_code = (
+                "BCT_DAILY" if mpf_mode == "casual" else "BCOM_MONTHLY"
+            )
+            scheme = MpfScheme.query.filter_by(code=scheme_code).one()
+            create_mpf_enrollment(
+                employee,
+                date(2026, 1, 1),
+                scheme=scheme,
+                member_account_no=f"MPF-{employee.employee_no}",
+                contribution_mode=mpf_mode,
+            )
+            db.session.commit()
         return ids["project"]
 
     def upload_document(self, employee_id, category, filename):
@@ -289,10 +318,11 @@ class V1WorkflowTests(unittest.TestCase):
         )
         self.assertIn('data-attendance-upload-form', batch_page)
         self.assertIn('data-attendance-drop-zone', batch_page)
-        self.assertIn('class="context-nav"', batch_page)
-        self.assertIn('class="attendance-rail"', batch_page)
-        self.assertIn("current-batch-panel", batch_page)
-        self.assertIn("recent-batches-panel", batch_page)
+        self.assertNotIn('class="context-nav"', batch_page)
+        self.assertNotIn('class="attendance-rail"', batch_page)
+        self.assertIn("attendance-detail-page", batch_page)
+        self.assertIn("navpanes=0&pagemode=none", batch_page)
+        self.assertIn("退出詳情", batch_page)
         self.assertIn('class="attendance-workbench"', batch_page)
         self.assertNotIn('class="workbench-left"', batch_page)
         with self.app.app_context():
@@ -300,6 +330,24 @@ class V1WorkflowTests(unittest.TestCase):
             items = list(batch.items)
             self.assertEqual(len(items), len(employees_and_projects))
             item_ids = [item.id for item in items]
+            batch_id = batch.id
+        details_page = self.client.get(
+            "/attendance?month=2026-07"
+        ).get_data(as_text=True)
+        self.assertIn("考勤詳情", details_page)
+        self.assertIn('class="attendance-stats"', details_page)
+        self.assertNotIn('class="attendance-upload-panel"', details_page)
+        collection_page = self.client.get(
+            f"/attendance?month=2026-07&view=collection&batch_id={batch_id}"
+        ).get_data(as_text=True)
+        self.assertIn('class="context-panel attendance-upload-panel"', collection_page)
+        self.assertIn('class="attendance-pdf-card"', collection_page)
+        self.assertNotIn('class="attendance-workbench"', collection_page)
+        policies_page = self.client.get(
+            "/attendance?month=2026-07&view=policies"
+        ).get_data(as_text=True)
+        self.assertIn('class="panel attendance-policy-panel"', policies_page)
+        self.assertNotIn('class="attendance-upload-panel"', policies_page)
         for index, ((employee_id, project_id), item_id) in enumerate(
             zip(employees_and_projects, item_ids),
             start=1,
@@ -590,8 +638,8 @@ class V1WorkflowTests(unittest.TestCase):
                             total_formula,
                             (
                                 f"=ROUND(L{row}+O{row}+R{row}+S{row}"
-                                f"+AA{row}+AD{row}-AE{row}+AF{row}"
-                                f"+AG{row},2)"
+                                f"+V{row}+Y{row}+Z{row}+AA{row}+AD{row}"
+                                f"-AE{row}+AF{row}+AG{row}+AL{row},2)"
                             ),
                         )
                     else:
@@ -599,8 +647,8 @@ class V1WorkflowTests(unittest.TestCase):
                             total_formula,
                             (
                                 f"=ROUND(M{row}+P{row}+S{row}+T{row}"
-                                f"+AB{row}+AE{row}-AF{row}+AG{row}"
-                                f"+AH{row},2)"
+                                f"+W{row}+Z{row}+AA{row}+AB{row}+AE{row}"
+                                f"-AF{row}+AG{row}+AH{row}+AM{row},2)"
                             ),
                         )
                     if expected["group"] == "site_daily":
@@ -805,7 +853,7 @@ class V1WorkflowTests(unittest.TestCase):
         with zipfile.ZipFile(io.BytesIO(report_payroll.data)) as archive:
             self.assertEqual(len(archive.namelist()), 3)
 
-        delete_id, _ = self.create_employee(
+        delete_id, delete_no = self.create_employee(
             "TE",
             "site_daily",
             "只供刪除測試",
@@ -813,12 +861,481 @@ class V1WorkflowTests(unittest.TestCase):
         )
         response = self.client.post(
             f"/employees/{delete_id}/delete",
+            data={"confirm_employee_no": delete_no},
             follow_redirects=True,
         )
         self.assertEqual(response.status_code, 200)
         with self.app.app_context():
             self.assertIsNone(db.session.get(Employee, delete_id))
             self.assertEqual(Employee.query.count(), 3)
+
+    def test_attendance_not_required_uses_default_full_attendance_and_is_reversible(self):
+        employee_id, employee_no = self.create_employee(
+            "HKR",
+            "site_monthly",
+            "無需考勤測試",
+            "NO ATTENDANCE REQUIRED",
+        )
+        project_id = self.complete_employee(
+            employee_id,
+            "site_monthly",
+            "TMC046",
+            "monthly",
+            "30000",
+            "QA-NO-ATTENDANCE",
+            "61110001",
+        )
+
+        page = self.client.get("/attendance?month=2026-07&lang=en").get_data(
+            as_text=True
+        )
+        self.assertNotIn(employee_no, page)
+        self.assertNotIn('data-attendance-requirement="not_required"', page)
+        self.assertIn('href="/attendance?month=2026-07&amp;view=details&amp;status=expected"', page)
+        self.assertIn('href="/attendance?month=2026-07&amp;view=details&amp;status=missing"', page)
+        self.assertIn('href="/attendance?month=2026-07&amp;view=details&amp;status=received"', page)
+        self.assertNotIn('id="expected"', page)
+        self.assertNotIn('id="missing"', page)
+        self.assertNotIn('id="received"', page)
+        self.assertIn("Current attendance month", page)
+        self.assertIn("2026-07", page)
+        self.assertIn(
+            'href="/attendance-payroll?year_month=2026-07"',
+            page,
+        )
+
+        missing_page = self.client.get(
+            "/attendance?month=2026-07&view=details&status=missing&lang=en"
+        ).get_data(as_text=True)
+        self.assertIn('id="missing"', missing_page)
+        self.assertIn(employee_no, missing_page)
+        self.assertIn("Site workers (monthly)", missing_page)
+        self.assertIn("TMC046", missing_page)
+
+        expected_page = self.client.get(
+            "/attendance?month=2026-07&view=details&status=expected&lang=en"
+        ).get_data(as_text=True)
+        self.assertIn('id="expected"', expected_page)
+        self.assertIn(employee_no, expected_page)
+
+        monthly_page = self.client.get(
+            "/attendance?month=2026-07&view=monthly_exemptions&lang=en"
+        ).get_data(as_text=True)
+        self.assertIn(employee_no, monthly_page)
+        self.assertIn("Specific-month attendance exemption", monthly_page)
+        self.assertIn('id="attendance-policy-dialog"', monthly_page)
+        self.assertIn('data-policy-action="exempt"', monthly_page)
+        self.assertIn('data-policy-action="require"', monthly_page)
+
+        response = self.client.post(
+            "/attendance/monthly-exemptions/batch",
+            data={
+                "employee_ids": [str(employee_id)],
+                "year_month": "2026-07",
+                "action": "exempt",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        response_html = response.get_data(as_text=True)
+        self.assertIn("Exempt this month", response_html)
+        received_tab = self.client.get(
+            "/attendance?month=2026-07&view=details&status=received&lang=en"
+        ).get_data(as_text=True)
+        self.assertIn('id="received"', received_tab)
+        self.assertNotIn('id="missing"', received_tab)
+        payroll_page = self.client.get(
+            "/attendance-payroll?year_month=2026-07&payroll_group=site_monthly"
+        ).get_data(as_text=True)
+        self.assertIn("Attendance exemptions: attendance is required by default", payroll_page)
+        self.assertIn("No attendance PDF is required this month; payroll uses default full attendance with zero OT and E-CALL", payroll_page)
+        dashboard_page = self.client.get(
+            "/dashboard?month=2026-07"
+        ).get_data(as_text=True)
+        self.assertIn("0 / 0", dashboard_page)
+        english_payroll = self.client.get(
+            "/attendance-payroll?year_month=2026-07&payroll_group=site_monthly&lang=en"
+        ).get_data(as_text=True)
+        self.assertIn("Attendance exemptions: attendance is required by default", english_payroll)
+        self.client.get("/attendance?month=2026-07&lang=zh-Hant")
+
+        with self.app.app_context():
+            summary = AttendanceMonthlySummary.query.filter_by(
+                employee_id=employee_id,
+                year_month="2026-07",
+            ).one()
+            self.assertEqual(summary.status, "not_required")
+            self.assertIsNone(summary.document_id)
+            self.assertEqual(
+                {segment.period_kind for segment in summary.segments},
+                {
+                    "current_1_20",
+                    "current_21_end_forecast",
+                    "previous_21_end",
+                    "previous_21_end_forecast",
+                },
+            )
+            self.assertGreater(
+                sum(
+                    segment.working_days + segment.sunday_holiday_days
+                    for segment in summary.segments
+                    if segment.period_kind == "current_1_20"
+                ),
+                Decimal("0"),
+            )
+            self.assertTrue(
+                all(
+                    segment.ot_hours == 0
+                    and segment.large_ecall_count == 0
+                    and segment.ecall_count == 0
+                    for segment in summary.segments
+                )
+            )
+            previous_actual = sorted(
+                (
+                    segment.project_id or 0,
+                    segment.working_days,
+                    segment.sunday_holiday_days,
+                )
+                for segment in summary.segments
+                if segment.period_kind == "previous_21_end"
+            )
+            previous_forecast = sorted(
+                (
+                    segment.project_id or 0,
+                    segment.working_days,
+                    segment.sunday_holiday_days,
+                )
+                for segment in summary.segments
+                if segment.period_kind == "previous_21_end_forecast"
+            )
+            self.assertEqual(previous_actual, previous_forecast)
+            payroll_row = calculate_payroll("2026-07", "site_monthly")[0]
+            self.assertFalse(payroll_row["blockers"])
+            self.assertEqual(payroll_row["ot_amount"], Decimal("0.00"))
+            self.assertEqual(payroll_row["large_ecall_amount"], Decimal("0.00"))
+            self.assertEqual(payroll_row["ecall_amount"], Decimal("0.00"))
+            self.assertEqual(payroll_row["overpay_amount"], Decimal("0.00"))
+            self.assertEqual(payroll_row["underpay_amount"], Decimal("0.00"))
+            self.assertIn(
+                "本月無需考勤表，按預設全勤及零 OT／E-CALL 計算",
+                payroll_row["warnings"],
+            )
+            self.assertEqual(
+                AuditLog.query.filter_by(
+                    employee_id=employee_id,
+                    action="attendance_not_required",
+                ).count(),
+                1,
+            )
+
+        response = self.client.post(
+            "/attendance/monthly-exemptions/batch",
+            data={
+                "employee_ids": [str(employee_id)],
+                "year_month": "2026-07",
+                "action": "require",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("本月仍需考勤", response.get_data(as_text=True))
+        with self.app.app_context():
+            summary = AttendanceMonthlySummary.query.filter_by(
+                employee_id=employee_id,
+                year_month="2026-07",
+            ).one()
+            self.assertEqual(summary.status, "required")
+            self.assertEqual(len(summary.segments), 0)
+            payroll_row = calculate_payroll("2026-07", "site_monthly")[0]
+            self.assertIn("考勤未收", payroll_row["blockers"])
+            self.assertEqual(
+                AuditLog.query.filter_by(
+                    employee_id=employee_id,
+                    action="attendance_required",
+                ).count(),
+                1,
+            )
+
+        self.add_attendance([(employee_id, project_id)])
+        with self.app.app_context():
+            summary = AttendanceMonthlySummary.query.filter_by(
+                employee_id=employee_id,
+                year_month="2026-07",
+            ).one()
+            self.assertEqual(summary.status, "received")
+            self.assertIsNotNone(summary.document_id)
+            payroll_row = calculate_payroll("2026-07", "site_monthly")[0]
+            self.assertFalse(payroll_row["blockers"])
+            self.assertNotIn(
+                "本月無需考勤表，按預設全勤及零 OT／E-CALL 計算",
+                payroll_row["warnings"],
+            )
+
+    def test_new_employee_can_start_with_long_term_attendance_exemption(self):
+        with self.app.app_context():
+            employee_type_id = employee_type_by_code("HKR").id
+        new_page = self.client.get("/employees/new?lang=en").get_data(
+            as_text=True
+        )
+        self.assertIn("Monthly attendance record required", new_page)
+        self.assertIn("Attendance is required by default", new_page)
+
+        response = self.client.post(
+            "/employees/new?lang=en",
+            data={
+                "employee_type_id": employee_type_id,
+                "payroll_group": "management",
+                "chinese_name": "長期免交新員工",
+                "english_name": "NEW LONG TERM EXEMPT",
+                "requires_attendance": "0",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Long-term exempt", page)
+        with self.app.app_context():
+            employee = Employee.query.filter_by(
+                english_name="NEW LONG TERM EXEMPT"
+            ).one()
+            policy = EmployeeAttendancePolicy.query.filter_by(
+                employee_id=employee.id
+            ).one()
+            self.assertFalse(policy.requires_attendance)
+
+    def test_long_term_attendance_policy_is_effective_dated_and_batch_reversible(self):
+        employee_id, employee_no = self.create_employee(
+            "HKR",
+            "site_monthly",
+            "長期免交測試",
+            "LONG TERM EXEMPT",
+        )
+        self.complete_employee(
+            employee_id,
+            "site_monthly",
+            "TMC046",
+            "monthly",
+            "30000",
+            "QA-LONG-TERM",
+            "61110002",
+        )
+        response = self.client.post(
+            "/attendance/policies/batch",
+            data={
+                "employee_ids": [str(employee_id)],
+                "effective_from_month": "2026-07",
+                "action": "exempt",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn(employee_no, page)
+        self.assertIn("長期免交", page)
+        with self.app.app_context():
+            policy = EmployeeAttendancePolicy.query.filter_by(
+                employee_id=employee_id,
+                effective_from_month="2026-07",
+            ).one()
+            self.assertFalse(policy.requires_attendance)
+            july = calculate_payroll("2026-07", "site_monthly")[0]
+            self.assertFalse(july["blockers"])
+            self.assertTrue(
+                any("永久無需考勤表" in item for item in july["warnings"])
+            )
+            self.assertEqual(july["ot_amount"], Decimal("0.00"))
+        payroll_page = self.client.get(
+            "/attendance-payroll",
+            query_string={
+                "year_month": "2026-07",
+                "payroll_group": "site_monthly",
+                "status": "ready",
+            },
+        ).get_data(as_text=True)
+        self.assertIn("payroll-summary-card active", payroll_page)
+        self.assertIn(employee_no, payroll_page)
+        self.assertIn("導出此員工 Payroll", payroll_page)
+        self.assertIn("30,000.00", payroll_page)
+        self.assertNotIn("payroll-person-preview", payroll_page)
+
+        response = self.client.post(
+            "/attendance/policies/batch",
+            data={
+                "employee_ids": [str(employee_id)],
+                "effective_from_month": "2026-08",
+                "action": "require",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        with self.app.app_context():
+            self.assertFalse(
+                calculate_payroll("2026-07", "site_monthly")[0]["blockers"]
+            )
+            self.assertIn(
+                "考勤未收",
+                calculate_payroll("2026-08", "site_monthly")[0]["blockers"],
+            )
+            self.assertEqual(
+                AuditLog.query.filter(
+                    AuditLog.employee_id == employee_id,
+                    AuditLog.action.in_(
+                        [
+                            "attendance_policy_exempted",
+                            "attendance_policy_required",
+                        ]
+                    ),
+                ).count(),
+                2,
+            )
+
+    def test_attendance_policy_list_sorts_by_payroll_group(self):
+        management_id, management_no = self.create_employee(
+            "HKR",
+            "management",
+            "管理排序測試",
+            "POLICY MANAGEMENT",
+        )
+        daily_id, daily_no = self.create_employee(
+            "HKRD",
+            "site_daily",
+            "日工排序測試",
+            "POLICY DAILY",
+        )
+        monthly_id, monthly_no = self.create_employee(
+            "HKR",
+            "site_monthly",
+            "月工排序測試",
+            "POLICY MONTHLY",
+        )
+        self.complete_employee(
+            management_id,
+            "management",
+            "TMC046",
+            "monthly",
+            "30000",
+            "QA-POLICY-MGMT",
+            "61231001",
+        )
+        self.complete_employee(
+            daily_id,
+            "site_daily",
+            "TMC046",
+            "daily",
+            "1000",
+            "QA-POLICY-DAILY",
+            "61231002",
+        )
+        self.complete_employee(
+            monthly_id,
+            "site_monthly",
+            "TMC046",
+            "monthly",
+            "20000",
+            "QA-POLICY-MONTHLY",
+            "61231003",
+        )
+
+        ascending = self.client.get(
+            "/attendance",
+            query_string={
+                "month": "2026-08",
+                "view": "policies",
+                "sort": "payroll_group",
+                "direction": "asc",
+            },
+        ).get_data(as_text=True)
+        self.assertLess(
+            ascending.index(daily_no),
+            ascending.index(monthly_no),
+        )
+        self.assertLess(
+            ascending.index(monthly_no),
+            ascending.index(management_no),
+        )
+        self.assertIn("Payroll 組別 ↑", ascending)
+        self.assertIn("policy-actions-head", ascending)
+
+        descending = self.client.get(
+            "/attendance",
+            query_string={
+                "month": "2026-08",
+                "view": "policies",
+                "sort": "payroll_group",
+                "direction": "desc",
+            },
+        ).get_data(as_text=True)
+        self.assertLess(
+            descending.index(management_no),
+            descending.index(monthly_no),
+        )
+        self.assertLess(
+            descending.index(monthly_no),
+            descending.index(daily_no),
+        )
+
+    def test_employee_search_matches_traditional_and_simplified_names(self):
+        traditional_id, traditional_no = self.create_employee(
+            "HKR",
+            "site_monthly",
+            "黃志強",
+            "WONG CHI KEUNG",
+        )
+        simplified_id, simplified_no = self.create_employee(
+            "HKR",
+            "site_monthly",
+            "黄美玲",
+            "WONG MEI LING",
+        )
+
+        simplified_search = self.client.get(
+            "/employees",
+            query_string={"q": "黄", "status": "active"},
+        ).get_data(as_text=True)
+        self.assertIn(traditional_no, simplified_search)
+        self.assertIn(simplified_no, simplified_search)
+
+        traditional_search = self.client.get(
+            "/employees",
+            query_string={"q": "黃", "status": "active"},
+        ).get_data(as_text=True)
+        self.assertIn(traditional_no, traditional_search)
+        self.assertIn(simplified_no, traditional_search)
+
+        self.assertNotEqual(traditional_id, simplified_id)
+
+    def test_departed_employee_is_missing_only_through_departure_month(self):
+        employee_id, employee_no = self.create_employee(
+            "HKR",
+            "site_monthly",
+            "離職考勤測試",
+            "DEPARTED ATTENDANCE TEST",
+        )
+        self.complete_employee(
+            employee_id,
+            "site_monthly",
+            "TMC046",
+            "monthly",
+            "30000",
+            "QA-DEPARTED-ATTENDANCE",
+            "61110002",
+        )
+        with self.app.app_context():
+            employee = db.session.get(Employee, employee_id)
+            employee.current_period.end_date = date(2026, 7, 15)
+            employee.status = "departed"
+            db.session.commit()
+
+        departure_month = self.client.get(
+            "/attendance?month=2026-07&view=details&status=missing"
+        ).get_data(as_text=True)
+        self.assertIn(employee_no, departure_month)
+
+        after_departure = self.client.get(
+            "/attendance?month=2026-08&view=details&status=missing"
+        ).get_data(as_text=True)
+        self.assertNotIn(employee_no, after_departure)
 
     def test_v009_effective_status_leave_documents_and_mpf_scale(self):
         employee_id, employee_no = self.create_employee(
@@ -866,7 +1383,7 @@ class V1WorkflowTests(unittest.TestCase):
                 Decimal("0"),
             )
         attendance_page = self.client.get(
-            "/attendance?month=2099-08"
+            "/attendance?month=2099-08&view=details&status=missing"
         ).get_data(as_text=True)
         self.assertIn(employee_no, attendance_page)
 
@@ -1057,7 +1574,7 @@ class V1WorkflowTests(unittest.TestCase):
         html = response.get_data(as_text=True)
         self.assertIn('form="project-update-', html)
 
-        self.client.get("/logout")
+        self.client.post("/logout")
         self.login("hr_test", "test-hr-password")
         references_page = self.client.get("/references").get_data(
             as_text=True
@@ -1107,11 +1624,38 @@ class V1WorkflowTests(unittest.TestCase):
         for admin_path in (
             "/admin/users",
             "/admin/audit",
-            "/admin/import",
-            "/admin/import/template",
         ):
             self.assertEqual(self.client.get(admin_path).status_code, 403)
             self.assertNotIn(f'href="{admin_path}"', references_page)
+        self.assertEqual(self.client.get("/admin/import").status_code, 404)
+        self.assertEqual(
+            self.client.get("/admin/import/template").status_code,
+            404,
+        )
+
+    def test_reference_seed_is_idempotent_after_seed_label_is_renamed(self):
+        with self.app.app_context():
+            visa_list = ReferenceList.query.filter_by(
+                code="visa_category"
+            ).one()
+            other = ReferenceValue.query.filter_by(
+                list_id=visa_list.id,
+                code="OTHER",
+            ).one()
+            other.display_name = "其他工作許可"
+            other.normalized_name = other.display_name.casefold()
+            db.session.commit()
+
+            ensure_reference_seed()
+            db.session.commit()
+
+            rows = ReferenceValue.query.filter_by(
+                list_id=visa_list.id,
+                code="OTHER",
+            ).all()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0].display_name, "其他工作許可")
+            self.assertTrue(rows[0].active)
 
     def test_employee_quick_reference_creation_and_return_context(self):
         employee_id, _ = self.create_employee(
@@ -1120,7 +1664,7 @@ class V1WorkflowTests(unittest.TestCase):
             "快速選項驗收",
             "QUICK REFERENCE QA",
         )
-        self.client.get("/logout")
+        self.client.post("/logout")
         self.login("hr_test", "test-hr-password")
 
         created = self.client.post(
@@ -1241,7 +1785,7 @@ class V1WorkflowTests(unittest.TestCase):
             f"/employees/{employee_id}?tab=employment"
         ).get_data(as_text=True)
         self.assertIn("尚未建立任職資料", empty_page)
-        self.assertIn("建立初始任職", empty_page)
+        self.assertIn("新增任職紀錄", empty_page)
 
         with self.app.app_context():
             region = reference_by_code("work_region", "HK")
@@ -1282,7 +1826,8 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertIn("當前任職</span><h2>項目經理</h2>", html)
         self.assertIn("項目：未分配", html)
         self.assertIn("未分配", html)
-        self.assertIn("<summary>調整任職</summary>", html)
+        self.assertIn('data-dialog-open="add-assignment-dialog"', html)
+        self.assertIn('id="add-assignment-dialog"', html)
         self.assertRegex(
             html,
             rf'(?s)name="region_id">.*?<option value="{ids["region"]}" selected>',
@@ -1326,7 +1871,6 @@ class V1WorkflowTests(unittest.TestCase):
             "/references",
             "/admin/users",
             "/admin/audit",
-            "/admin/import",
             "/updates",
             "/guide",
         )
@@ -1338,16 +1882,24 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertIn('class="system-tabs"', dashboard)
         self.assertNotIn('class="app-shell"', dashboard)
         self.assertNotIn('class="context-nav"', dashboard)
-        self.assertIn("考勤管理", dashboard)
-        self.assertIn("薪酬與匯出", dashboard)
+        self.assertIn("考勤錄入", dashboard)
+        self.assertIn("薪酬統計與匯出", dashboard)
         self.assertIn('aria-current="page"', dashboard)
         attendance = self.client.get("/attendance").get_data(as_text=True)
         self.assertIn('class="app-layout"', attendance)
         self.assertIn('class="app-shell"', attendance)
         self.assertIn('class="context-nav"', attendance)
-        self.assertIn('data-attendance-upload-form', attendance)
-        self.assertIn("拖放 PDF 到此或點擊選擇", attendance)
-        self.assertIn("可隨時返回過往批次繼續處理", attendance)
+        self.assertIn("考勤詳情", attendance)
+        self.assertNotIn("拖放 PDF 到此或點擊選擇", attendance)
+        attendance_collection = self.client.get(
+            "/attendance?view=collection"
+        ).get_data(as_text=True)
+        self.assertIn('data-attendance-upload-form', attendance_collection)
+        self.assertIn("拖放 PDF 到此或點擊選擇", attendance_collection)
+        self.assertIn(
+            "可隨時返回過往批次繼續處理",
+            attendance_collection,
+        )
         payroll = self.client.get(
             "/attendance-payroll?year_month=2026-07"
         ).get_data(as_text=True)
@@ -1361,7 +1913,7 @@ class V1WorkflowTests(unittest.TestCase):
         ).get_data(as_text=True)
         self.assertIn("Create employee file", english)
         self.assertIn("Site workers (daily)", english)
-        self.assertIn("Payroll &amp; Exports", english)
+        self.assertIn("Payroll Analytics &amp; Export", english)
         self.assertNotIn("建立員工檔案", english)
         english_references = self.client.get(
             "/references?list=education_level&lang=en"
@@ -1384,17 +1936,17 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertIn("XLSX exports retain calculation formulas", english_payroll)
         self.assertNotIn("出糧週期", english_payroll)
         english_attendance = self.client.get(
-            "/attendance?lang=en"
+            "/attendance?view=collection&lang=en"
         ).get_data(as_text=True)
         self.assertIn("Drop PDFs here or click to choose", english_attendance)
         self.assertIn("Return to any previous batch to continue", english_attendance)
         simplified = self.client.get(
             "/employees?lang=zh-Hans"
         ).get_data(as_text=True)
-        self.assertIn("员工总表", simplified)
-        self.assertIn("考勤管理", simplified)
-        self.assertIn("薪酬与导出", simplified)
-        self.assertNotIn("員工總表", simplified)
+        self.assertIn("员工总览", simplified)
+        self.assertIn("考勤录入", simplified)
+        self.assertIn("薪酬统计与导出", simplified)
+        self.assertNotIn("員工總覽", simplified)
         self.assertIn("退出登录", simplified)
 
     def test_effective_ranges_identity_uniqueness_and_reference_protection(self):
@@ -1531,7 +2083,7 @@ class V1WorkflowTests(unittest.TestCase):
                 db.session.get(ReferenceValue, employee_type_id)
             )
 
-    def test_bank_setup_uses_one_operator_warning(self):
+    def test_payroll_bank_details_are_separate_from_optional_document(self):
         employee_id, _ = self.create_employee(
             "HKR",
             "site_monthly",
@@ -1541,23 +2093,99 @@ class V1WorkflowTests(unittest.TestCase):
         with self.app.app_context():
             employee = db.session.get(Employee, employee_id)
             warnings = employee_warnings(employee)
-            self.assertEqual(warnings.count("銀行資料未完成"), 1)
-            self.assertNotIn("缺銀行資料", warnings)
-            self.assertNotIn("缺銀行證明", warnings)
+            self.assertFalse(any("銀行" in warning for warning in warnings))
+            bank_item = next(
+                item
+                for item in employee_data_items(employee)
+                if item["code"] == "bank"
+            )
+            self.assertFalse(bank_item["ok"])
+            payroll_row = calculate_payroll("2026-07", "site_monthly")[0]
+            self.assertIn("出糧銀行資料未填寫", payroll_row["blockers"])
 
         page = self.client.get(
-            f"/employees/{employee_id}"
+            f"/employees?month=2026-07&readiness=employee_data&status=all&lang=en"
         ).get_data(as_text=True)
-        self.assertEqual(page.count("銀行資料未完成"), 1)
-        self.assertNotIn("缺銀行資料", page)
-        self.assertNotIn("缺銀行證明", page)
+        self.assertIn("Payroll bank details not entered", page)
+        self.assertNotIn("bank proof", page.lower())
+
+    def test_employee_register_shows_month_effective_mpf_status_only_in_scope(self):
+        employee_id, _ = self.create_employee(
+            "HKR",
+            "management",
+            "MPF 狀態測試",
+            "MPF STATUS TEST",
+        )
+        with self.app.app_context():
+            employee = db.session.get(Employee, employee_id)
+            employee.employment_periods.append(
+                EmployeeEmploymentPeriod(start_date=date(2026, 1, 1))
+            )
+            db.session.commit()
+
+        missing_page = self.client.get(
+            "/employees?month=2026-08&status=all"
+        ).get_data(as_text=True)
+        self.assertIn('data-mpf-status="missing"', missing_page)
+        self.assertIn("MPF 資料未填寫", missing_page)
+
+        with self.app.app_context():
+            employee = db.session.get(Employee, employee_id)
+            scheme = MpfScheme.query.filter_by(code="BCOM_MONTHLY").one()
+            create_mpf_enrollment(
+                employee,
+                date(2026, 8, 1),
+                scheme=scheme,
+                member_account_no="MPF-STATUS-001",
+            )
+            db.session.commit()
+
+        complete_page = self.client.get(
+            "/employees?month=2026-08&status=all"
+        ).get_data(as_text=True)
+        self.assertIn('data-mpf-status="complete"', complete_page)
+        self.assertIn("MPF 資料已填寫", complete_page)
+        simplified_page = self.client.get(
+            "/employees?month=2026-08&status=all&lang=zh-Hans"
+        ).get_data(as_text=True)
+        self.assertIn("MPF 资料已填写", simplified_page)
+        english_page = self.client.get(
+            "/employees?month=2026-08&status=all&lang=en"
+        ).get_data(as_text=True)
+        self.assertIn("MPF details entered", english_page)
+
+        with self.app.app_context():
+            employee = db.session.get(Employee, employee_id)
+            employee.employment_periods[0].end_date = date(2026, 7, 31)
+            db.session.commit()
+
+        departed_page = self.client.get(
+            "/employees?month=2026-08&status=all"
+        ).get_data(as_text=True)
+        self.assertNotIn("data-mpf-status=", departed_page)
+        self.assertNotIn("MPF 資料已填寫", departed_page)
+        self.assertNotIn("MPF 資料未填寫", departed_page)
 
     def test_user_guide_page_and_release_alignment(self):
-        self.assertEqual(CURRENT_VERSION, "V0.1.4")
-        self.assertEqual(NEXT_VERSION, "V0.1.5")
+        self.assertEqual(CURRENT_VERSION, "V0.2.8")
+        self.assertEqual(NEXT_VERSION, "V0.2.9")
         self.assertEqual(
             [(release["version"], release["date"]) for release in RELEASES],
             [
+                ("V0.2.8", "2026-08-17"),
+                ("V0.2.7", "2026-08-14"),
+                ("V0.2.6", "2026-08-13"),
+                ("V0.2.5", "2026-08-12"),
+                ("V0.2.4", "2026-08-12"),
+                ("V0.2.3", "2026-08-12"),
+                ("V0.2.2", "2026-08-11"),
+                ("V0.2.1", "2026-08-11"),
+                ("V0.2.0", "2026-08-10"),
+                ("V0.1.9", "2026-08-10"),
+                ("V0.1.8", "2026-08-10"),
+                ("V0.1.7", "2026-08-10"),
+                ("V0.1.6", "2026-08-10"),
+                ("V0.1.5", "2026-08-07"),
                 ("V0.1.4", "2026-08-07"),
                 ("V0.1.3", "2026-08-06"),
                 ("V0.1.2", "2026-08-06"),
@@ -1576,16 +2204,33 @@ class V1WorkflowTests(unittest.TestCase):
         )
 
         source = (APP_ROOT / "操作指南.md").read_text(encoding="utf-8")
+        css_source = (APP_ROOT / "static" / "css" / "app.css").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(".employee-readiness-wrap {", css_source)
+        self.assertIn("max-height: calc(100vh - var(--header-height) - 205px);", css_source)
+        self.assertIn(
+            ".employee-readiness-wrap .employee-readiness-table thead th {",
+            css_source,
+        )
         self.assertIn(f"> 適用版本：{CURRENT_VERSION}", source)
+        self.assertIn("本月無需考勤", source)
+        self.assertIn("繁體或簡體搜尋", source)
+        self.assertIn("離職後月份不再顯示", source)
         self.assertIn(f"> 更新日期：{RELEASES[0]['date']}", source)
         self.assertNotIn("適用對象：", source)
-        self.assertIn("本月 1–20 日實際", source)
-        self.assertIn("上月 21 日至月底原預估", source)
+        self.assertIn("2026年8月1–20日（實際）", source)
+        self.assertIn("2026年7月21–31日（原預估）", source)
+        self.assertIn("上傳一般附件", source)
+        self.assertIn("前往專項管理", source)
         self.assertIn("最小單位為 0.5 日", source)
         self.assertIn("撤回離職資料", source)
         self.assertIn("導出薪金證明書", source)
         self.assertIn("頁面會自動計算", source)
         self.assertIn("修正／撤回／替換／補件", source)
+        self.assertIn("### 10.6 每月 MPF 供款表", source)
+        self.assertIn("Member Account No.", source)
+        self.assertIn("變更歷史", source)
 
         response = self.client.get("/guide")
         self.assertEqual(response.status_code, 200)
@@ -1607,7 +2252,7 @@ class V1WorkflowTests(unittest.TestCase):
         download = self.client.get("/guide/download")
         self.assertEqual(download.status_code, 404)
 
-        self.client.get("/logout")
+        self.client.post("/logout")
         protected = self.client.get("/guide")
         self.assertEqual(protected.status_code, 302)
         self.assertIn("/login", protected.headers["Location"])
@@ -1619,12 +2264,132 @@ class V1WorkflowTests(unittest.TestCase):
         leave_template = (
             APP_ROOT / "templates" / "leave" / "index.html"
         ).read_text(encoding="utf-8")
-        combined = employee_template + leave_template
+        change_history_template = (
+            APP_ROOT / "templates" / "employees" / "_change_history.html"
+        ).read_text(encoding="utf-8")
+        combined = employee_template + change_history_template + leave_template
 
         self.assertNotIn("floating-editor", combined)
         self.assertNotIn("details class=\"row-editor\"", combined)
-        self.assertEqual(combined.count("record-editor-form"), 14)
+        self.assertGreaterEqual(combined.count("record-editor-form"), 20)
         self.assertIn("data-record-editor-trigger", combined)
+
+    def test_employee_change_history_is_unified_without_duplicate_timeline(self):
+        employee_id, _ = self.create_employee(
+            "ASMTP",
+            "management",
+            "變更歷史測試",
+            "CHANGE HISTORY TEST",
+        )
+        self.complete_employee(
+            employee_id,
+            "management",
+            "TMC046",
+            "monthly",
+            "20000",
+            "A1234567",
+            "61234567",
+        )
+
+        page = self.client.get(
+            f"/employees/{employee_id}?tab=employment"
+        ).get_data(as_text=True)
+
+        employment_panel = page.split(
+            'data-panel="employment"', 1
+        )[1].split('data-panel="credentials"', 1)[0]
+        self.assertIn('class="dense-table change-history-table"', employment_panel)
+        self.assertEqual(employment_panel.count('class="flag change-kind '), 3)
+        self.assertEqual(employment_panel.count('class="record-audit-summary"'), 2)
+        self.assertIn("2026-01-01", employment_panel)
+        self.assertIn("HKD 20,000.00", employment_panel)
+        self.assertIn("管理人員及總部人員", employment_panel)
+        self.assertNotIn('class="panel profile-timeline"', employment_panel)
+        self.assertNotIn('class="panel domain-timeline"', employment_panel)
+
+    def test_profile_tabs_use_current_cards_scoped_editing_and_histories(self):
+        employee_id, _ = self.create_employee(
+            "ASMTP",
+            "management",
+            "統一介面測試",
+            "UNIFIED PROFILE TEST",
+        )
+        with self.app.app_context():
+            employee = db.session.get(Employee, employee_id)
+            employee.education_level = "Bachelor"
+            employee.major = "Engineering"
+            employee.graduation_school = "Original School"
+            employee.visa_required = True
+            db.session.commit()
+
+        response = self.client.post(
+            f"/employees/{employee_id}/personal",
+            data={
+                "form_scope": "profile",
+                "gender": "male",
+                "mobile_region_code": "+852",
+                "mobile_number": "61230000",
+                "email": "profile@example.com",
+                "residential_address": "Updated address",
+                "emergency_contact_name": "Emergency Person",
+                "emergency_contact_region_code": "+852",
+                "emergency_contact_phone": "61239999",
+                "emergency_contact_relation": "Family",
+                "remarks": "Current profile",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        with self.app.app_context():
+            employee = db.session.get(Employee, employee_id)
+            self.assertEqual(employee.education_level, "Bachelor")
+            self.assertEqual(employee.graduation_school, "Original School")
+            self.assertTrue(employee.visa_required)
+            self.assertEqual(employee.mobile_number, "61230000")
+
+        response = self.client.post(
+            f"/employees/{employee_id}/personal",
+            data={
+                "form_scope": "education",
+                "education_level": "Master",
+                "major": "Construction",
+                "graduation_school": "Updated School",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        with self.app.app_context():
+            employee = db.session.get(Employee, employee_id)
+            self.assertEqual(employee.mobile_number, "61230000")
+            self.assertEqual(employee.education_level, "Master")
+            self.assertTrue(
+                AuditLog.query.filter_by(
+                    employee_id=employee_id,
+                    action="education_background_updated",
+                ).first()
+            )
+
+        page = self.client.get(
+            f"/employees/{employee_id}?tab=personal"
+        ).get_data(as_text=True)
+        self.assertIn("個人資料", page)
+        self.assertIn('data-dialog-open="edit-personal-dialog"', page)
+        self.assertIn("個人資料變更歷史", page)
+        self.assertIn('class="dense-table profile-history-table"', page)
+
+        credentials = self.client.get(
+            f"/employees/{employee_id}?tab=credentials"
+        ).get_data(as_text=True)
+        self.assertIn("證件與資歷變更歷史", credentials)
+        self.assertIn("Updated School", credentials)
+        self.assertIn('data-dialog-open="education-editor-dialog"', credentials)
+
+        status = self.client.get(
+            f"/employees/{employee_id}?tab=employment_status"
+        ).get_data(as_text=True)
+        self.assertIn("任職狀態變更歷史", status)
+        self.assertIn('data-dialog-open="termination-editor-dialog"', status)
+        self.assertNotIn('details class="action-panel"', status)
 
     def test_identical_document_and_attendance_require_confirmation(self):
         employee_id, _ = self.create_employee(
@@ -1773,7 +2538,7 @@ class V1WorkflowTests(unittest.TestCase):
                 attendance_documents[1].content_sha256,
             )
 
-    def test_acceptance_fixes_for_admin_employee_import_and_template(self):
+    def test_acceptance_fixes_for_admin_and_employee_defaults(self):
         users_page = self.client.get("/admin/users?lang=en")
         self.assertEqual(users_page.status_code, 200)
         users_html = users_page.get_data(as_text=True)
@@ -1781,6 +2546,13 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertIn("Add user", users_html)
         self.assertIn("Current account", users_html)
         self.assertIn('data-dialog-open="manage-user-', users_html)
+        self.assertIn("Delete account", users_html)
+        self.assertNotIn("/admin/import", users_html)
+        self.assertEqual(self.client.get("/admin/import").status_code, 404)
+        self.assertEqual(
+            self.client.get("/admin/import/template").status_code,
+            404,
+        )
 
         with self.app.app_context():
             admin_id = User.query.filter_by(username="admin").one().id
@@ -1800,6 +2572,54 @@ class V1WorkflowTests(unittest.TestCase):
         )
         with self.app.app_context():
             self.assertEqual(db.session.get(User, admin_id).role, "admin")
+
+        self_delete = self.client.post(
+            "/admin/users",
+            data={"action": "delete", "user_id": admin_id},
+            follow_redirects=True,
+        )
+        self.assertIn(
+            "The signed-in account cannot be deleted.",
+            self_delete.get_data(as_text=True),
+        )
+
+        with self.app.app_context():
+            disposable = User(
+                username="delete_me",
+                role="hr",
+                active=True,
+            )
+            disposable.set_password("temporary-password")
+            db.session.add(disposable)
+            db.session.flush()
+            disposable_id = disposable.id
+            historical_log = AuditLog(
+                user_id=disposable_id,
+                action="auth_login_success",
+                entity_type="User",
+                entity_id=disposable_id,
+                detail="delete_me",
+            )
+            db.session.add(historical_log)
+            db.session.commit()
+            historical_log_id = historical_log.id
+        deleted = self.client.post(
+            "/admin/users",
+            data={"action": "delete", "user_id": disposable_id},
+            follow_redirects=True,
+        )
+        self.assertIn("User deleted.", deleted.get_data(as_text=True))
+        with self.app.app_context():
+            self.assertIsNone(db.session.get(User, disposable_id))
+            self.assertIsNotNone(db.session.get(AuditLog, historical_log_id))
+            self.assertIsNone(
+                db.session.get(AuditLog, historical_log_id).user_id
+            )
+            deletion_log = AuditLog.query.filter_by(
+                action="user_deleted",
+                entity_id=disposable_id,
+            ).one()
+            self.assertEqual(deletion_log.detail, "delete_me")
 
         employee_id, _ = self.create_employee(
             "HKRD",
@@ -1829,120 +2649,13 @@ class V1WorkflowTests(unittest.TestCase):
         )
         self.assertEqual(saved.status_code, 302)
         self.assertIn("tab=personal", saved.headers["Location"])
-        bank_confirmed = self.client.post(
-            f"/employees/{employee_id}/bank-confirm",
-            follow_redirects=True,
-        )
-        self.assertIn(
-            "新銀行戶口已核對",
-            bank_confirmed.get_data(as_text=True),
-        )
-
-        template = self.client.get("/admin/import/template")
-        self.assertEqual(template.status_code, 200)
-        workbook = load_workbook(io.BytesIO(template.data), data_only=False)
-        self.assertEqual(
-            [cell.value for cell in workbook["員工匯入"][1]],
-            [
-                "員工編號",
-                "中文姓名",
-                "英文姓名",
-            ],
-        )
-        self.assertIn("填寫說明", workbook.sheetnames)
-        workbook.close()
-
-        invalid = Workbook()
-        invalid_sheet = invalid.active
-        invalid_sheet.append(
-            [
-                "員工編號",
-                "中文姓名",
-                "英文姓名",
-            ]
-        )
-        invalid_sheet.append(
-            [
-                "DUP001",
-                "重複一",
-                "",
-            ]
-        )
-        invalid_sheet.append(
-            [
-                "DUP001",
-                "重複二",
-                "",
-            ]
-        )
-        invalid_sheet.append(
-            [
-                "NONAME001",
-                "",
-                "",
-            ]
-        )
-        invalid_bytes = io.BytesIO()
-        invalid.save(invalid_bytes)
-        invalid_bytes.seek(0)
-        response = self.client.post(
-            "/admin/import",
-            data={"file": (invalid_bytes, "duplicate.xlsx")},
-            content_type="multipart/form-data",
-            follow_redirects=False,
-        )
-        self.assertEqual(response.status_code, 302)
-        invalid_preview = self.client.get(response.headers["Location"])
-        invalid_html = invalid_preview.get_data(as_text=True)
-        self.assertIn("檔案內員工編號重複", invalid_html)
-        self.assertIn("中文姓名或英文姓名至少填寫一項", invalid_html)
-        self.assertIn("不能確認匯入", invalid_html)
-        self.assertNotIn(">確認導入</button>", invalid_html)
-
-        valid = Workbook()
-        valid_sheet = valid.active
-        valid_sheet.append(
-            [
-                "員工編號",
-                "中文姓名",
-                "英文姓名",
-            ]
-        )
-        valid_sheet.append(
-            [
-                "IMPORT001",
-                "",
-                "IMPORT TEST",
-            ]
-        )
-        valid_bytes = io.BytesIO()
-        valid.save(valid_bytes)
-        valid_bytes.seek(0)
-        response = self.client.post(
-            "/admin/import",
-            data={"file": (valid_bytes, "valid.xlsx")},
-            content_type="multipart/form-data",
-            follow_redirects=False,
-        )
-        self.assertEqual(response.status_code, 302)
         with self.app.app_context():
-            batch = ImportBatch.query.order_by(ImportBatch.id.desc()).first()
-            batch_id = batch.id
-            self.assertFalse(batch.result_json["has_errors"])
-            self.assertEqual(batch.result_json["validation_version"], 3)
-            self.assertEqual(batch.result_json["rows"][0]["english_name"], "IMPORT TEST")
-        confirmed = self.client.post(
-            f"/admin/import/{batch_id}/confirm",
-            follow_redirects=True,
-        )
-        self.assertIn("已匯入 1 名員工", confirmed.get_data(as_text=True))
-        with self.app.app_context():
-            imported = Employee.query.filter_by(employee_no="IMPORT001").one()
-            self.assertEqual(imported.payroll_group, "unassigned")
-            self.assertEqual(imported.employee_type.code, "OTHER")
-            self.assertEqual(imported.english_name, "IMPORT TEST")
-            self.assertIsNone(imported.current_assignment)
-            self.assertIsNone(imported.current_salary)
+            saved_employee = db.session.get(Employee, employee_id)
+            self.assertEqual(
+                saved_employee.bank_name,
+                "BANK OF CHINA (HONG KONG) LIMITED",
+            )
+            self.assertEqual(saved_employee.bank_account_no, "TEST-001")
 
         exports_page = self.client.get(
             "/exports?section=employees&lang=en"
@@ -1953,12 +2666,162 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertNotIn('name="expiry"', exports_page)
         self.assertNotIn("Management Overview", exports_page)
 
+    def test_security_boundaries_and_friendly_errors(self):
+        self.assertEqual(
+            safe_next_url("https://example.com/steal", "/dashboard"),
+            "/dashboard",
+        )
+        self.assertEqual(
+            safe_next_url("/employees?status=active", "/dashboard"),
+            "/employees?status=active",
+        )
+        limiter = LoginRateLimiter(limit=2, window_seconds=60)
+        limiter.record_failure("admin", "127.0.0.1")
+        self.assertEqual(limiter.retry_after("admin", "127.0.0.1"), 0)
+        limiter.record_failure("admin", "127.0.0.1")
+        self.assertGreater(limiter.retry_after("admin", "127.0.0.1"), 0)
+        limiter.clear("admin", "127.0.0.1")
+        self.assertEqual(limiter.retry_after("admin", "127.0.0.1"), 0)
+
+        valid_pdf = FileStorage(
+            stream=io.BytesIO(pdf_bytes("VALID")),
+            filename="attendance.pdf",
+            content_type="text/plain",
+        )
+        metadata = validate_uploaded_file(valid_pdf, {".pdf"})
+        self.assertEqual(metadata["mime_type"], "application/pdf")
+        disguised_pdf = FileStorage(
+            stream=io.BytesIO(b"not a pdf"),
+            filename="attendance.pdf",
+            content_type="application/pdf",
+        )
+        with self.assertRaises(UploadValidationError):
+            validate_uploaded_file(disguised_pdf, {".pdf"})
+
+        with self.assertRaises(RuntimeError):
+            create_app(
+                {
+                    "HKR_HR_ENV": "production",
+                    "SECRET_KEY": "dev-change-me",
+                }
+            )
+
+        missing = self.client.get("/this-page-does-not-exist?lang=en")
+        self.assertEqual(missing.status_code, 404)
+        self.assertIn("Record not found", missing.get_data(as_text=True))
+
+        self.app.config["CSRF_ENABLED"] = True
+        login_page = self.client.get("/dashboard?lang=en")
+        token_match = re.search(
+            r'<meta name="csrf-token" content="([^"]+)"',
+            login_page.get_data(as_text=True),
+        )
+        self.assertIsNotNone(token_match)
+        self.client.post("/logout", data={"_csrf_token": token_match.group(1)})
+        rejected = self.client.post(
+            "/login?lang=en",
+            data={"username": "admin", "password": "test-admin-password"},
+        )
+        self.assertEqual(rejected.status_code, 400)
+        self.assertIn(
+            "Page verification has expired",
+            rejected.get_data(as_text=True),
+        )
+        self.app.config["CSRF_ENABLED"] = False
+        self.login("admin", "test-admin-password")
+
         audit_page = self.client.get("/admin/audit?lang=en").get_data(
             as_text=True
         )
-        self.assertIn("Created employee from XLSX", audit_page)
-        self.assertIn("Employee import batch", audit_page)
-        self.assertNotIn(">employee_imported<", audit_page)
+        self.assertIn("Login succeeded", audit_page)
+
+    def test_dashboard_readiness_and_user_activity(self):
+        employee_id, employee_no = self.create_employee(
+            "HKR",
+            "site_monthly",
+            "待辦彙整測試",
+            "GROUPED TASK TEST",
+        )
+        dashboard = self.client.get(
+            "/dashboard?month=2026-08&lang=en"
+        ).get_data(as_text=True)
+        self.assertNotIn('class="readiness-employee"', dashboard)
+        self.assertIn("Needs attention this month", dashboard)
+        self.assertIn("Employee file", dashboard)
+        self.assertIn("Monthly attendance", dashboard)
+        self.assertIn("Payroll status", dashboard)
+        self.assertNotIn(employee_no, dashboard)
+
+        register = self.client.get(
+            "/employees?month=2026-08&readiness=needs_action&status=all&lang=en"
+        ).get_data(as_text=True)
+        self.assertIn(employee_no, register)
+        self.assertIn("Employee file", register)
+        self.assertIn(
+            "Monthly attendance and payroll status (2026-08)",
+            register,
+        )
+        self.assertEqual(register.count("Attendance not received"), 1)
+        self.assertIn("Salary not set", register)
+        self.assertIn("Staff Record not filed", register)
+        self.assertIn("Employment Contract not filed", register)
+        self.assertIn("Attendance not received", register)
+
+        self.client.post("/logout", follow_redirects=True)
+        with self.app.app_context():
+            signed_out_admin = User.query.filter_by(username="admin").one()
+            self.assertIsNotNone(signed_out_admin.last_logout_at)
+            self.assertGreaterEqual(
+                signed_out_admin.last_logout_at,
+                signed_out_admin.last_login_at,
+            )
+        failed = self.login("admin", "wrong-password")
+        self.assertIn("登入資料不正確", failed.get_data(as_text=True))
+        self.login("admin", "test-admin-password")
+
+        with self.app.app_context():
+            failed_login = AuditLog.query.filter_by(
+                action="auth_login_failed"
+            ).one()
+            failed_login.created_at = datetime(2026, 8, 11, 1, 2, 3)
+            active_admin = User.query.filter_by(username="admin").one()
+            active_admin.last_login_at = datetime.utcnow() - timedelta(hours=1)
+            active_admin.last_logout_at = datetime.utcnow() - timedelta(minutes=30)
+            active_admin.last_seen_at = datetime.utcnow()
+            db.session.commit()
+
+        users_page = self.client.get("/admin/users?lang=en").get_data(
+            as_text=True
+        )
+        self.assertIn("Account status", users_page)
+        self.assertIn("Recent activity", users_page)
+        self.assertIn("Online", users_page)
+
+        login_activity = self.client.get(
+            "/admin/audit?view=logins&lang=en"
+        ).get_data(as_text=True)
+        self.assertIn("Login succeeded", login_activity)
+        self.assertIn("Login failed", login_activity)
+        self.assertIn("Logged out", login_activity)
+        self.assertIn("2026-08-11 09:02:03", login_activity)
+        self.assertNotIn("HKT", login_activity)
+        with self.app.app_context():
+            actions = {
+                row.action
+                for row in AuditLog.query.filter(
+                    AuditLog.action.in_(
+                        {
+                            "auth_login_success",
+                            "auth_login_failed",
+                            "auth_logout",
+                        }
+                    )
+                )
+            }
+            self.assertEqual(
+                actions,
+                {"auth_login_success", "auth_login_failed", "auth_logout"},
+            )
 
         payroll_template = load_workbook(
             APP_ROOT
@@ -2007,6 +2870,7 @@ class V1WorkflowTests(unittest.TestCase):
                 "employee_documents",
                 "attendance_batch_items",
                 "attendance_segments",
+                "attendance_special_days",
                 "payroll_employee_results",
                 "payroll_project_lines",
             ):
@@ -2028,6 +2892,10 @@ class V1WorkflowTests(unittest.TestCase):
             )
             self.assertIn(
                 "attendance_batch_items.content_sha256",
+                changed,
+            )
+            self.assertIn(
+                "attendance_special_days.session",
                 changed,
             )
             document_columns = {
@@ -2085,6 +2953,80 @@ class V1WorkflowTests(unittest.TestCase):
             self.assertIn("normalized_name", issues["reference_values"])
             db.session.remove()
             db.engine.dispose()
+
+    def test_retired_workflow_tables_are_dropped_without_employee_loss(self):
+        employee_id, employee_no = self.create_employee(
+            "HKR",
+            "management",
+            "保留員工測試",
+            "KEEP EMPLOYEE TEST",
+        )
+        with self.app.app_context():
+            db.session.execute(
+                text(
+                    "create table import_batches ("
+                    "id integer primary key, batch_no varchar(80))"
+                )
+            )
+            db.session.execute(
+                text(
+                    "insert into import_batches (id, batch_no) "
+                    "values (1, 'LEGACY')"
+                )
+            )
+            db.session.execute(
+                text(
+                    "create table employee_task_notes ("
+                    "id integer primary key, employee_id integer, "
+                    "task_code varchar(80), note text)"
+                )
+            )
+            db.session.execute(
+                text(
+                    "insert into employee_task_notes "
+                    "(id, employee_id, task_code, note) "
+                    "values (1, :employee_id, 'legacy', 'retired')"
+                ),
+                {"employee_id": employee_id},
+            )
+            db.session.commit()
+            retired_audit = AuditLog(
+                user_id=User.query.filter_by(username="admin").one().id,
+                employee_id=employee_id,
+                action="bank_confirmed_for_payroll",
+                entity_type="Employee",
+                entity_id=employee_id,
+                detail="retired bank confirmation",
+            )
+            db.session.add(retired_audit)
+            db.session.commit()
+            retired_audit_id = retired_audit.id
+            self.assertIn("import_batches", inspect(db.engine).get_table_names())
+            self.assertIn(
+                "employee_task_notes",
+                inspect(db.engine).get_table_names(),
+            )
+
+            removed = retire_legacy_tables()
+
+            self.assertEqual(
+                removed,
+                ["import_batches", "employee_task_notes"],
+            )
+            self.assertNotIn(
+                "import_batches",
+                inspect(db.engine).get_table_names(),
+            )
+            self.assertNotIn(
+                "employee_task_notes",
+                inspect(db.engine).get_table_names(),
+            )
+            employee = db.session.get(Employee, employee_id)
+            self.assertIsNotNone(employee)
+            self.assertEqual(employee.employee_no, employee_no)
+            self.assertEqual(retire_obsolete_audit_events(), 1)
+            self.assertIsNone(db.session.get(AuditLog, retired_audit_id))
+            self.assertIsNotNone(db.session.get(Employee, employee_id))
 
     def test_live_four_part_payroll_and_daily_mpf(self):
         employee_id, employee_no = self.create_employee(
@@ -2148,8 +3090,17 @@ class V1WorkflowTests(unittest.TestCase):
             "?year_month=2026-07&payroll_group=site_daily"
         ).get_data(as_text=True)
         self.assertIn("data-payroll-filter", page)
-        self.assertIn("本月 1–20 日實際", page)
-        self.assertIn("上月 21 日至月底原預估", page)
+        self.assertIn("2026年7月1–20日（實際）", page)
+        self.assertIn("2026年6月21–30日（原預估）", page)
+        self.assertIn(
+            'href="/attendance?month=2026-07"',
+            page,
+        )
+        self.assertIn(
+            'href="/mpf-contributions?year_month=2026-07"',
+            page,
+        )
+        self.assertIn("請先選擇發薪單位", page)
         self.assertIn("/payroll/export-current", page)
         self.assertNotIn("確認並保存本次計算", page)
         self.assertNotIn("計算預覽", page)
@@ -2173,7 +3124,348 @@ class V1WorkflowTests(unittest.TestCase):
             self.assertEqual(result.employee_id, employee_id)
             self.assertEqual(result.gross_amount, Decimal("6500.00"))
 
-    def test_record_corrections_withdrawals_and_task_notes(self):
+    def test_mpf_effective_records_preview_and_exports(self):
+        with self.app.app_context():
+            schemes = {
+                item.code: item for item in MpfScheme.query.order_by(MpfScheme.code)
+            }
+            self.assertEqual(
+                set(schemes),
+                {
+                    "BCT_SERIES_800",
+                    "BCOM_MONTHLY",
+                    "BCT_MONTHLY",
+                    "BCT_DAILY",
+                },
+            )
+            self.assertIsNone(schemes["BCT_SERIES_800"].payroll_group_no)
+            self.assertEqual(schemes["BCT_DAILY"].calculation_mode, "casual")
+
+        monthly_id, monthly_no = self.create_employee(
+            "ASMTP",
+            "management",
+            "MPF 月工驗收",
+            "MPF MONTHLY QA",
+        )
+        monthly_project = self.complete_employee(
+            monthly_id,
+            "management",
+            "TMC046",
+            "monthly",
+            "30000",
+            "M1234567",
+            "63330001",
+        )
+        daily_id, daily_no = self.create_employee(
+            "HKRD",
+            "site_daily",
+            "MPF 日工驗收",
+            "MPF DAILY QA",
+        )
+        daily_project = self.complete_employee(
+            daily_id,
+            "site_daily",
+            "TMC046",
+            "daily",
+            "500",
+            "D7654321",
+            "63330002",
+            mpf_mode="casual",
+        )
+        with self.app.app_context():
+            new_scheme = MpfScheme.query.filter_by(code="BCT_MONTHLY").one()
+            new_scheme_id = new_scheme.id
+        response = self.client.post(
+            f"/employees/{monthly_id}/mpf",
+            data={
+                "effective_from": "2026-05-01",
+                "mpf_selection": str(new_scheme_id),
+                "member_account_no": "MONTHLY-NEW-001",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("MPF 記錄已保存", response.get_data(as_text=True))
+
+        with self.app.app_context():
+            monthly = db.session.get(Employee, monthly_id)
+            active_records = [
+                item for item in monthly.mpf_enrollments if item.status == "active"
+            ]
+            self.assertEqual(len(active_records), 2)
+            old_record = next(
+                item for item in active_records if item.scheme.code == "BCOM_MONTHLY"
+            )
+            new_record = next(
+                item for item in active_records if item.scheme.code == "BCT_MONTHLY"
+            )
+            self.assertEqual(old_record.effective_to, date(2026, 4, 30))
+            self.assertIsNone(new_record.effective_to)
+            new_record_id = new_record.id
+            for employee_id, project_id in (
+                (monthly_id, monthly_project),
+                (daily_id, daily_project),
+            ):
+                summary = AttendanceMonthlySummary(
+                    employee_id=employee_id,
+                    year_month="2026-08",
+                    status="received",
+                )
+                db.session.add(summary)
+                db.session.flush()
+                db.session.add_all(
+                    [
+                        AttendanceSegment(
+                            summary_id=summary.id,
+                            period_kind="current_1_20",
+                            project_id=project_id,
+                            working_days=Decimal("18"),
+                        ),
+                        AttendanceSegment(
+                            summary_id=summary.id,
+                            period_kind="current_21_end_forecast",
+                            project_id=project_id,
+                            working_days=Decimal("8"),
+                        ),
+                    ]
+                )
+            db.session.commit()
+
+        profile = self.client.get(
+            f"/employees/{monthly_id}?tab=employment"
+        ).get_data(as_text=True)
+        self.assertIn("當前薪酬及 MPF", profile)
+        self.assertIn("變更歷史", profile)
+        self.assertIn("銀聯（BCT）月工", profile)
+        self.assertIn("MONTHLY-NEW-001", profile)
+
+        page = self.client.get(
+            "/mpf-contributions?year_month=2026-08"
+        ).get_data(as_text=True)
+        self.assertIn("MPF 供款表", page)
+        self.assertIn(monthly_no, page)
+        self.assertIn(daily_no, page)
+        self.assertIn("下載全部 MPF ZIP", page)
+
+        single = self.client.post(
+            "/mpf-contributions/export",
+            data={"year_month": "2026-08", "scheme_code": "BCT_MONTHLY"},
+        )
+        self.assertEqual(single.status_code, 200)
+        self.assertIn(
+            "application/vnd.openxmlformats-officedocument",
+            single.content_type,
+        )
+        workbook = load_workbook(io.BytesIO(single.data), data_only=False)
+        sheet = workbook["BILL_Submitted Employee(s)"]
+        self.assertEqual(
+            sheet["B2"].value,
+            "HONG KONG RIVER ENGINEERING COMPANY LIMITED",
+        )
+        self.assertEqual(str(sheet["H2"].value), "53419540")
+        self.assertEqual(sheet["J2"].value, "MONTHLY (CALENDAR MONTH)")
+        self.assertEqual(sheet["A8"].value, "MPF MONTHLY QA")
+        self.assertEqual(sheet["C8"].value, "MONTHLY-NEW-001")
+        self.assertEqual(sheet["E8"].value, "APPROVED")
+        self.assertIsNone(sheet["I8"].value)
+        self.assertGreater(Decimal(str(sheet["H8"].value)), Decimal("0"))
+        self.assertEqual(
+            Decimal(str(sheet["J8"].value)),
+            Decimal(str(sheet["K8"].value))
+            + Decimal(str(sheet["L8"].value)),
+        )
+
+        archive_response = self.client.post(
+            "/mpf-contributions/export",
+            data={"year_month": "2026-08", "scheme_code": "all"},
+        )
+        self.assertEqual(archive_response.status_code, 200)
+        self.assertEqual(archive_response.content_type, "application/zip")
+        with zipfile.ZipFile(io.BytesIO(archive_response.data)) as archive:
+            self.assertEqual(
+                set(archive.namelist()),
+                {
+                    "HKR_MPF_2026-08_BCT_DAILY.xlsx",
+                    "HKR_MPF_2026-08_BCT_MONTHLY.xlsx",
+                },
+            )
+
+        response = self.client.post(
+            f"/mpf-enrollments/{new_record_id}/withdraw",
+            data={"reason": "驗收撤回"},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        with self.app.app_context():
+            monthly = db.session.get(Employee, monthly_id)
+            active = [
+                item for item in monthly.mpf_enrollments if item.status == "active"
+            ]
+            self.assertEqual(len(active), 1)
+            self.assertEqual(active[0].scheme.code, "BCOM_MONTHLY")
+            self.assertIsNone(active[0].effective_to)
+            self.assertEqual(monthly.mpf_mode, "regular")
+
+    def test_payroll_exports_ready_and_selected_employees_only(self):
+        daily_id, daily_no = self.create_employee(
+            "HKRD",
+            "site_daily",
+            "可出糧日工",
+            "READY DAILY",
+        )
+        monthly_id, monthly_no = self.create_employee(
+            "HKR",
+            "site_monthly",
+            "可出糧月工",
+            "READY MONTHLY",
+        )
+        blocked_id, blocked_no = self.create_employee(
+            "ASMTP",
+            "management",
+            "待補資料員工",
+            "BLOCKED EMPLOYEE",
+        )
+        daily_project_id = self.complete_employee(
+            daily_id,
+            "site_daily",
+            "TMC046",
+            "daily",
+            "500",
+            "READY-D-01",
+            "61110001",
+            mpf_mode="casual",
+        )
+        monthly_project_id = self.complete_employee(
+            monthly_id,
+            "site_monthly",
+            "TMC046",
+            "monthly",
+            "30000",
+            "READY-M-01",
+            "61110002",
+        )
+        with self.app.app_context():
+            for employee_id, project_id in (
+                (daily_id, daily_project_id),
+                (monthly_id, monthly_project_id),
+            ):
+                summary = AttendanceMonthlySummary(
+                    employee_id=employee_id,
+                    year_month="2026-07",
+                    status="received",
+                )
+                db.session.add(summary)
+                db.session.flush()
+                for kind, days in (
+                    ("current_1_20", "15"),
+                    ("current_21_end_forecast", "8"),
+                    ("previous_21_end", "8"),
+                    ("previous_21_end_forecast", "8"),
+                ):
+                    db.session.add(
+                        AttendanceSegment(
+                            summary_id=summary.id,
+                            period_kind=kind,
+                            project_id=project_id,
+                            working_days=Decimal(days),
+                        )
+                    )
+            db.session.commit()
+
+        page = self.client.get(
+            "/attendance-payroll?year_month=2026-07&payroll_group=all&status=all"
+        ).get_data(as_text=True)
+        self.assertIn("導出全部可出糧員工（2 人）", page)
+        self.assertIn("導出此員工 Payroll", page)
+        self.assertEqual(
+            len(
+                re.findall(
+                    r"<input[^>]+data-payroll-employee-checkbox",
+                    page,
+                )
+            ),
+            2,
+        )
+        self.assertNotIn("payroll-person-preview", page)
+
+        response = self.client.post(
+            "/payroll/export-current",
+            data={
+                "year_month": "2026-07",
+                "payroll_group": "all",
+                "scope": "ready",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "application/zip")
+        with self.app.app_context():
+            run = PayrollRun.query.order_by(PayrollRun.id.desc()).first()
+            self.assertEqual(
+                {result.employee_id for result in run.employee_results},
+                {daily_id, monthly_id},
+            )
+
+        response = self.client.post(
+            "/payroll/export-current",
+            data={
+                "year_month": "2026-07",
+                "payroll_group": "all",
+                "scope": "selected",
+                "employee_ids": [daily_id],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.mimetype,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        with self.app.app_context():
+            run = PayrollRun.query.order_by(PayrollRun.id.desc()).first()
+            self.assertEqual(
+                [result.employee_id for result in run.employee_results],
+                [daily_id],
+            )
+
+        response = self.client.post(
+            "/payroll/export-current",
+            data={
+                "year_month": "2026-07",
+                "payroll_group": "all",
+                "scope": "selected",
+                "employee_ids": [daily_id, monthly_id],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "application/zip")
+
+        response = self.client.post(
+            "/payroll/export-current",
+            data={
+                "year_month": "2026-07",
+                "payroll_group": "all",
+                "scope": "selected",
+                "employee_ids": [blocked_id],
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(blocked_no, response.get_data(as_text=True))
+        with self.app.app_context():
+            latest = PayrollRun.query.order_by(PayrollRun.id.desc()).first()
+            self.assertEqual(
+                {result.employee_id for result in latest.employee_results},
+                {daily_id, monthly_id},
+            )
+            self.assertNotIn(
+                blocked_id,
+                {result.employee_id for result in latest.employee_results},
+            )
+            self.assertEqual({daily_no, monthly_no}, {
+                result.employee.employee_no
+                for result in latest.employee_results
+            })
+
+    def test_record_corrections_and_withdrawals(self):
         employee_id, employee_no = self.create_employee(
             "HKR",
             "site_monthly",
@@ -2298,25 +3590,7 @@ class V1WorkflowTests(unittest.TestCase):
             ).one()
             self.assertEqual(legacy.entitled_days_override, Decimal("1.5"))
 
-        response = self.client.post(
-            f"/dashboard/tasks/{employee_id}/missing_signed_contract/notes",
-            data={
-                "month": "2026-07",
-                "progress": "in_progress",
-                "note": "已向地盤追收，明日再跟進",
-            },
-            follow_redirects=True,
-        )
-        self.assertEqual(response.status_code, 200)
-        page = self.client.get(
-            "/dashboard?task_type=missing_signed_contract"
-            "&task_progress=in_progress"
-        ).get_data(as_text=True)
-        self.assertIn(employee_no, page)
-        self.assertIn("已向地盤追收，明日再跟進", page)
-        self.assertIn("admin", page)
         with self.app.app_context():
-            self.assertEqual(EmployeeTaskNote.query.count(), 1)
             audit = AuditLog.query.filter_by(
                 action="identity_corrected"
             ).one()
@@ -2584,8 +3858,21 @@ class V1WorkflowTests(unittest.TestCase):
             )
             self.assertTrue(upload_folder.exists())
 
+        self.client.post("/logout")
+        self.login("hr_test", "test-hr-password")
+        denied = self.client.post(
+            f"/employees/{employee_id}/delete",
+            data={"confirm_employee_no": employee_no},
+        )
+        self.assertEqual(denied.status_code, 403)
+        with self.app.app_context():
+            self.assertIsNotNone(db.session.get(Employee, employee_id))
+        self.client.post("/logout")
+        self.login("admin", "test-admin-password")
+
         response = self.client.post(
             f"/employees/{employee_id}/delete",
+            data={"confirm_employee_no": employee_no},
             follow_redirects=True,
         )
         self.assertEqual(response.status_code, 200)
@@ -2640,6 +3927,15 @@ class V1WorkflowTests(unittest.TestCase):
             employee = db.session.get(Employee, employee_id)
             employee.current_period.start_date = date(2020, 1, 1)
             employee.current_period.contract_annual_leave_days = Decimal("10")
+            db.session.add(
+                EmployeeCompLeaveCredit(
+                    employee_id=employee_id,
+                    source_date=date(2026, 7, 5),
+                    source_kind="rest_day",
+                    days=Decimal("1"),
+                    status="active",
+                )
+            )
             db.session.commit()
 
         response = self.client.post(
@@ -2668,30 +3964,438 @@ class V1WorkflowTests(unittest.TestCase):
             follow_redirects=True,
         )
         self.assertEqual(response.status_code, 200)
-        self.assertIn("年假記錄已新增", response.get_data(as_text=True))
+        self.assertIn("請假記錄已新增", response.get_data(as_text=True))
         with self.app.app_context():
             record = EmployeeAnnualLeaveRecord.query.one()
             self.assertEqual(record.days, Decimal("5.0"))
+            self.assertEqual(len(record.comp_leave_allocations), 1)
+            self.assertEqual(
+                record.comp_leave_allocations[0].days, Decimal("1.0")
+            )
             self.assertEqual(
                 EmployeeAnnualLeaveAllocation.query.filter_by(
                     record_id=record.id
                 ).count(),
-                2,
+                1,
             )
             allocations = {
                 item.balance.year: item.days for item in record.allocations
             }
-            self.assertEqual(allocations[2023], Decimal("3.0"))
-            self.assertEqual(allocations[2025], Decimal("2.0"))
+            self.assertEqual(allocations[2023], Decimal("4.0"))
             employee = db.session.get(Employee, employee_id)
             buckets = annual_leave_buckets(
                 employee,
                 as_of=date(2026, 8, 14),
             )
             by_year = {item["year"]: item for item in buckets}
-            self.assertEqual(by_year[2023]["remaining"], Decimal("5.0"))
-            self.assertEqual(by_year[2025]["remaining"], Decimal("6.0"))
+            self.assertEqual(by_year[2023]["remaining"], Decimal("4.0"))
+            self.assertEqual(by_year[2025]["remaining"], Decimal("8.0"))
             self.assertEqual(by_year[2025]["expiry_date"], date(2026, 12, 31))
+
+    def test_leave_work_injury_allowance_and_special_day_payroll_rules(self):
+        sick_employee_id, _ = self.create_employee(
+            "ASMTP",
+            "site_monthly",
+            "病假薪酬測試",
+            "SICK PAY TEST",
+        )
+        project_id = self.complete_employee(
+            sick_employee_id,
+            "site_monthly",
+            "TMC046",
+            "monthly",
+            "31000",
+            "SP100001",
+            "62223100",
+        )
+        injury_employee_id, _ = self.create_employee(
+            "ASMTP",
+            "site_monthly",
+            "工傷薪酬測試",
+            "INJURY PAY TEST",
+        )
+        self.complete_employee(
+            injury_employee_id,
+            "site_monthly",
+            "TMC046",
+            "monthly",
+            "31000",
+            "WI100001",
+            "62224800",
+        )
+
+        with self.app.app_context():
+            sick_employee = db.session.get(Employee, sick_employee_id)
+            sick_employee.current_period.confirmation_date = date(2026, 6, 30)
+            summary = AttendanceMonthlySummary(
+                employee_id=sick_employee_id,
+                year_month="2026-07",
+                status="received",
+                special_day_handling="pay",
+            )
+            db.session.add(summary)
+            db.session.flush()
+            segment = AttendanceSegment(
+                summary=summary,
+                period_kind="current_1_20",
+                project_id=project_id,
+                # Monthly ordinary-day input is intentionally ignored.
+                working_days=Decimal("16"),
+                other_allowance_amount=Decimal("250"),
+            )
+            db.session.add(segment)
+            db.session.flush()
+            special_day = AttendanceSpecialDay(
+                summary=summary,
+                segment=segment,
+                period_kind="current_1_20",
+                project_id=project_id,
+                work_date=date(2026, 7, 5),
+                day_kind="rest_day",
+                handling="pay",
+                days=Decimal("1"),
+                status="active",
+            )
+            db.session.add_all(
+                [
+                    special_day,
+                    EmployeeAnnualLeaveRecord(
+                        employee_id=sick_employee_id,
+                        leave_date=date(2026, 7, 10),
+                        end_date=date(2026, 7, 12),
+                        start_session="am",
+                        end_session="pm",
+                        entitlement_year=2026,
+                        days=Decimal("3"),
+                        leave_type="sick",
+                        status="active",
+                    ),
+                    EmployeeAllowance(
+                        employee_id=sick_employee_id,
+                        label="餐補",
+                        allowance_type="meal",
+                        currency="HKD",
+                        amount=Decimal("310"),
+                        effective_from=date(2026, 7, 1),
+                        status="active",
+                    ),
+                    EmployeeAllowance(
+                        employee_id=sick_employee_id,
+                        label="特殊津貼",
+                        allowance_type="special",
+                        currency="HKD",
+                        amount=Decimal("620"),
+                        effective_from=date(2026, 7, 1),
+                        status="active",
+                    ),
+                    EmployeeWorkInjuryPeriod(
+                        employee_id=injury_employee_id,
+                        accident_date=date(2026, 7, 1),
+                        payroll_start_date=date(2026, 7, 1),
+                        payroll_end_date=date(2026, 7, 31),
+                        confirmed_monthly_earnings=Decimal("31000"),
+                        incapacity_monthly_earnings=Decimal("0"),
+                        currency="HKD",
+                        status="active",
+                    ),
+                ]
+            )
+            db.session.commit()
+
+            rows = calculate_payroll("2026-07", "site_monthly")
+            sick_row = next(
+                row for row in rows if row["employee"].id == sick_employee_id
+            )
+            self.assertEqual(sick_row["sick_leave_days"], Decimal("3.0"))
+            self.assertEqual(sick_row["sick_leave_amount"], Decimal("2600.00"))
+            self.assertEqual(
+                sick_row["traffic_meal_allowance_amount"], Decimal("310.00")
+            )
+            self.assertEqual(
+                sick_row["special_allowance_amount"], Decimal("620.00")
+            )
+            self.assertEqual(sick_row["gross_amount"], Decimal("32780.00"))
+            self.assertEqual(
+                sick_row["attendance_other_allowance_amount"], Decimal("250.00")
+            )
+            line = sick_row["lines"][0]
+            self.assertEqual(line["working_days"], Decimal("28.00"))
+            self.assertEqual(line["holiday_days"], Decimal("1.00"))
+            self.assertIn("病假憑證待補", sick_row["warnings"])
+
+            special_day.handling = "comp_leave"
+            summary.special_day_handling = "comp_leave"
+            db.session.commit()
+            sick_row = next(
+                row
+                for row in calculate_payroll("2026-07", "site_monthly")
+                if row["employee"].id == sick_employee_id
+            )
+            self.assertEqual(sick_row["gross_amount"], Decimal("31780.00"))
+            self.assertEqual(sick_row["lines"][0]["holiday_days"], Decimal("0.00"))
+
+            db.session.add(
+                AttendanceSegment(
+                    summary=summary,
+                    period_kind="current_21_end_forecast",
+                    project_id=project_id,
+                    working_days=Decimal("0"),
+                    sunday_holiday_days=Decimal("1"),
+                )
+            )
+            db.session.commit()
+            sick_row = next(
+                row
+                for row in calculate_payroll("2026-07", "site_monthly")
+                if row["employee"].id == sick_employee_id
+            )
+            self.assertEqual(sick_row["gross_amount"], Decimal("32780.00"))
+            self.assertEqual(
+                sick_row["lines"][0]["forecast_holiday_days"],
+                Decimal("1.00"),
+            )
+
+            injury_row = next(
+                row
+                for row in calculate_payroll("2026-07", "site_monthly")
+                if row["employee"].id == injury_employee_id
+            )
+            self.assertFalse(injury_row["blockers"])
+            self.assertEqual(injury_row["work_injury_days"], Decimal("31.0"))
+            self.assertEqual(
+                injury_row["work_injury_amount"], Decimal("24800.00")
+            )
+            self.assertEqual(injury_row["gross_amount"], Decimal("24800.00"))
+
+            injury_period = EmployeeWorkInjuryPeriod.query.filter_by(
+                employee_id=injury_employee_id
+            ).one()
+            injury_period.pay_mode = "full_pay"
+            db.session.add(
+                EmployeeWorkInjuryMonthlyExpense(
+                    employee_id=injury_employee_id,
+                    work_injury_period_id=injury_period.id,
+                    year_month="2026-07",
+                    amount=Decimal("800"),
+                    currency="HKD",
+                    status="active",
+                )
+            )
+            db.session.commit()
+            injury_row = next(
+                row
+                for row in calculate_payroll("2026-07", "site_monthly")
+                if row["employee"].id == injury_employee_id
+            )
+            self.assertEqual(injury_row["work_injury_amount"], Decimal("31000.00"))
+            self.assertEqual(injury_row["gross_amount"], Decimal("31000.00"))
+            self.assertEqual(
+                injury_row["work_injury_medical_reimbursement_amount"],
+                Decimal("800.00"),
+            )
+            self.assertEqual(injury_row["net_amount"], Decimal("30300.00"))
+
+        employment_page = self.client.get(
+            f"/employees/{sick_employee_id}?tab=employment"
+        ).get_data(as_text=True)
+        self.assertIn("變更歷史", employment_page)
+        self.assertIn("補貼", employment_page)
+        self.assertIn('id="allowance-editor-', employment_page)
+        self.assertIn("可不填；留空表示持續生效", employment_page)
+        self.assertNotIn("補貼時間線", employment_page)
+
+        injury_search_page = self.client.get(
+            "/annual-leave",
+            query_string={"view": "injury", "q": "工伤薪酬测试"},
+        ).get_data(as_text=True)
+        self.assertIn("假期與工傷", injury_search_page)
+        self.assertIn("工傷管理", injury_search_page)
+        self.assertIn("工傷薪酬測試", injury_search_page)
+        injury_detail_page = self.client.get(
+            "/annual-leave",
+            query_string={
+                "view": "injury",
+                "employee_id": injury_employee_id,
+            },
+        ).get_data(as_text=True)
+        self.assertIn("按〔核實每月收入－期間每月收入〕× 4/5", injury_detail_page)
+        self.assertIn("日工 AM；月工／OFFICE AN", injury_detail_page)
+
+        payroll_page = self.client.get(
+            "/attendance-payroll",
+            query_string={
+                "year_month": "2026-07",
+                "status": "all",
+                "employee_id": sick_employee_id,
+            },
+        ).get_data(as_text=True)
+        self.assertIn("工資更正與一次性調整", payroll_page)
+        self.assertIn("替班津貼請在考勤錄入的實際項目行填寫", payroll_page)
+        self.assertIn("離職當月的工資只由離職結算", payroll_page)
+
+    def test_attendance_special_dates_generate_and_void_comp_leave(self):
+        employee_id, _ = self.create_employee(
+            "HKRD", "site_daily", "補休聯動測試", "COMP LEAVE TEST"
+        )
+        project_id = self.complete_employee(
+            employee_id,
+            "site_daily",
+            "TMC046",
+            "daily",
+            "500",
+            "CL100001",
+            "62225000",
+            mpf_mode="casual",
+        )
+        response = self.client.post(
+            "/attendance/batches",
+            data={
+                "year_month": "2026-07",
+                "files": [
+                    (
+                        io.BytesIO(pdf_bytes("comp-leave-attendance")),
+                        "comp-leave-attendance.pdf",
+                    )
+                ],
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 302)
+        with self.app.app_context():
+            item_id = AttendanceBatchItem.query.one().id
+
+        entry_page = self.client.get(
+            f"/attendance?month=2026-07&view=collection&item_id={item_id}&employee_id={employee_id}"
+        ).get_data(as_text=True)
+        self.assertIn("Payroll 類別", entry_page)
+        self.assertIn("日工：一般工作日按日薪", entry_page)
+        self.assertIn("請選擇員工", entry_page)
+        self.assertIn("文件名不作身份依據", entry_page)
+        self.assertIn("星期日／法定節假日實際出勤日數", entry_page)
+        self.assertIn("星期日／法定節假日預估出勤日數", entry_page)
+        self.assertIn('data-special-work-picker', entry_page)
+        self.assertNotIn('data-special-work-session', entry_page)
+        self.assertNotIn('class="icon-btn remove-segment"', entry_page)
+        self.assertNotIn("休息日實際工作日期", entry_page)
+        self.assertNotIn("法定假日實際工作日期", entry_page)
+        self.assertNotIn("特殊日統一處理方式", entry_page)
+        self.assertRegex(
+            entry_page,
+            r'name="previous_21_end_forecast_working_days" value="0"',
+        )
+        self.assertRegex(
+            entry_page,
+            r'name="previous_21_end_forecast_holiday_days" value="0"',
+        )
+        self.assertIn('disabled aria-disabled="true"', entry_page)
+        self.assertIn("未找到 2026年6月考勤", entry_page)
+
+        form = {
+            "employee_id": str(employee_id),
+            "special_day_handling": "comp_leave",
+            "current_1_20_project_id": [str(project_id)],
+            "current_1_20_working_days": ["16"],
+            "current_1_20_ot_hours": ["0"],
+            "current_1_20_holiday_days": ["2"],
+            "current_1_20_special_work_entries": [json.dumps([
+                {"date": "2026-07-05", "session": "full_day"},
+                {"date": "2026-07-12", "session": "pm"},
+            ])],
+            "current_1_20_large_ecall_count": ["0"],
+            "current_1_20_ecall_count": ["0"],
+            "current_21_end_forecast_project_id": [str(project_id)],
+            "current_21_end_forecast_working_days": ["6"],
+            "current_21_end_forecast_holiday_days": ["1"],
+            "current_21_end_forecast_special_work_entries": ["[]"],
+        }
+        invalid_form = dict(form)
+        invalid_form["current_1_20_special_work_entries"] = [json.dumps([
+            {"date": "2026-07-05", "session": "full_day"},
+        ])]
+        invalid_response = self.client.post(
+            f"/attendance/items/{item_id}/save",
+            data=invalid_form,
+            follow_redirects=True,
+        )
+        self.assertIn(
+            "日期數必須與出勤日數一致",
+            invalid_response.get_data(as_text=True),
+        )
+        with self.app.app_context():
+            self.assertEqual(AttendanceMonthlySummary.query.count(), 0)
+
+        response = self.client.post(
+            f"/attendance/items/{item_id}/save", data=form
+        )
+        self.assertEqual(response.status_code, 302)
+        with self.app.app_context():
+            credits = EmployeeCompLeaveCredit.query.order_by(
+                EmployeeCompLeaveCredit.source_date
+            ).all()
+            self.assertEqual(len(credits), 2)
+            self.assertTrue(all(item.status == "active" for item in credits))
+            self.assertEqual(
+                [item.source_date for item in credits],
+                [date(2026, 7, 5), date(2026, 7, 12)],
+            )
+            self.assertEqual(
+                [item.days for item in credits],
+                [Decimal("1.0"), Decimal("1.0")],
+            )
+            special_days = AttendanceSpecialDay.query.order_by(
+                AttendanceSpecialDay.work_date
+            ).all()
+            self.assertEqual(
+                [item.session for item in special_days],
+                ["full_day", "full_day"],
+            )
+
+        response = self.client.post(
+            "/attendance/batches",
+            data={
+                "year_month": "2026-08",
+                "files": [
+                    (
+                        io.BytesIO(pdf_bytes("august-attendance")),
+                        "august-attendance.pdf",
+                    )
+                ],
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 302)
+        with self.app.app_context():
+            august_item_id = AttendanceBatchItem.query.filter_by(
+                original_filename="august-attendance.pdf"
+            ).one().id
+        august_page = self.client.get(
+            f"/attendance?month=2026-08&view=collection&item_id={august_item_id}&employee_id={employee_id}"
+        ).get_data(as_text=True)
+        self.assertRegex(
+            august_page,
+            r'name="previous_21_end_forecast_working_days" value="6(?:\.00)?"',
+        )
+        self.assertRegex(
+            august_page,
+            r'name="previous_21_end_forecast_holiday_days" value="1(?:\.00)?"',
+        )
+        self.assertIn('target="_blank" rel="noopener"', august_page)
+        self.assertIn("打開 2026年7月考勤表", august_page)
+        self.assertNotIn("未找到 2026年7月考勤", august_page)
+
+        form["special_day_handling"] = "pay"
+        form["confirm_duplicate"] = "1"
+        response = self.client.post(
+            f"/attendance/items/{item_id}/save", data=form
+        )
+        self.assertEqual(response.status_code, 302)
+        with self.app.app_context():
+            credits = EmployeeCompLeaveCredit.query.all()
+            self.assertEqual(len(credits), 2)
+            self.assertTrue(all(item.status == "voided" for item in credits))
+            special_days = AttendanceSpecialDay.query.all()
+            self.assertEqual(len(special_days), 2)
+            self.assertTrue(all(item.handling == "pay" for item in special_days))
 
     def test_final_payment_review_calculation_and_formula_export(self):
         employee_id, employee_no = self.create_employee(
@@ -2748,6 +4452,7 @@ class V1WorkflowTests(unittest.TestCase):
                 "post_2024_leave_days": "2",
                 "statutory_holiday_days": "1",
                 "leave_average_wage": "30000",
+                "leave_wage_total": "360000",
                 "benefit_type": "long_service",
                 "pre_basis_last": "18000",
                 "pre_basis_average": "20000",
@@ -2767,10 +4472,30 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertIn("離職結算資料已保存", page)
         self.assertIn(employee_no, page)
         self.assertIn("2025-05-01", page)
+        self.assertIn("勞工處規則摘要", page)
+        self.assertIn("最後 30 個正常工作日", page)
+        self.assertIn("不少於 24 個月", page)
+        self.assertIn("前 12 個月工資合計 ÷ 365", page)
+        self.assertIn("離職當月以 Final Payment 作唯一工資來源", page)
         with self.app.app_context():
             period = db.session.get(EmployeeEmploymentPeriod, period_id)
             result = calculate_final_payment(period)
+            expected_base_amount = result["base_amount"]
+            expected_ot_amount = result["ot_amount"]
+            expected_holiday_amount = result["holiday_amount"]
+            expected_net_amount = result["net_amount"]
             self.assertFalse(result["blockers"])
+            self.assertEqual(result["leave_wage_total"], Decimal("360000.00"))
+            self.assertEqual(result["leave_rate"], Decimal("986.3014"))
+            leave_summary = annual_leave_summary(result["employee"], 2026)
+            expected_prorated = (
+                leave_summary["calculated_entitled"]
+                * Decimal("232")
+                / Decimal("365")
+            )
+            self.assertTrue(leave_summary["termination_prorated"])
+            self.assertEqual(leave_summary["termination_date"], date(2026, 8, 20))
+            self.assertEqual(leave_summary["entitled"], expected_prorated)
             self.assertEqual(result["benefit"]["type"], "long_service")
             self.assertEqual(result["benefit"]["mpf_offset"], Decimal("500.00"))
             self.assertGreater(result["benefit"]["pre_amount"], Decimal("0"))
@@ -2800,6 +4525,26 @@ class V1WorkflowTests(unittest.TestCase):
                 ).count(),
                 1,
             )
+            ordinary_rows = [
+                row
+                for row in calculate_payroll("2026-08", "all")
+                if row["employee"].id == employee_id
+            ]
+            self.assertEqual(ordinary_rows, [])
+            final_mpf_rows = [
+                row
+                for row in mpf_preview_rows("2026-08")
+                if row["employee"].id == employee_id
+            ]
+            self.assertEqual(len(final_mpf_rows), 1)
+            self.assertTrue(final_mpf_rows[0]["is_final_payment"])
+
+        mpf_page = self.client.get(
+            "/mpf-contributions",
+            query_string={"year_month": "2026-08"},
+        ).get_data(as_text=True)
+        self.assertIn("離職員工 MPF 規則", mpf_page)
+        self.assertIn("只採用已確認的 Final Payment 結果", mpf_page)
 
         response = self.client.post(
             "/final-payment/export",
@@ -2814,14 +4559,54 @@ class V1WorkflowTests(unittest.TestCase):
             response.content_type,
         )
         workbook = load_workbook(io.BytesIO(response.data), data_only=False)
-        self.assertEqual(workbook.sheetnames, ["OFFICE"])
+        self.assertEqual(workbook.sheetnames, ["OFFICE", "計算說明"])
         sheet = workbook["OFFICE"]
+        self.assertEqual(sheet["A1"].value, "Hong Kong River Engineering Co. Ltd.")
+        self.assertEqual(sheet["A2"].value, "Final Payment")
+        self.assertEqual(sheet["A3"].value, "Payroll of Local Staff")
+        merged_ranges = {str(item) for item in sheet.merged_cells.ranges}
+        self.assertTrue({"A1:Z1", "A2:Z2", "A3:Z3"}.issubset(merged_ranges))
         self.assertEqual(sheet["D8"].value, employee_no)
         self.assertEqual(sheet["J8"].value, "=ROUND(H8*I8,2)")
         self.assertEqual(sheet["M8"].value, "=ROUND(K8*L8,2)")
         self.assertTrue(str(sheet["V8"].value).startswith("=ROUND("))
         self.assertEqual(sheet["X8"].value, "=ROUND(V8+W8,2)")
         self.assertEqual(sheet["Y8"].value, "=X8")
+        exported_base = (
+            Decimal(str(sheet["H8"].value))
+            * Decimal(str(sheet["I8"].value))
+        ).quantize(Decimal("0.01"))
+        exported_ot = (
+            Decimal(str(sheet["K8"].value))
+            * Decimal(str(sheet["L8"].value))
+        ).quantize(Decimal("0.01"))
+        exported_holiday = (
+            Decimal(str(sheet["N8"].value))
+            * Decimal(str(sheet["O8"].value))
+        ).quantize(Decimal("0.01"))
+        exported_gross = sum(
+            (
+                exported_base,
+                exported_ot,
+                exported_holiday,
+                *(Decimal(str(sheet.cell(8, column).value or 0)) for column in range(17, 22)),
+            ),
+            Decimal("0"),
+        ).quantize(Decimal("0.01"))
+        exported_net = (
+            exported_gross + Decimal(str(sheet["W8"].value))
+        ).quantize(Decimal("0.01"))
+        self.assertEqual(exported_base, expected_base_amount)
+        self.assertEqual(exported_ot, expected_ot_amount)
+        self.assertEqual(exported_holiday, expected_holiday_amount)
+        self.assertEqual(exported_net, expected_net_amount)
+        notes = workbook["計算說明"]
+        self.assertIn("勞工處規則摘要", notes["A1"].value)
+        self.assertIn("最後 30 個正常工作日", notes["B13"].value)
+        self.assertEqual(
+            notes["C5"].hyperlink.target,
+            "https://www.labour.gov.hk/tc/faq/cap57l_whole.htm",
+        )
 
         response = self.client.post(
             "/final-payment/export",
@@ -2841,6 +4626,287 @@ class V1WorkflowTests(unittest.TestCase):
                     "HKR_Final_Payment_2026-08_management.xlsx",
                 },
             )
+            daily_workbook = load_workbook(
+                io.BytesIO(
+                    archive.read(
+                        "HKR_Final_Payment_2026-08_site_daily.xlsx"
+                    )
+                ),
+                data_only=False,
+            )
+        self.assertIn("計算說明", daily_workbook.sheetnames)
+
+    def test_work_injury_allowance_and_effective_bank_routes(self):
+        employee_id, _ = self.create_employee(
+            "ASMTP", "site_monthly", "記錄路由測試", "RECORD ROUTES"
+        )
+        self.complete_employee(
+            employee_id,
+            "site_monthly",
+            "TMC046",
+            "monthly",
+            "31000",
+            "ROUTES-01",
+            "61119991",
+        )
+        general_upload = self.client.get(
+            f"/employees/{employee_id}/documents/new?scope=general"
+        ).get_data(as_text=True)
+        self.assertIn('value="cv"', general_upload)
+        self.assertIn('value="other"', general_upload)
+        self.assertNotIn('value="bank_proof"', general_upload)
+        self.assertNotIn('value="signed_contract"', general_upload)
+        response = self.client.post(
+            f"/employees/{employee_id}/work-injuries",
+            data={
+                "accident_date": "2026-07-01",
+                "payroll_start_date": "2026-07-01",
+                "payroll_end_date": "2026-07-31",
+                "confirmed_monthly_earnings": "31000",
+                "incapacity_monthly_earnings": "0",
+                "currency": "HKD",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        response = self.client.post(
+            f"/employees/{employee_id}/allowances",
+            data={
+                "allowance_type": "meal",
+                "effective_from": "2026-07-01",
+                "amount": "500",
+                "currency": "HKD",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        response = self.client.post(
+            f"/employees/{employee_id}/bank-accounts",
+            data={
+                "effective_from": "2026-08-01",
+                "bank_name": "NEW BANK",
+                "account_no": "99887766",
+                "currency": "HKD",
+                "evidence": (
+                    io.BytesIO(pdf_bytes("bank evidence")),
+                    "bank-evidence.pdf",
+                ),
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("NEW BANK", response.get_data(as_text=True))
+        with self.app.app_context():
+            self.assertEqual(
+                EmployeeWorkInjuryPeriod.query.filter_by(employee_id=employee_id).count(),
+                1,
+            )
+            self.assertEqual(
+                EmployeeAllowance.query.filter_by(employee_id=employee_id).count(),
+                1,
+            )
+            bank = EmployeeBankAccount.query.filter_by(
+                employee_id=employee_id,
+                bank_name="NEW BANK",
+            ).one()
+            bank_id = bank.id
+            bank_document_id = bank.evidence_document_id
+        profile = self.client.get(
+            f"/employees/{employee_id}?tab=documents&lang=en"
+        ).get_data(as_text=True)
+        self.assertIn("bank-evidence.pdf", profile)
+        self.assertIn("Manage in module", profile)
+        self.assertIn(
+            f'/employees/{employee_id}?tab=personal',
+            profile,
+        )
+        self.assertNotIn(
+            f'data-dialog-open="document-replace-{bank_document_id}"',
+            profile,
+        )
+        response = self.client.post(
+            f"/bank-accounts/{bank_id}/correct",
+            data={
+                "effective_from": "2026-08-01",
+                "bank_name": "CORRECT BANK",
+                "account_no": "88776655",
+                "currency": "HKD",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("CORRECT BANK", response.get_data(as_text=True))
+        response = self.client.post(
+            f"/bank-accounts/{bank_id}/withdraw",
+            data={"reason": "wrong account"},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        with self.app.app_context():
+            bank = db.session.get(EmployeeBankAccount, bank_id)
+            employee = db.session.get(Employee, employee_id)
+            self.assertEqual(bank.status, "voided")
+            self.assertEqual(
+                employee.bank_name,
+                "BANK OF CHINA (HONG KONG) LIMITED",
+            )
+            self.assertTrue(
+                AuditLog.query.filter_by(
+                    entity_type="EmployeeBankAccount",
+                    entity_id=bank_id,
+                ).count() >= 3
+            )
+
+    def test_payroll_regression_matrix_for_leave_ot_ecall_and_export(self):
+        post_id, _ = self.create_employee(
+            "ASMTP", "site_monthly", "綜合薪酬測試", "PAYROLL MATRIX"
+        )
+        project_id = self.complete_employee(
+            post_id,
+            "site_monthly",
+            "TMC046",
+            "monthly",
+            "31000",
+            "MATRIX-01",
+            "61118881",
+        )
+        pre_id, _ = self.create_employee(
+            "ASMTP", "site_monthly", "試用期病假測試", "PROBATION SICK"
+        )
+        self.complete_employee(
+            pre_id,
+            "site_monthly",
+            "TMC046",
+            "monthly",
+            "31000",
+            "MATRIX-02",
+            "61118882",
+        )
+        with self.app.app_context():
+            post = db.session.get(Employee, post_id)
+            post.current_period.confirmation_date = date(2026, 6, 30)
+            summary = AttendanceMonthlySummary(
+                employee_id=post_id,
+                year_month="2026-07",
+                status="received",
+                special_day_handling="pay",
+            )
+            pre_summary = AttendanceMonthlySummary(
+                employee_id=pre_id,
+                year_month="2026-07",
+                status="received",
+            )
+            db.session.add_all([summary, pre_summary])
+            db.session.flush()
+            current = AttendanceSegment(
+                summary=summary,
+                period_kind="current_1_20",
+                project_id=project_id,
+                working_days=Decimal("16"),
+                ot_hours=Decimal("9"),
+                large_ecall_count=1,
+                ecall_count=1,
+            )
+            previous = AttendanceSegment(
+                summary=summary,
+                period_kind="previous_21_end",
+                project_id=project_id,
+                ot_hours=Decimal("9"),
+                ecall_count=1,
+            )
+            previous_forecast = AttendanceSegment(
+                summary=summary,
+                period_kind="previous_21_end_forecast",
+                project_id=project_id,
+            )
+            db.session.add_all([current, previous, previous_forecast])
+            db.session.flush()
+            db.session.add_all(
+                [
+                    AttendanceSpecialDay(
+                        summary=summary,
+                        segment=current,
+                        period_kind="current_1_20",
+                        project_id=project_id,
+                        work_date=date(2026, 7, 5),
+                        day_kind="rest_day",
+                        handling="pay",
+                        days=Decimal("1"),
+                        status="active",
+                    ),
+                    EmployeeAnnualLeaveRecord(
+                        employee_id=post_id,
+                        leave_date=date(2026, 7, 6),
+                        end_date=date(2026, 7, 7),
+                        entitlement_year=2026,
+                        days=Decimal("2"),
+                        leave_type="annual",
+                        status="active",
+                    ),
+                    EmployeeAnnualLeaveRecord(
+                        employee_id=post_id,
+                        leave_date=date(2026, 7, 8),
+                        end_date=date(2026, 7, 10),
+                        entitlement_year=2026,
+                        days=Decimal("3"),
+                        leave_type="sick",
+                        status="active",
+                    ),
+                    EmployeeAnnualLeaveRecord(
+                        employee_id=post_id,
+                        leave_date=date(2026, 7, 11),
+                        end_date=date(2026, 7, 12),
+                        entitlement_year=2026,
+                        days=Decimal("2"),
+                        leave_type="unpaid",
+                        status="active",
+                    ),
+                    EmployeeAnnualLeaveRecord(
+                        employee_id=pre_id,
+                        leave_date=date(2026, 7, 8),
+                        end_date=date(2026, 7, 8),
+                        entitlement_year=2026,
+                        days=Decimal("1"),
+                        leave_type="sick",
+                        status="active",
+                    ),
+                ]
+            )
+            db.session.commit()
+            rows = calculate_payroll("2026-07", "site_monthly")
+            matrix = next(row for row in rows if row["employee"].id == post_id)
+            probation = next(row for row in rows if row["employee"].id == pre_id)
+            self.assertEqual(matrix["annual_leave_days"], Decimal("2.00"))
+            self.assertEqual(matrix["sick_leave_days"], Decimal("3.00"))
+            self.assertEqual(matrix["sick_leave_amount"], Decimal("2600.00"))
+            self.assertEqual(matrix["unpaid_leave_days"], Decimal("2.00"))
+            self.assertEqual(matrix["unpaid_leave_deduction"], Decimal("2000.00"))
+            self.assertEqual(matrix["ot_amount"], Decimal("1500.00"))
+            self.assertEqual(matrix["large_ecall_amount"], Decimal("1000.00"))
+            self.assertEqual(matrix["ecall_amount"], Decimal("400.00"))
+            self.assertEqual(matrix["underpay_amount"], Decimal("0.00"))
+            self.assertEqual(matrix["overpay_amount"], Decimal("0.00"))
+            self.assertEqual(probation["sick_leave_amount"], Decimal("800.00"))
+            payroll_entity_id = post.current_assignment.payroll_entity_id
+
+        response = self.client.post(
+            "/payroll/export-current",
+            data={
+                "year_month": "2026-07",
+                "payroll_group": "site_monthly",
+                "payroll_entity_id": payroll_entity_id,
+                "scope": "selected",
+                "employee_ids": [post_id],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        workbook = load_workbook(io.BytesIO(response.data), data_only=False)
+        sheet = workbook["月工"]
+        self.assertEqual(sheet["K7"].value, "=J7/$G$5")
+        self.assertEqual(Decimal(str(sheet["L7"].value)), Decimal("26"))
+        self.assertEqual(Decimal(str(sheet["AF7"].value)), Decimal("0"))
+        self.assertEqual(Decimal(str(sheet["AG7"].value)), Decimal("0"))
+        self.assertTrue(str(sheet["M7"].value).startswith("=ROUND"))
 
 
 if __name__ == "__main__":

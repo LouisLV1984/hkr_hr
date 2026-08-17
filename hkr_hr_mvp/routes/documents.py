@@ -24,6 +24,7 @@ from models import (
     AttendanceMonthlySummary,
     Employee,
     EmployeeAssignment,
+    EmployeeBankAccount,
     EmployeeCertificate,
     EmployeeDocument,
     EmployeeEmploymentPeriod,
@@ -40,6 +41,7 @@ from tools.hr_core import (
     IDENTITY_TYPE_OPTIONS,
     REPLACEMENT_REASONS,
     copy_file_to_employee,
+    current_bank_account_on,
     ensure_current_employment_period,
     file_sha256,
     find_duplicate_employee_document,
@@ -47,10 +49,12 @@ from tools.hr_core import (
     parse_bool,
     parse_date,
     reference_map,
+    rebuild_effective_ranges,
     store_employee_file,
     uploaded_file_sha256,
     write_audit,
 )
+from tools.security import UploadValidationError, validate_uploaded_file
 
 
 documents_bp = Blueprint("documents", __name__)
@@ -117,15 +121,38 @@ def pending_path(payload):
     return path
 
 
+def validated_upload_or_flash(uploaded, allowed_extensions=None):
+    try:
+        return validate_uploaded_file(
+            uploaded,
+            allowed_extensions=allowed_extensions,
+        )
+    except UploadValidationError as exc:
+        flash(str(exc), "error")
+        return None
+
+
 @documents_bp.route("/employees/<int:employee_id>/documents/new", methods=["GET", "POST"])
 @login_required
 def new_document(employee_id):
     employee = db.get_or_404(Employee, employee_id)
+    general_categories = {
+        code: label
+        for code, label in DOCUMENT_CATEGORIES.items()
+        if code in {"cv", "other"}
+    }
+    categories = (
+        general_categories
+        if request.args.get("scope") == "general"
+        else DOCUMENT_CATEGORIES
+    )
     if request.method == "POST":
         uploaded = request.files.get("file")
         category = request.form.get("category")
-        if not uploaded or not uploaded.filename or category not in DOCUMENT_CATEGORIES:
+        if not uploaded or not uploaded.filename or category not in categories:
             flash("請選擇附件類別及文件。", "error")
+        elif not (upload_meta := validated_upload_or_flash(uploaded)):
+            pass
         else:
             content_sha256 = uploaded_file_sha256(uploaded)
             duplicate = find_duplicate_employee_document(
@@ -146,8 +173,8 @@ def new_document(employee_id):
                     "title": request.form.get("title", "").strip(),
                     "original_filename": uploaded.filename,
                     "pending_name": pending_name,
-                    "mime_type": uploaded.mimetype,
-                    "file_ext": Path(uploaded.filename).suffix.lower(),
+                    "mime_type": upload_meta["mime_type"],
+                    "file_ext": upload_meta["extension"],
                     "file_size": pending.stat().st_size,
                     "content_sha256": content_sha256,
                     "document_date": request.form.get("document_date", ""),
@@ -165,7 +192,7 @@ def new_document(employee_id):
                 return render_template(
                     "documents/new.html",
                     employee=employee,
-                    categories=DOCUMENT_CATEGORIES,
+                    categories=categories,
                     replacement_reasons=REPLACEMENT_REASONS,
                     duplicate_pending={
                         "token": duplicate_serializer().dumps(payload),
@@ -181,8 +208,8 @@ def new_document(employee_id):
                 or DOCUMENT_CATEGORIES[category],
                 original_filename=uploaded.filename,
                 stored_path=str(path),
-                mime_type=uploaded.mimetype,
-                file_ext=Path(uploaded.filename).suffix.lower(),
+                mime_type=upload_meta["mime_type"],
+                file_ext=upload_meta["extension"],
                 file_size=path.stat().st_size,
                 content_sha256=content_sha256,
                 status="active",
@@ -212,7 +239,7 @@ def new_document(employee_id):
     return render_template(
         "documents/new.html",
         employee=employee,
-        categories=DOCUMENT_CATEGORIES,
+        categories=categories,
         replacement_reasons=REPLACEMENT_REASONS,
     )
 
@@ -398,29 +425,70 @@ def review_document(document_id):
             for prefix, code in certificate_specs:
                 number = request.form.get(f"{prefix}_no", "").strip()
                 if number and code in by_code:
-                    db.session.add(
-                        EmployeeCertificate(
+                    is_long_term = parse_bool(
+                        request.form.get(f"{prefix}_long_term")
+                    )
+                    expiry_date = parse_date(
+                        request.form.get(f"{prefix}_expiry_date")
+                    )
+                    if not is_long_term and not expiry_date:
+                        flash("平安卡及工人註冊證必須填寫到期日，或勾選長期有效。", "error")
+                        return render_template(
+                            "documents/review.html",
+                            document=document,
+                            employee=employee,
+                            refs=reference_map(),
+                            identity_types=IDENTITY_TYPE_OPTIONS,
+                        )
+                    certificate = EmployeeCertificate.query.filter_by(
+                        employee_id=employee.id,
+                        certificate_type_id=by_code[code].id,
+                        certificate_no=number,
+                        status="active",
+                    ).first()
+                    if not certificate:
+                        certificate = EmployeeCertificate(
                             employee=employee,
                             certificate_type=by_code[code],
                             certificate_no=number,
-                            valid_from=parse_date(
-                                request.form.get(f"{prefix}_valid_from")
-                            ),
-                            expiry_date=parse_date(
-                                request.form.get(f"{prefix}_expiry_date")
-                            ),
-                            is_long_term=parse_bool(
-                                request.form.get(f"{prefix}_long_term")
-                            ),
-                            document_id=document.id,
                         )
+                        db.session.add(certificate)
+                    certificate.valid_from = parse_date(
+                        request.form.get(f"{prefix}_valid_from")
                     )
+                    certificate.expiry_date = expiry_date
+                    certificate.is_long_term = is_long_term
+                    certificate.document_id = document.id
 
         if category == "bank_proof":
-            employee.bank_name = request.form.get("bank_name", "").strip() or None
-            employee.bank_account_no = (
-                request.form.get("bank_account_no", "").strip() or None
+            bank_name = request.form.get("bank_name", "").strip()
+            account_no = request.form.get("bank_account_no", "").strip()
+            effective_from = (
+                parse_date(request.form.get("bank_effective_from"))
+                or document.document_date
+                or date.today()
             )
+            if bank_name and account_no:
+                current = current_bank_account_on(employee, effective_from)
+                if current and current.bank_name == bank_name and current.account_no == account_no:
+                    current.evidence_document_id = document.id
+                else:
+                    db.session.add(
+                        EmployeeBankAccount(
+                            employee=employee,
+                            effective_from=effective_from,
+                            bank_name=bank_name,
+                            account_no=account_no,
+                            currency="HKD",
+                            status="active",
+                            evidence_document_id=document.id,
+                        )
+                    )
+                    db.session.flush()
+                    rebuild_effective_ranges(employee.bank_accounts)
+                current = current_bank_account_on(employee, date.today())
+                employee.bank_name = current.bank_name if current else bank_name
+                employee.bank_account_no = current.account_no if current else account_no
 
         if category == "visa":
             category_id = form_int("visa_category_id")
@@ -516,6 +584,10 @@ def download_document(document_id):
 
 
 def relink_document_references(old_document, new_document):
+    for item in EmployeeBankAccount.query.filter_by(
+        evidence_document_id=old_document.id
+    ):
+        item.evidence_document_id = new_document.id
     for item in EmployeeIdentity.query.filter_by(
         document_id=old_document.id
     ):
@@ -574,6 +646,15 @@ def replace_document(document_id):
                 tab="documents",
             )
         )
+    upload_meta = validated_upload_or_flash(uploaded)
+    if not upload_meta:
+        return redirect(
+            url_for(
+                "employees.view_employee",
+                employee_id=old_document.employee_id,
+                tab="documents",
+            )
+        )
     digest = uploaded_file_sha256(uploaded)
     if (
         digest == (old_document.content_sha256 or "")
@@ -599,8 +680,8 @@ def replace_document(document_id):
         or old_document.title,
         original_filename=uploaded.filename,
         stored_path=str(path),
-        mime_type=uploaded.mimetype,
-        file_ext=Path(uploaded.filename).suffix.lower(),
+        mime_type=upload_meta["mime_type"],
+        file_ext=upload_meta["extension"],
         file_size=path.stat().st_size,
         content_sha256=digest,
         status="active",

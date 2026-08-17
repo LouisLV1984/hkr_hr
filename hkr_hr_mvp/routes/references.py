@@ -19,8 +19,10 @@ from models import (
     EmployeeAssignment,
     EmployeeAssignmentPosition,
     EmployeeCertificate,
+    EmployeeMpfEnrollment,
     EmployeeSalary,
     EmployeeVisa,
+    MpfScheme,
     PayrollAdjustment,
     PayrollProjectLine,
     ReferenceList,
@@ -410,6 +412,13 @@ def references_home():
     )
     counts = {value.id: usage_count(value) for value in values}
     projects = WorkProject.query.order_by(WorkProject.name.asc()).all()
+    mpf_schemes = MpfScheme.query.order_by(MpfScheme.name.asc()).all()
+    mpf_scheme_counts = {
+        scheme.id: EmployeeMpfEnrollment.query.filter_by(
+            scheme_id=scheme.id,
+        ).count()
+        for scheme in mpf_schemes
+    }
     project_counts = {}
     for project in projects:
         project_counts[project.id] = sum(
@@ -446,6 +455,8 @@ def references_home():
         values=values,
         usage_counts=counts,
         projects=projects,
+        mpf_schemes=mpf_schemes,
+        mpf_scheme_counts=mpf_scheme_counts,
         project_counts=project_counts,
         regions=(
             ReferenceValue.query.join(ReferenceList)
@@ -460,6 +471,124 @@ def references_home():
         can_edit=editor_allowed(),
         return_to=safe_return_to(request.args.get("return_to")),
     )
+
+
+def mpf_scheme_values():
+    name = normalize_reference_display(request.form.get("name"))
+    employer_account_no = (request.form.get("employer_account_no") or "").strip()
+    payroll_group_no = (request.form.get("payroll_group_no") or "").strip() or None
+    if payroll_group_no and payroll_group_no.upper() == "N/A":
+        payroll_group_no = None
+    calculation_mode = request.form.get("calculation_mode")
+    if not name or not employer_account_no:
+        raise ValueError("請填寫 MPF 計劃名稱及僱主帳戶號碼。")
+    if calculation_mode not in {"regular", "casual"}:
+        raise ValueError("請選擇供款計算方式。")
+    return name, employer_account_no, payroll_group_no, calculation_mode
+
+
+@references_bp.route("/references/mpf-schemes", methods=["POST"])
+@login_required
+def create_mpf_scheme():
+    if not editor_allowed():
+        abort(403)
+    try:
+        name, employer_no, group_no, mode = mpf_scheme_values()
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return references_redirect("mpf_schemes")
+    if MpfScheme.query.filter(MpfScheme.name.ilike(name)).first():
+        flash(f"已有相同 MPF 計劃「{name}」。", "error")
+        return references_redirect("mpf_schemes")
+    base_code = slug_code(name)
+    code = base_code
+    suffix = 2
+    while MpfScheme.query.filter_by(code=code).first():
+        code = f"{base_code}_{suffix}"
+        suffix += 1
+    scheme = MpfScheme(
+        code=code,
+        name=name,
+        employer_account_no=employer_no,
+        payroll_group_no=group_no,
+        calculation_mode=mode,
+        active=True,
+    )
+    db.session.add(scheme)
+    db.session.flush()
+    write_audit("mpf_scheme_created", "MpfScheme", scheme.id, detail=name)
+    db.session.commit()
+    flash("MPF 計劃已新增。", "success")
+    return references_redirect("mpf_schemes")
+
+
+@references_bp.route("/references/mpf-schemes/<int:scheme_id>", methods=["POST"])
+@login_required
+def update_mpf_scheme(scheme_id):
+    if not editor_allowed():
+        abort(403)
+    scheme = db.get_or_404(MpfScheme, scheme_id)
+    try:
+        name, employer_no, group_no, mode = mpf_scheme_values()
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return references_redirect("mpf_schemes")
+    duplicate = MpfScheme.query.filter(
+        MpfScheme.name.ilike(name),
+        MpfScheme.id != scheme.id,
+    ).first()
+    if duplicate:
+        flash(f"已有相同 MPF 計劃「{duplicate.name}」。", "error")
+        return references_redirect("mpf_schemes")
+    before = {
+        "name": scheme.name,
+        "employer_account_no": scheme.employer_account_no,
+        "payroll_group_no": scheme.payroll_group_no,
+        "calculation_mode": scheme.calculation_mode,
+        "active": scheme.active,
+    }
+    scheme.name = name
+    scheme.employer_account_no = employer_no
+    scheme.payroll_group_no = group_no
+    scheme.calculation_mode = mode
+    scheme.active = request.form.get("active") == "on"
+    write_audit(
+        "mpf_scheme_updated",
+        "MpfScheme",
+        scheme.id,
+        detail=name,
+        before=before,
+        after={
+            "name": name,
+            "employer_account_no": employer_no,
+            "payroll_group_no": group_no,
+            "calculation_mode": mode,
+            "active": scheme.active,
+        },
+    )
+    db.session.commit()
+    flash("MPF 計劃已保存；員工資料會同步顯示新內容。", "success")
+    return references_redirect("mpf_schemes")
+
+
+@references_bp.route(
+    "/references/mpf-schemes/<int:scheme_id>/delete",
+    methods=["POST"],
+)
+@login_required
+def delete_mpf_scheme(scheme_id):
+    if not editor_allowed():
+        abort(403)
+    scheme = db.get_or_404(MpfScheme, scheme_id)
+    count = EmployeeMpfEnrollment.query.filter_by(scheme_id=scheme.id).count()
+    if count:
+        flash(f"此 MPF 計劃仍被 {count} 筆員工記錄使用，不能刪除。", "error")
+    else:
+        write_audit("mpf_scheme_deleted", "MpfScheme", scheme.id, detail=scheme.name)
+        db.session.delete(scheme)
+        db.session.commit()
+        flash("MPF 計劃已刪除。", "success")
+    return references_redirect("mpf_schemes")
 
 
 @references_bp.route("/references/<int:list_id>/values", methods=["POST"])

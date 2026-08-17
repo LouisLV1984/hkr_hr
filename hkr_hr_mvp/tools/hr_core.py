@@ -10,16 +10,23 @@ from pathlib import Path
 from flask import current_app
 from werkzeug.utils import secure_filename
 
+from tools.security import validate_uploaded_file
+
 from models import (
     AuditLog,
     Employee,
     EmployeeAnnualLeaveAllocation,
     EmployeeAnnualLeaveBalance,
     EmployeeAnnualLeaveRecord,
+    EmployeeCompLeaveAllocation,
+    EmployeeCompLeaveCredit,
     EmployeeAssignment,
+    EmployeeBankAccount,
     EmployeeDocument,
     EmployeeEmploymentPeriod,
+    EmployeeMpfEnrollment,
     EmployeeSalary,
+    MpfScheme,
     PayrollEmployeeResult,
     PayrollRun,
     ReferenceList,
@@ -27,6 +34,19 @@ from models import (
     WorkProject,
     db,
 )
+
+
+def current_bank_account_on(employee, on_date):
+    return next(
+        (
+            item
+            for item in employee.bank_accounts
+            if item.status == "active"
+            and item.effective_from <= on_date
+            and (item.effective_to is None or item.effective_to >= on_date)
+        ),
+        None,
+    )
 
 
 REFERENCE_LISTS = {
@@ -196,16 +216,29 @@ DEFAULT_PROJECTS = [
     },
 ]
 
+DEFAULT_MPF_SCHEMES = [
+    ("BCT_SERIES_800", "BCT MPF Scheme Series 800", "66774665", None, "regular"),
+    ("BCOM_MONTHLY", "交銀（BCOM）月工", "56852169", "MM00-0", "regular"),
+    (
+        "BCT_MONTHLY",
+        "銀聯（BCT）月工",
+        "53419540",
+        "MONTHLY (CALENDAR MONTH)",
+        "regular",
+    ),
+    ("BCT_DAILY", "銀聯（BCT）日工", "53419540", "CEENEXT", "casual"),
+]
+
 DOCUMENT_CATEGORIES = {
     "three_treasures": "三寶",
     "staff_record": "Staff Record",
-    "bank_proof": "銀行證明",
+    "bank_proof": "銀行賬戶文件",
     "identity": "身份證明",
     "visa": "VISA / 工作許可",
     "qualification": "學歷 / 技能證書",
     "cv": "CV / 履歷",
-    "contract_draft": "合同草稿",
-    "signed_contract": "已簽署合同",
+    "contract_draft": "雇傭合約草稿",
+    "signed_contract": "雇傭合約",
     "change_evidence": "任職 / 薪酬調整憑證",
     "probation_confirmation": "轉正憑證",
     "attendance_pdf": "考勤 PDF",
@@ -331,6 +364,30 @@ def parse_year_month(value):
     return start, end
 
 
+def attendance_period_bounds(year_month):
+    """Return the four Payroll attendance periods for one selected month."""
+    month_start, month_end = parse_year_month(year_month)
+    previous_start, previous_end = parse_year_month(previous_month(year_month))
+    return {
+        "current_1_20": (
+            month_start,
+            min(month_end, month_start.replace(day=20)),
+        ),
+        "current_21_end_forecast": (
+            month_start.replace(day=min(21, month_end.day)),
+            month_end,
+        ),
+        "previous_21_end": (
+            previous_start.replace(day=min(21, previous_end.day)),
+            previous_end,
+        ),
+        "previous_21_end_forecast": (
+            previous_start.replace(day=min(21, previous_end.day)),
+            previous_end,
+        ),
+    }
+
+
 def month_days(year_month):
     start, end = parse_year_month(year_month)
     return (end - start).days + 1
@@ -339,6 +396,15 @@ def month_days(year_month):
 def ensure_reference_value(ref_list, code, display_name, remarks=None):
     display_name = normalize_reference_display(display_name)
     normalized = display_name.casefold()
+    seed_code = slug_code(code)
+    existing = ReferenceValue.query.filter_by(
+        list_id=ref_list.id,
+        code=seed_code,
+    ).first()
+    if existing:
+        if not existing.active:
+            existing.active = True
+        return existing
     existing = ReferenceValue.query.filter_by(
         list_id=ref_list.id,
         normalized_name=normalized,
@@ -349,7 +415,7 @@ def ensure_reference_value(ref_list, code, display_name, remarks=None):
         return existing
     item = ReferenceValue(
         reference_list=ref_list,
-        code=slug_code(code),
+        code=seed_code,
         display_name=display_name,
         normalized_name=normalized,
         active=True,
@@ -395,6 +461,17 @@ def ensure_reference_seed():
         project.region = regions.get(seed["region_code"])
         project.daily_ot_divisor = seed["daily_ot_divisor"]
         project.active = True
+
+    for code, name, employer_no, group_no, calculation_mode in DEFAULT_MPF_SCHEMES:
+        scheme = MpfScheme.query.filter_by(code=code).first()
+        if not scheme:
+            scheme = MpfScheme(code=code)
+            db.session.add(scheme)
+        scheme.name = name
+        scheme.employer_account_no = employer_no
+        scheme.payroll_group_no = group_no
+        scheme.calculation_mode = calculation_mode
+        scheme.active = True
 
     db.session.commit()
     return lists
@@ -497,6 +574,21 @@ def employee_audit_snapshot(employee):
         ),
         "email": employee.email or "",
         "address": employee.residential_address or "",
+        "emergency_contact_name": employee.emergency_contact_name or "",
+        "emergency_contact_phone": " ".join(
+            item
+            for item in [
+                employee.emergency_contact_region_code,
+                employee.emergency_contact_phone,
+            ]
+            if item
+        ),
+        "emergency_contact_relation": employee.emergency_contact_relation or "",
+        "education_level": employee.education_level or "",
+        "major": employee.major or "",
+        "graduation_school": employee.graduation_school or "",
+        "visa_required": employee.visa_required,
+        "remarks": employee.remarks or "",
         "bank_name": employee.bank_name or "",
         "bank_account": employee.bank_account_no or "",
         "primary_identity": identity.identity_number if identity else "",
@@ -525,6 +617,7 @@ def unique_filename(original_filename):
 
 
 def store_employee_file(employee, uploaded_file, category):
+    validate_uploaded_file(uploaded_file)
     root = Path(current_app.config["HKR_HR_UPLOAD_ROOT"])
     folder = root / safe_employee_folder(employee) / category
     folder.mkdir(parents=True, exist_ok=True)
@@ -609,6 +702,17 @@ def current_salary_on(employee, on_date):
     return rows[0] if rows else None
 
 
+def current_mpf_on(employee, on_date):
+    rows = [
+        row
+        for row in employee.mpf_enrollments
+        if row.status == "active"
+        if row.effective_from <= on_date
+        and (row.effective_to is None or row.effective_to >= on_date)
+    ]
+    return rows[0] if rows else None
+
+
 def close_previous_record(records, effective_from):
     for item in records:
         if getattr(item, "status", "active") != "active":
@@ -635,6 +739,35 @@ def rebuild_effective_ranges(records):
             else None
         )
     return active
+
+
+def create_mpf_enrollment(
+    employee,
+    effective_from,
+    scheme=None,
+    member_account_no=None,
+    contribution_mode=None,
+    remarks=None,
+):
+    mode = contribution_mode or (
+        scheme.calculation_mode if scheme else "exempt"
+    )
+    enrollment = EmployeeMpfEnrollment(
+        employee=employee,
+        scheme=scheme,
+        member_account_no=member_account_no or None,
+        contribution_mode=mode,
+        effective_from=effective_from,
+        status="active",
+        remarks=remarks,
+    )
+    db.session.add(enrollment)
+    db.session.flush()
+    rebuild_effective_ranges(employee.mpf_enrollments)
+    current = current_mpf_on(employee, date.today())
+    if current:
+        employee.mpf_mode = current.contribution_mode
+    return enrollment
 
 
 def create_assignment(
@@ -944,6 +1077,103 @@ def set_annual_leave_allocations(
             )
 
 
+def comp_leave_credit_remaining(credit, excluding_record_id=None):
+    used = sum(
+        (
+            Decimal(str(allocation.days or 0))
+            for allocation in credit.allocations
+            if allocation.leave_record
+            and allocation.leave_record.status == "active"
+            and allocation.leave_record_id != excluding_record_id
+        ),
+        Decimal("0"),
+    )
+    return max(Decimal("0"), Decimal(str(credit.days or 0)) - used)
+
+
+def comp_leave_summary(employee):
+    total = Decimal("0")
+    used = Decimal("0")
+    for credit in employee.comp_leave_credits:
+        if credit.status != "active":
+            continue
+        total += Decimal(str(credit.days or 0))
+        used += Decimal(str(credit.days or 0)) - comp_leave_credit_remaining(
+            credit
+        )
+    return {
+        "total": total,
+        "used": used,
+        "remaining": max(Decimal("0"), total - used),
+    }
+
+
+def clear_leave_allocations(record):
+    record.allocations.clear()
+    record.comp_leave_allocations.clear()
+    db.session.flush()
+
+
+def allocate_annual_leave_with_comp(record, as_of=None):
+    """Allocate annual leave: comp leave, legacy 2023, then oldest valid year."""
+    as_of = as_of or record.leave_date
+    remaining = Decimal(str(record.days or 0))
+    credits = sorted(
+        (
+            credit
+            for credit in record.employee.comp_leave_credits
+            if credit.status == "active"
+            and credit.source_date <= as_of
+            and comp_leave_credit_remaining(
+                credit, excluding_record_id=record.id
+            )
+            > 0
+        ),
+        key=lambda credit: (credit.source_date, credit.id),
+    )
+    for credit in credits:
+        if remaining <= 0:
+            break
+        allocated = min(
+            remaining,
+            comp_leave_credit_remaining(
+                credit, excluding_record_id=record.id
+            ),
+        )
+        db.session.add(
+            EmployeeCompLeaveAllocation(
+                leave_record=record,
+                credit=credit,
+                days=allocated,
+            )
+        )
+        remaining -= allocated
+
+    if remaining <= 0:
+        return
+
+    legacy_balance = ensure_annual_leave_balance(record.employee, 2023)
+    legacy = annual_leave_bucket(record.employee, legacy_balance, as_of=as_of)
+    legacy_days = min(remaining, legacy["remaining"])
+    if legacy_days > 0:
+        db.session.add(
+            EmployeeAnnualLeaveAllocation(
+                record=record,
+                balance=legacy_balance,
+                days=legacy_days,
+            )
+        )
+        remaining -= legacy_days
+
+    if remaining > 0:
+        set_annual_leave_allocations(
+            record,
+            Decimal("0"),
+            remaining,
+            as_of=as_of,
+        )
+
+
 def annual_leave_summary(employee, year=None):
     year = year or date.today().year
     balance = EmployeeAnnualLeaveBalance.query.filter_by(
@@ -954,7 +1184,21 @@ def annual_leave_summary(employee, year=None):
         balance = EmployeeAnnualLeaveBalance(employee_id=employee.id, year=year)
         if year >= 2024:
             balance.expiry_date = date(year + 1, 3, 31)
-    current = annual_leave_bucket(employee, balance, as_of=date(year, 12, 31))
+    period = employee.current_period
+    termination_date = (
+        period.end_date
+        if period and period.end_date and period.end_date.year == year
+        else None
+    )
+    as_of = termination_date or date(year, 12, 31)
+    current = annual_leave_bucket(
+        employee,
+        balance,
+        as_of=as_of,
+        prorate_current=bool(termination_date),
+    )
+    current["termination_prorated"] = bool(termination_date)
+    current["termination_date"] = termination_date
     legacy_balance = EmployeeAnnualLeaveBalance.query.filter_by(
         employee_id=employee.id,
         year=2023,
@@ -1019,8 +1263,12 @@ def average_wage_prefill(employee, end_date=None):
         if results
         else Decimal("0")
     )
+    total = money(
+        sum((item["amount"] for item in results), Decimal("0"))
+    )
     return {
         "average": average,
+        "total": total,
         "months": [item["month"] for item in reversed(results)],
         "count": len(results),
     }
