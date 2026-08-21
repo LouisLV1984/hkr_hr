@@ -5,19 +5,24 @@
   <form class="stack-form" method="get" data-payroll-filter>
     <label><span>{{ t("final_payment.settlement_month") }}</span><input type="month" name="year_month" value="{{ year_month }}" required></label>
     <label><span>{{ t("employees.payroll_group") }}</span><select name="payroll_group"><option value="all" {% if selected_group == "all" %}selected{% endif %}>{{ t("payroll.group_all") }}</option>{% for code, label in payroll_groups %}<option value="{{ code }}" {% if selected_group == code %}selected{% endif %}>{{ option_t("payroll_group", code, label) }}</option>{% endfor %}</select></label>
+    <label><span>{{ t("employee.payroll_entity") }}</span><select name="payroll_entity_id"><option value="" {% if selected_payroll_entity_id is none %}selected{% endif %}>{{ t("payroll.entity_all_preview") }}</option>{% for item in payroll_entities %}<option value="{{ item.id }}" {% if selected_payroll_entity_id == item.id %}selected{% endif %}>{{ item.display_name }}</option>{% endfor %}</select><small>{{ t("final_payment.entity_filter_hint") }}</small></label>
     <p class="form-note">{{ t("final_payment.filter_hint") }}</p>
   </form>
   <div class="group-counts">
     {% for code, label in payroll_groups %}<div><span>{{ option_t("payroll_group", code, label) }}</span><strong>{{ counts[code] }}</strong></div>{% endfor %}
   </div>
   <form method="post" action="{{ url_for('payroll.export_final_payment') }}">
-    <input type="hidden" name="year_month" value="{{ year_month }}"><input type="hidden" name="payroll_group" value="{{ selected_group }}">
-    <button class="primary-btn full" type="submit" {% if blockers or not rows %}disabled{% endif %}>{{ t("payroll.export_zip") if selected_group == "all" else t("payroll.export_xlsx") }}</button>
+    <input type="hidden" name="year_month" value="{{ year_month }}"><input type="hidden" name="payroll_group" value="{{ selected_group }}"><input type="hidden" name="payroll_entity_id" value="{{ selected_payroll_entity_id or '' }}">
+    <button class="primary-btn full" type="submit" {% if blockers or not rows or selected_payroll_entity_id is none %}disabled{% endif %}>{{ t("payroll.export_zip") if selected_group == "all" else t("payroll.export_xlsx") }}</button>
   </form>
+  {% if selected_payroll_entity_id is none %}<p class="form-note danger-text">{{ t("final_payment.select_entity_to_export") }}</p>{% endif %}
   {% if blockers %}<p class="form-note danger-text">{{ t("final_payment.blocked_hint") }}</p>{% endif %}
 </section>
 {% endblock %}
 {% block content %}
+<section class="period-context-bar payroll-period-context payroll-centered-context" aria-label="{{ t('final_payment.current_month') }}">
+  <div class="payroll-context-month"><span>{{ t("final_payment.current_month") }}</span><strong>{{ month_t(year_month) }}</strong></div>
+</section>
 <section class="page-head">
   <div><h1>{{ t("final_payment.title") }}</h1><p>{{ t("final_payment.subtitle") }}</p></div>
 </section>
@@ -30,8 +35,9 @@
     <article><span>{{ t("payroll.net") }}</span><strong>{{ fmt_money(summary.net) }}</strong></article>
   </section>
 
-  <details class="panel rule-panel" open>
-    <summary>{{ t("final_payment.rules") }} · {{ rule_version }}</summary>
+  <article class="payroll-rule-summary"><strong>{{ t("payroll.rule_summary_title") }}</strong><span>{{ t("payroll.rule_summary") }}</span><small>{{ rule_version }}</small></article>
+  <details class="panel rule-panel">
+    <summary>{{ t("payroll.show_full_rules") }} · {{ rule_version }}</summary>
     <div class="section-head"><div><h2>{{ t("final_payment.rules") }}</h2><p>{{ t("final_payment.rules_intro") }}</p></div></div>
     <div class="inline-alert info">
       <strong>{{ t("final_payment.source_title") }}</strong>
@@ -49,26 +55,28 @@
   <article class="panel final-payment-card {% if row.blockers %}blocked-card{% endif %}">
     <div class="section-head">
       <div>
-        <span class="eyebrow">{{ row.employee.employee_no }} · {{ option_t("payroll_group", row.group, row.group) }}</span>
+        <span class="eyebrow">{{ row.employee.employee_no }} · {{ option_t("payroll_group", row.group, row.group) }} · {{ row.assignment.payroll_entity.display_name if row.assignment and row.assignment.payroll_entity else t("common.not_set") }}</span>
         <h2>{{ row.employee.display_name }}</h2>
         <p>{{ t("employees.start_date") }}：{{ fmt_date(row.period.start_date) }} · {{ t("employee.last_working_day") }}：{{ fmt_date(row.period.end_date) }}</p>
       </div>
       <div class="final-payment-total"><span>{{ t("payroll.net") }}</span><strong>{{ fmt_money(row.net_amount) }}</strong></div>
     </div>
     {% if row.blockers %}<div class="inline-alert danger"><strong>{{ t("payroll.blocked") }}</strong><span>{% for blocker in row.blockers %}{% if not loop.first %} / {% endif %}{{ message_t(blocker) }}{% endfor %}</span></div>{% endif %}
+    {% if row.warnings %}<div class="inline-alert info"><strong>{{ t("common.warning") }}</strong><span>{{ row.warnings|join("；") }}</span></div>{% endif %}
     <form class="final-payment-form" method="post" action="{{ url_for('payroll.save_final_payment', period_id=row.period.id) }}">
-      <input type="hidden" name="year_month" value="{{ year_month }}"><input type="hidden" name="payroll_group" value="{{ selected_group }}">
+      <input type="hidden" name="year_month" value="{{ year_month }}"><input type="hidden" name="payroll_group" value="{{ selected_group }}"><input type="hidden" name="payroll_entity_id" value="{{ selected_payroll_entity_id or '' }}">
       <details class="record-section" open>
         <summary>{{ t("final_payment.actual_attendance") }}</summary>
         <p class="form-note">{{ t("final_payment.actual_attendance_hint") }}</p>
+        <p class="form-note strong-note">{{ t("final_payment.pay_component_hint") }}</p>
         <div class="compact-form-grid four-columns">
           <label><span>{{ t("attendance.working_days") }}</span><input type="number" min="0" step="0.01" name="actual_working_days" value="{{ row.working_days }}" required></label>
           <label><span>{{ t("attendance.ot_hours") }}</span><input type="number" min="0" step="0.01" name="actual_ot_hours" value="{{ row.ot_hours }}" required></label>
           <label><span>{{ t("attendance.holiday_days") }}</span><input type="number" min="0" step="0.01" name="actual_holiday_days" value="{{ row.holiday_days }}" required></label>
           <label><span>{{ t("payroll.large_ecall") }}</span><input type="number" min="0" step="1" name="large_ecall_count" value="{{ row.large_ecall_count|int }}"></label>
           <label><span>{{ t("payroll.ordinary_ecall") }}</span><input type="number" min="0" step="1" name="ecall_count" value="{{ row.ecall_count|int }}"></label>
-          <label><span>{{ t("common.allowance") }}</span><input type="number" min="0" step="0.01" name="allowance_amount" value="{{ row.allowance_amount }}"></label>
-          <label><span>{{ t("final_payment.other_payment") }}</span><input type="number" min="0" step="0.01" name="other_payment" value="{{ row.other_payment }}"></label>
+          <label><span>{{ t("final_payment.manual_allowance") }}</span><input type="number" min="0" step="0.01" name="allowance_amount" value="{{ row.manual_allowance_amount }}"><small>{{ t("final_payment.manual_allowance_hint") }}</small></label>
+          <label><span>{{ t("final_payment.manual_other_payment") }}</span><input type="number" min="0" step="0.01" name="other_payment" value="{{ row.manual_other_payment }}"><small>{{ t("final_payment.manual_other_payment_hint") }}</small></label>
           <label><span>{{ t("payroll.overpay") }}</span><input type="number" min="0" step="0.01" name="overpay_amount" value="{{ row.overpay_amount }}"></label>
           <label><span>{{ t("payroll.underpay") }}</span><input type="number" min="0" step="0.01" name="underpay_amount" value="{{ row.underpay_amount }}"></label>
         </div>
@@ -107,9 +115,15 @@
       <div class="final-payment-breakdown">
         <span>工資、補貼及假期款項合計 <strong>{{ fmt_money(row.wage_income) }}</strong></span>
         <span>離職月基本工資 <strong>{{ fmt_money(row.base_amount) }}</strong></span>
-        <span>補貼 <strong>{{ fmt_money(row.allowance_amount) }}</strong></span>
+        <span>{{ t("final_payment.traffic_meal_allowance") }} <strong>{{ fmt_money(row.traffic_meal_allowance_amount) }}</strong></span>
+        <span>{{ t("final_payment.special_allowance") }} <strong>{{ fmt_money(row.special_allowance_amount) }}</strong></span>
+        {% if row.manual_allowance_amount %}<span>{{ t("final_payment.manual_allowance") }} <strong>{{ fmt_money(row.manual_allowance_amount) }}</strong></span>{% endif %}
+        {% if row.attendance_other_allowance_amount %}<span>{{ t("final_payment.attendance_other_allowance") }} <strong>{{ fmt_money(row.attendance_other_allowance_amount) }}</strong></span>{% endif %}
+        {% if row.month_adjustment_amount %}<span>{{ t("final_payment.month_adjustment") }} <strong>{{ fmt_money(row.month_adjustment_amount) }}</strong></span>{% endif %}
+        {% if row.manual_other_payment %}<span>{{ t("final_payment.manual_other_payment") }} <strong>{{ fmt_money(row.manual_other_payment) }}</strong></span>{% endif %}
         <span>{{ t("final_payment.annual_leave_pay") }} <strong>{{ fmt_money(row.annual_leave_pay) }}</strong></span>
         {% if row.annual_leave_overused_days > 0 %}<span class="danger-text">超用年假追扣 {{ row.annual_leave_overused_days }} 日 <strong>-{{ fmt_money(row.annual_leave_overuse_deduction) }}</strong></span>{% endif %}
+        {% if row.work_injury_medical_reimbursement_amount %}<span>{{ t("final_payment.medical_reimbursement") }} <strong>{{ fmt_money(row.work_injury_medical_reimbursement_amount) }}</strong></span>{% endif %}
         <span>{{ t("final_payment.service_benefit") }} <strong>{{ fmt_money(row.benefit.net) }}</strong></span>
         <span>{{ t("payroll.employee_mpf") }} <strong>{{ fmt_money(row.employee_mpf) }}</strong></span>
         <span>{{ t("payroll.net") }} <strong>{{ fmt_money(row.net_amount) }}</strong></span>

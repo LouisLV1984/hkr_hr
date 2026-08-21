@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}{{ t("admin.system_status") }} - HKR HR{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <h1>{{ t("admin.system_status") }}</h1>
+    <p>{{ t("admin.system_status_hint") }}</p>
+  </div>
+</section>
+
+<section class="system-status-grid" aria-label="{{ t('admin.system_status') }}">
+  <article class="panel system-status-card">
+    <span>{{ t("admin.application_version") }}</span>
+    <strong>{{ application_version }}</strong>
+    <small>{{ t("admin.environment") }}：{{ environment }}</small>
+  </article>
+  <article class="panel system-status-card">
+    <span>{{ t("admin.database_version") }}</span>
+    <strong>{{ database_status.dialect }} {{ database_status.server_version or "-" }}</strong>
+    <small>{{ t("admin.database_name") }}：{{ database_status.database_name }}</small>
+  </article>
+  {% for title_key, status in [("admin.last_backup", backup_status), ("admin.last_restore_verification", restore_status)] %}
+    <article class="panel system-status-card {{ status.state }}">
+      <span>{{ t(title_key) }}</span>
+      <strong>{{ t("admin.status_ok") if status.state == "ok" else t("admin.status_attention") if status.state == "attention" else t("admin.status_not_found") }}</strong>
+      <small>{% if status.checked_at %}{{ status.checked_at.strftime("%Y-%m-%d %H:%M") }} · {{ status.filename }}{% else %}{{ t("admin.status_record_hint") }}{% endif %}</small>
+    </article>
+  {% endfor %}
+</section>
+
+<section class="panel">
+  <div class="section-head compact"><div><h2>{{ t("admin.system_boundary") }}</h2><p>{{ t("admin.system_boundary_hint") }}</p></div></div>
+  <p class="form-note strong-note">{{ t("admin.system_status_read_only") }}</p>
+</section>
+{% endblock %}

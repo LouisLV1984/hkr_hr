@@ -1,11 +1,22 @@
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import (
+    Blueprint,
+    abort,
+    current_app,
+    flash,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 from flask_login import current_user, login_required
-from sqlalchemy import or_
+from sqlalchemy import or_, text
 
 from models import AuditLog, User, db
 from tools.hr_core import write_audit
+from tools.releases import CURRENT_VERSION
 
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -49,6 +60,57 @@ def clear_user_references(user_id):
                     .where(column == user_id)
                     .values({column.name: None})
                 )
+
+
+def application_root():
+    app_root = Path(current_app.root_path).resolve()
+    if app_root.parent.name.lower() == "_system":
+        return app_root.parent.parent
+    return app_root
+
+
+def latest_log_status(pattern, success_marker):
+    log_root = application_root() / "03.Output" / "logs"
+    files = sorted(
+        log_root.glob(pattern) if log_root.exists() else [],
+        key=lambda item: item.stat().st_mtime,
+        reverse=True,
+    )
+    if not files:
+        return {"state": "missing", "checked_at": None, "filename": None}
+    latest = files[0]
+    try:
+        content = latest.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        content = ""
+    return {
+        "state": "ok" if success_marker in content else "attention",
+        "checked_at": hong_kong_datetime(
+            datetime.utcfromtimestamp(latest.stat().st_mtime)
+        ),
+        "filename": latest.name,
+    }
+
+
+def database_runtime_status():
+    dialect = db.engine.dialect.name
+    if dialect == "postgresql":
+        row = db.session.execute(
+            text(
+                "SELECT current_database() AS database_name, "
+                "current_setting('server_version') AS server_version"
+            )
+        ).mappings().one()
+        return {
+            "database_name": row["database_name"],
+            "server_version": row["server_version"],
+            "dialect": "PostgreSQL",
+        }
+    return {
+        "database_name": "test / local",
+        "server_version": getattr(db.engine.dialect, "server_version_info", None),
+        "dialect": dialect,
+    }
 
 
 @admin_bp.route("/users", methods=["GET", "POST"])
@@ -240,4 +302,24 @@ def audit():
         audit_username=username,
         audit_limit=limit,
         usernames=[row.username for row in User.query.order_by(User.username)],
+    )
+
+
+@admin_bp.route("/system")
+@login_required
+def system_status():
+    require_admin()
+    return render_template(
+        "admin/system.html",
+        application_version=CURRENT_VERSION,
+        environment=current_app.config.get("HKR_HR_ENV", "development"),
+        database_status=database_runtime_status(),
+        backup_status=latest_log_status(
+            "backup_short_term_*.log",
+            "Backup completed:",
+        ),
+        restore_status=latest_log_status(
+            "restore_verify_*.log",
+            "Restore verification passed.",
+        ),
     )

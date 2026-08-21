@@ -73,9 +73,11 @@ GROUP_SHEETS = {
 FORMULA_NOTES = [
     "payroll.rule.period",
     "payroll.rule.monthly",
+    "payroll.rule.monthly_pay_methods",
     "payroll.rule.daily",
     "payroll.rule.ha",
     "payroll.rule.ecall",
+    "payroll.rule.holiday_calendar",
     "payroll.rule.forecast",
     "payroll.rule.reconciliation",
     "payroll.rule.departure",
@@ -92,6 +94,7 @@ FORMULA_NOTES = [
 FINAL_PAYMENT_FORMULA_NOTES = [
     "final_payment.rule.actual_attendance",
     "final_payment.rule.departure_payroll",
+    "final_payment.rule.pay_components",
     "final_payment.rule.annual_leave",
     "final_payment.rule.statutory_holiday",
     "final_payment.rule.eligibility",
@@ -121,6 +124,7 @@ LABOUR_DEPARTMENT_RULE_SOURCES = [
 ]
 
 FINAL_PAYMENT_EXPORT_RULES_ZH_HANT = [
+    "離職 Payroll 自動承接最後工作日前生效的固定補貼、指定月份調整、考勤替班其他津貼及工傷醫療實銷；手動補貼／其他應付只用於沒有其他系統來源的例外款項，不可重複輸入。工傷醫療實銷增加實發金額，但不納入 MPF 有關入息。",
     "遣散費：僱員須按連續性合約受僱不少於 24 個月，並符合裁員、因裁員不獲續約或停工等法定條件。",
     "長期服務金：僱員須按連續性合約受僱滿 5 年，並符合《僱傭條例》指定的終止僱傭情況。同一段受僱期不可同時取得遣散費及長期服務金。",
     "月薪僱員：每年款額為所選月薪工資基數乘以 2/3。僱員可選最後一個完整月份工資，或有關日期前 12 個月的平均月薪。",
@@ -321,13 +325,17 @@ def mpf_preview_rows(year_month):
             "previous_large_ecall_amount": Decimal("0"),
             "previous_ecall_amount": Decimal("0"),
             "allowance_amount": final["allowance_amount"],
-            "traffic_meal_allowance_amount": final["allowance_amount"],
-            "special_allowance_amount": Decimal("0"),
+            "traffic_meal_allowance_amount": final[
+                "traffic_meal_allowance_amount"
+            ],
+            "special_allowance_amount": final["special_allowance_amount"],
             "sick_leave_amount": Decimal("0"),
             "work_injury_amount": Decimal("0"),
             "annual_leave_amount": final["annual_leave_pay"],
             "adjustment_amount": final["other_payment"],
-            "attendance_other_allowance_amount": Decimal("0"),
+            "attendance_other_allowance_amount": final[
+                "attendance_other_allowance_amount"
+            ],
             "gross_amount": final["wage_income"],
             "base_rate": final["base_rate"],
             "holiday_rate": final["holiday_rate"],
@@ -354,18 +362,26 @@ def mpf_preview_rows(year_month):
                 "large_ecall_amount": Decimal("0"),
                 "ecall_amount": final["ecall_amount"],
                 "allowance_amount": final["allowance_amount"],
-                "traffic_meal_allowance_amount": final["allowance_amount"],
-                "special_allowance_amount": Decimal("0"),
+                "traffic_meal_allowance_amount": final[
+                    "traffic_meal_allowance_amount"
+                ],
+                "special_allowance_amount": final[
+                    "special_allowance_amount"
+                ],
                 "sick_leave_amount": Decimal("0"),
                 "work_injury_amount": Decimal("0"),
-                "work_injury_medical_reimbursement_amount": Decimal("0"),
+                "work_injury_medical_reimbursement_amount": final[
+                    "work_injury_medical_reimbursement_amount"
+                ],
                 "unpaid_leave_deduction": Decimal("0"),
                 "annual_leave_days": final["legacy_leave_days"] + final["post_2024_leave_days"],
                 "sick_leave_days": Decimal("0"),
                 "unpaid_leave_days": Decimal("0"),
                 "work_injury_days": Decimal("0"),
                 "adjustment_amount": final["other_payment"],
-                "attendance_other_allowance_amount": Decimal("0"),
+                "attendance_other_allowance_amount": final[
+                    "attendance_other_allowance_amount"
+                ],
                 "overpay_amount": final["overpay_amount"],
                 "underpay_amount": final["underpay_amount"],
                 "gross_amount": final["wage_income"],
@@ -443,7 +459,8 @@ def mpf_contributions():
 def final_payment():
     year_month = selected_month()
     group = selected_group()
-    rows = calculate_final_payments(year_month, group)
+    payroll_entity_id = selected_payroll_entity()
+    rows = calculate_final_payments(year_month, group, payroll_entity_id)
     blockers = [row for row in rows if row["blockers"]]
     counts = {
         code: sum(1 for row in rows if row["group"] == code)
@@ -470,6 +487,8 @@ def final_payment():
         "payroll/final_payment.html",
         year_month=year_month,
         selected_group=group,
+        selected_payroll_entity_id=payroll_entity_id,
+        payroll_entities=reference_options("payroll_entity"),
         payroll_groups=PAYROLL_GROUPS,
         rows=rows,
         blockers=blockers,
@@ -510,6 +529,7 @@ def save_final_payment(period_id):
     group = request.form.get("payroll_group") or "all"
     if group not in {*PAYROLL_GROUP_CODES, "all"}:
         group = "all"
+    payroll_entity_id = selected_payroll_entity()
     case = final_payment_case(period)
     if case is None:
         case = EmployeeFinalPaymentCase(
@@ -581,12 +601,13 @@ def save_final_payment(period_id):
         period.payment_in_lieu = nonnegative_form_decimal("payment_in_lieu")
     except (ValueError, TypeError):
         db.session.rollback()
-        flash("請檢查離職結算日數、次數及金額，不可填寫負數。", "error")
+        flash("請檢查離職 Payroll 日數、次數及金額，不可填寫負數。", "error")
         return redirect(
             url_for(
                 "payroll.final_payment",
                 year_month=year_month,
                 payroll_group=group,
+                payroll_entity_id=payroll_entity_id or "",
             )
         )
     benefit_type = request.form.get("benefit_type", "none")
@@ -620,12 +641,13 @@ def save_final_payment(period_id):
         },
     )
     db.session.commit()
-    flash("離職結算資料已保存，頁面金額已重新計算。", "success")
+    flash("離職 Payroll 資料已保存，頁面金額已重新計算。", "success")
     return redirect(
         url_for(
             "payroll.final_payment",
             year_month=year_month,
             payroll_group=group,
+            payroll_entity_id=payroll_entity_id or "",
         )
     )
 
@@ -1095,8 +1117,10 @@ def period_labels(sheet, year_month):
     month_start, month_end = parse_year_month(year_month)
     previous_end = month_start - date.resolution
     previous_start = previous_end.replace(day=21)
-    sheet["F4"] = month_start
-    sheet["F4"].number_format = "yyyy-mm-dd"
+    # Payroll month is a month identifier, not an accounting date. Writing a
+    # string also prevents Excel from displaying an artificial first day.
+    sheet["F4"] = year_month
+    sheet["F4"].number_format = "@"
     current_period_cell = "M4" if sheet.title == "日工" else "N4"
     previous_period_cell = "T4" if sheet.title == "日工" else "U4"
     sheet[current_period_cell] = (
@@ -1111,7 +1135,7 @@ def period_labels(sheet, year_month):
 
 def result_lines(result):
     calculation = result.calculation_json or {}
-    return calculation.get("lines") or [
+    lines = calculation.get("lines") or [
         {
             "project": None,
             "working_days": "0",
@@ -1141,6 +1165,43 @@ def result_lines(result):
             "ot_divisor": "9",
         }
     ]
+    # Old snapshots may retain attendance counts on a zero-pay allocation
+    # line. Such rows must not become standalone MPF rows: only lines that
+    # actually carry a payroll amount are exported.
+    monetary_fields = (
+        "base_amount",
+        "holiday_amount",
+        "ot_amount",
+        "previous_ot_amount",
+        "previous_holiday_amount",
+        "large_ecall_amount",
+        "ecall_amount",
+        "previous_large_ecall_amount",
+        "previous_ecall_amount",
+        "allowance_amount",
+        "traffic_meal_allowance_amount",
+        "special_allowance_amount",
+        "sick_leave_amount",
+        "work_injury_amount",
+        "adjustment_amount",
+        "attendance_other_allowance_amount",
+        "gross_amount",
+    )
+    active = [
+        line
+        for line in lines
+        if any(decimal_value(line.get(key)) != 0 for key in monetary_fields)
+    ]
+    if active:
+        lines = active
+    return sorted(
+        lines,
+        key=lambda line: (
+            decimal_value(line.get("base_amount")),
+            decimal_value(line.get("gross_amount")),
+        ),
+        reverse=True,
+    )
 
 
 def project_for_line(line):
@@ -1631,6 +1692,23 @@ def build_group_workbook(run, group):
         warnings = "；".join(
             item for item in [warnings, ecall_note(line)] if item
         )
+        attendance_remarks = (
+            (result.calculation_json or {}).get("attendance_remarks")
+            if first
+            else None
+        )
+        warnings = "；".join(
+            item
+            for item in (
+                warnings,
+                (
+                    f"考勤備註：{attendance_remarks}"
+                    if attendance_remarks
+                    else None
+                ),
+            )
+            if item
+        )
         sheet.cell(index, last_column).value = warnings
         for column in range(10, last_column):
             sheet.cell(index, column).number_format = "#,##0.00"
@@ -1714,7 +1792,9 @@ def build_final_payment_workbook(year_month, group, rows):
             + result["underpay_amount"]
         )
         service_payment = (
-            result["benefit"]["net"] + result["special_compensation"]
+            result["benefit"]["net"]
+            + result["special_compensation"]
+            + result["work_injury_medical_reimbursement_amount"]
         )
         leave_payment = (
             result["annual_leave_pay"]
@@ -1769,6 +1849,23 @@ def build_final_payment_workbook(year_month, group, rows):
                             else None
                         ),
                         f"僱主 MPF {result['employer_mpf']:,.2f}",
+                        (
+                            "固定補貼 "
+                            f"{result['fixed_allowance_amount']:,.2f}；"
+                            "手動補貼 "
+                            f"{result['manual_allowance_amount']:,.2f}"
+                            if result["fixed_allowance_amount"]
+                            or result["manual_allowance_amount"]
+                            else None
+                        ),
+                        (
+                            "工傷醫療實銷 "
+                            f"{result['work_injury_medical_reimbursement_amount']:,.2f}"
+                            if result[
+                                "work_injury_medical_reimbursement_amount"
+                            ]
+                            else None
+                        ),
                         (
                             f"超用年假追扣 {result['annual_leave_overused_days']} 日"
                             if result["annual_leave_overused_days"] > 0
@@ -2041,8 +2138,35 @@ def export_mpf_contributions():
 def export_final_payment():
     year_month = selected_month()
     group = selected_group()
-    rows = calculate_final_payments(year_month, group)
+    payroll_entity_id = selected_payroll_entity()
+    if payroll_entity_id is None:
+        flash("請先選擇發薪單位，才可匯出離職 Payroll。", "error")
+        return redirect(
+            url_for(
+                "payroll.final_payment",
+                year_month=year_month,
+                payroll_group=group,
+            )
+        )
+    rows = calculate_final_payments(
+        year_month,
+        group,
+        payroll_entity_id,
+    )
     blockers = [row for row in rows if row["blockers"]]
+    entity_codes = {
+        row["assignment"].payroll_entity.code
+        for row in rows
+        if row.get("assignment") and row["assignment"].payroll_entity
+    }
+    entity_code = (
+        next(iter(entity_codes)) if len(entity_codes) == 1 else "UNKNOWN"
+    )
+    entity_code = "".join(
+        character
+        for character in str(entity_code)
+        if character.isalnum() or character in {"-", "_"}
+    ) or "UNKNOWN"
     if not rows:
         flash("所選月份沒有離職員工。", "error")
         return redirect(
@@ -2050,28 +2174,34 @@ def export_final_payment():
                 "payroll.final_payment",
                 year_month=year_month,
                 payroll_group=group,
+                payroll_entity_id=payroll_entity_id,
             )
         )
     if blockers:
-        flash("請先完成所有離職員工的結算資料，才可匯出。", "error")
+        flash("請先完成所有離職員工的 Payroll 資料，才可匯出。", "error")
         return redirect(
             url_for(
                 "payroll.final_payment",
                 year_month=year_month,
                 payroll_group=group,
+                payroll_entity_id=payroll_entity_id,
             )
         )
     write_audit(
         "final_payment_exported",
         "EmployeeFinalPaymentCase",
-        detail=f"{year_month} / {group} / {len(rows)} 人",
+        detail=(
+            f"{year_month} / {group} / {entity_code} / {len(rows)} 人"
+        ),
     )
     db.session.commit()
     if group != "all":
         return send_file(
             workbook_bytes(build_final_payment_workbook(year_month, group, rows)),
             as_attachment=True,
-            download_name=f"HKR_Final_Payment_{year_month}_{group}.xlsx",
+            download_name=(
+                f"HKR_Final_Payment_{year_month}_{entity_code}_{group}.xlsx"
+            ),
             mimetype=(
                 "application/vnd.openxmlformats-officedocument."
                 "spreadsheetml.sheet"
@@ -2091,14 +2221,16 @@ def export_final_payment():
                 selected_rows,
             )
             archive.writestr(
-                f"HKR_Final_Payment_{year_month}_{selected}.xlsx",
+                f"HKR_Final_Payment_{year_month}_{entity_code}_{selected}.xlsx",
                 workbook_bytes(workbook).getvalue(),
             )
     archive_memory.seek(0)
     return send_file(
         archive_memory,
         as_attachment=True,
-        download_name=f"HKR_Final_Payment_{year_month}_ALL.zip",
+        download_name=(
+            f"HKR_Final_Payment_{year_month}_{entity_code}_ALL.zip"
+        ),
         mimetype="application/zip",
     )
 

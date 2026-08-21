@@ -22,6 +22,11 @@ ADRs record accepted design tradeoffs. They explain why the system follows a dir
 | [ADR-0016](0016-effective-dated-mpf-schemes-and-exports.md) | Accepted | Store effective-dated MPF schemes and export monthly contribution reports |
 | [ADR-0017](0017-dated-work-injury-payroll-and-visible-rules.md) | Accepted | Use dated work-injury records, reviewed earnings and visible Payroll rules |
 | [ADR-0018](0018-work-injury-pay-modes-final-payment-and-single-payroll-entry.md) | Accepted | Select work-injury pay mode, separate medical reimbursement, replace departure-month Payroll and keep one entry per payment type |
+| [ADR-0019](0019-departure-payroll-inherits-owned-pay-components.md) | Accepted | Inherit owned monthly pay sources into Departure Payroll without duplicate manual entry |
+| [ADR-0020](0020-work-calendar-and-effective-dated-monthly-pay-method.md) | Accepted | Use a regional work calendar, effective-dated workweek and monthly-pay-method exception |
+| [ADR-0021](0021-daily-sunday-attendance-and-guided-prefill.md) | Accepted | Count daily Sunday work as ordinary attendance and guide four-part calendar prefills |
+| [ADR-0022](0022-daily-prefill-and-official-holiday-import.md) | Accepted | Exclude Sunday and known absences from daily prefills and import Hong Kong official holiday calendars on demand |
+| [ADR-0023](0023-payroll-group-holiday-calendars.md) | Accepted | Apply statutory holidays to Site staff and general holidays to Management/Head Office |
 
 Stable terms and current facts are in [`../../../CONTEXT.md`](../../../CONTEXT.md). Executable rules are in [`../../AGENTS.md`](../../AGENTS.md).
 

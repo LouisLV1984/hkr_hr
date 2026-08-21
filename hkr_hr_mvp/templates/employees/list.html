@@ -16,6 +16,7 @@
       <option value="attendance" {% if readiness_filter == 'attendance' %}selected{% endif %}>{{ t("readiness.attendance") }}</option>
       <option value="payroll" {% if readiness_filter == 'payroll' %}selected{% endif %}>{{ t("readiness.payroll_status") }}</option>
     </select></label>
+    <input type="hidden" name="impact" value="{{ impact_filter }}">
     <label><span>{{ t("common.status") }}</span><select name="status"><option value="all" {% if request.args.get('status') == 'all' %}selected{% endif %}>{{ t("common.all") }}</option><option value="active" {% if request.args.get('status', 'active') == 'active' %}selected{% endif %}>{{ t("common.active") }}</option><option value="departed" {% if request.args.get('status') == 'departed' %}selected{% endif %}>{{ t("common.departed") }}</option></select></label>
     <label><span>{{ t("employees.payroll_group") }}</span><select name="payroll_group"><option value="">{{ t("common.all") }}</option>{% for code, label in payroll_groups %}<option value="{{ code }}" {% if request.args.get('payroll_group') == code %}selected{% endif %}>{{ option_t("payroll_group", code, label) }}</option>{% endfor %}</select></label>
     <label><span>{{ t("employees.number_type") }}</span><select name="employee_type_id"><option value="">{{ t("common.all") }}</option>{% for item in employee_types %}<option value="{{ item.id }}" {% if request.args.get('employee_type_id')|int == item.id %}selected{% endif %}>{{ item.display_name }}</option>{% endfor %}</select></label>
@@ -28,6 +29,19 @@
 <section class="page-head">
   <div><h1>{{ t("employees.title") }}</h1><p>{{ t("employees.status_matrix_hint", month=year_month) }}</p></div>
   <a class="primary-btn" href="{{ url_for('employees.new_employee') }}">{{ t("employees.new") }}</a>
+</section>
+<section class="completion-workbench" aria-labelledby="completion-workbench-title">
+  <div class="completion-workbench-head">
+    <div><h2 id="completion-workbench-title">{{ t("employees.data_completion") }}</h2><p>{{ t("employees.data_completion_hint") }}</p></div>
+    {% if impact_filter %}<a class="mini-btn" href="{{ url_for('employees.list_employees', month=year_month, status=request.args.get('status', 'active'), readiness=readiness_filter, q=request.args.get('q', ''), payroll_group=request.args.get('payroll_group', ''), employee_type_id=request.args.get('employee_type_id', ''), project_id=request.args.get('project_id', '')) }}">{{ t("employees.show_all_impacts") }}</a>{% endif %}
+  </div>
+  <div class="completion-impact-grid">
+    {% for code in ['payroll', 'leave', 'mpf', 'documents'] %}
+      <a class="completion-impact-card {{ 'active' if impact_filter == code }}" href="{{ url_for('employees.list_employees', month=year_month, status=request.args.get('status', 'active'), readiness=readiness_filter, impact=code, q=request.args.get('q', ''), payroll_group=request.args.get('payroll_group', ''), employee_type_id=request.args.get('employee_type_id', ''), project_id=request.args.get('project_id', '')) }}">
+        <span>{{ t('employees.impact_' ~ code) }}</span><strong>{{ impact_counts[code] }}</strong><small>{{ t('employees.people_need_attention') }}</small>
+      </a>
+    {% endfor %}
+  </div>
 </section>
 <div class="table-wrap employee-readiness-wrap">
   <table class="data-table employee-master readiness-table employee-readiness-table">
@@ -47,8 +61,8 @@
           <td><span class="status-pill">{{ t("common.active") if employee.derived_status == "active" else t("common.departed") }}</span></td>
           <td>{{ option_t("payroll_group", employee.payroll_group, dict(payroll_groups).get(employee.payroll_group, employee.payroll_group)) }}</td>
           <td><strong>{{ project_t(assignment.project, t("common.unassigned")) if assignment else t("employee.assignment_not_created") }}</strong>{% if assignment %}<br><span class="cell-text">{{ assignment.department.display_name if assignment.department else "-" }} · {{ assignment.positions|map(attribute='position.display_name')|join('、') or "-" }}</span>{% endif %}</td>
-          <td><div class="readiness-strip">{% for item in row.employee_data %}<a class="readiness-chip {{ 'ok' if item.ok else 'missing' }}"{% if item.code == 'mpf' %} data-mpf-status="{{ 'complete' if item.ok else 'missing' }}"{% endif %} href="{{ url_for('employees.view_employee', employee_id=employee.id, tab=item.tab) }}"><span aria-hidden="true">{{ '✓' if item.ok else '!' }}</span>{{ t(item.label_key) }}</a>{% endfor %}</div></td>
-          <td><div class="readiness-strip"><a class="readiness-chip {{ 'ok' if row.attendance.ok else 'missing' }}" href="{{ url_for('attendance.attendance_home', month=year_month, view='details') }}"><span aria-hidden="true">{{ '✓' if row.attendance.ok else '!' }}</span>{{ t(row.attendance.label_key) }}</a>{% for item in row.payroll %}{% if item.label != '考勤未收' %}<a class="readiness-chip {{ 'ok' if item.ok else 'missing' }}" href="{{ url_for('payroll.attendance_payroll', year_month=year_month, employee_id=employee.id) }}"><span aria-hidden="true">{{ '✓' if item.ok else '!' }}</span>{{ t(item.label_key) if item.label_key else message_t(item.label) }}</a>{% endif %}{% endfor %}</div></td>
+          <td>{% set mpf_items = row.employee_data|selectattr('code', 'equalto', 'mpf')|list %}<div class="readiness-strip"{% if mpf_items %} data-mpf-status="{{ 'complete' if mpf_items[0].ok else 'missing' }}" aria-label="{{ t(mpf_items[0].label_key) }}"{% endif %}>{% set missing_data = row.employee_data|rejectattr('ok')|list %}{% if missing_data %}{% for item in missing_data %}<a class="readiness-chip missing" href="{{ url_for('employees.view_employee', employee_id=employee.id, tab=item.tab, focus=item.code) }}"><span aria-hidden="true">!</span>{{ t(item.label_key) }}</a>{% endfor %}{% else %}<span class="readiness-chip ok"><span aria-hidden="true">✓</span>{{ t('employees.employee_data_complete') }}</span>{% endif %}</div></td>
+          <td><div class="readiness-strip">{% if not row.attendance.ok %}<a class="readiness-chip missing" href="{{ url_for('attendance.attendance_home', month=year_month, view='details') }}"><span aria-hidden="true">!</span>{{ t(row.attendance.label_key) }}</a>{% endif %}{% for item in row.payroll %}{% if not item.ok and item.label != '考勤未收' %}<a class="readiness-chip missing" href="{{ url_for('payroll.attendance_payroll', year_month=year_month, employee_id=employee.id) }}"><span aria-hidden="true">!</span>{{ t(item.label_key) if item.label_key else message_t(item.label) }}</a>{% endif %}{% endfor %}{% if row.attendance.ok and not (row.payroll|rejectattr('ok')|list) %}<span class="readiness-chip ok"><span aria-hidden="true">✓</span>{{ t('readiness.payroll_ready') }}</span>{% endif %}</div></td>
         </tr>
       {% else %}<tr><td colspan="6" class="empty-cell">{{ t("employees.no_results") }}</td></tr>{% endfor %}
     </tbody>

@@ -3,7 +3,7 @@ from sqlalchemy import inspect, text
 from models import SystemSetting, db
 
 
-SCHEMA_VERSION = "2.2"
+SCHEMA_VERSION = "2.5"
 REQUIRED_V1_TABLES = {
     "employees",
     "employee_assignments",
@@ -37,6 +37,7 @@ ADDITIVE_V1_MIGRATIONS = {
     },
     "attendance_batch_items": {
         "content_sha256": "VARCHAR(64)",
+        "year_month": "VARCHAR(7)",
     },
     "attendance_segments": {
         "large_ecall_count": "INTEGER NOT NULL DEFAULT 0",
@@ -56,9 +57,11 @@ ADDITIVE_V1_MIGRATIONS = {
     },
     "employee_assignments": {
         "status": "VARCHAR(30) NOT NULL DEFAULT 'active'",
+        "workweek_days": "NUMERIC(3, 1) NOT NULL DEFAULT 6",
     },
     "employee_salaries": {
         "status": "VARCHAR(30) NOT NULL DEFAULT 'active'",
+        "monthly_pay_method": "VARCHAR(30) NOT NULL DEFAULT 'full_month'",
     },
     "payroll_adjustments": {
         "status": "VARCHAR(30) NOT NULL DEFAULT 'active'",
@@ -122,6 +125,10 @@ ADDITIVE_V1_MIGRATIONS = {
     },
     "employee_final_payment_cases": {
         "leave_wage_total": "NUMERIC(14, 2)",
+    },
+    "work_calendar_holidays": {
+        "applies_to_statutory": "BOOLEAN NOT NULL DEFAULT TRUE",
+        "applies_to_public": "BOOLEAN NOT NULL DEFAULT FALSE",
     },
 }
 
@@ -262,9 +269,93 @@ def retire_obsolete_audit_events():
     return max(result.rowcount or 0, 0)
 
 
+def repair_legacy_inferred_special_day_attendance():
+    """Clear the retired Sunday-as-work split without touching real work.
+
+    Genuine special-day work has dated AttendanceSpecialDay evidence. The
+    retired generator instead split all four exempt Monthly/OFFICE periods
+    into ordinary weekdays and Sundays. Only that exact pattern is repaired.
+    """
+    from models import AttendanceMonthlySummary, AuditLog, Employee
+    from tools.attendance_policy import (
+        is_legacy_inferred_special_day_summary,
+    )
+
+    required = {
+        "attendance_monthly_summaries",
+        "attendance_segments",
+        "attendance_special_days",
+        "employees",
+        "audit_logs",
+    }
+    if not required.issubset(existing_tables()):
+        return 0
+
+    summaries = (
+        AttendanceMonthlySummary.query
+        .join(Employee)
+        .filter(
+            AttendanceMonthlySummary.status == "not_required",
+            Employee.payroll_group.in_(("site_monthly", "management")),
+        )
+        .all()
+    )
+    repaired = 0
+    for summary in summaries:
+        if not is_legacy_inferred_special_day_summary(summary):
+            continue
+        before_segments = [
+            {
+                "id": segment.id,
+                "period_kind": segment.period_kind,
+                "working_days": str(segment.working_days),
+                "sunday_holiday_days": str(segment.sunday_holiday_days),
+            }
+            for segment in summary.segments
+        ]
+        for segment in summary.segments:
+            segment.sunday_holiday_days = 0
+        after_segments = [
+            {
+                "id": segment.id,
+                "period_kind": segment.period_kind,
+                "working_days": str(segment.working_days),
+                "sunday_holiday_days": "0",
+            }
+            for segment in summary.segments
+        ]
+        db.session.add(
+            AuditLog(
+                employee_id=summary.employee_id,
+                action="attendance_legacy_special_days_repaired",
+                entity_type="AttendanceMonthlySummary",
+                entity_id=summary.id,
+                before_json={"segments": before_segments},
+                after_json={"segments": after_segments},
+                detail=(
+                    f"{summary.year_month} 免交考勤舊版日曆星期日數已清除；"
+                    "真正額外工作只認逐日記錄"
+                ),
+            )
+        )
+        repaired += 1
+    if repaired:
+        db.session.commit()
+    return repaired
+
+
 def ensure_schema():
     db.create_all()
-    apply_additive_migrations()
+    changed_columns = apply_additive_migrations()
+    if "employee_assignments.workweek_days" in changed_columns:
+        db.session.execute(
+            text(
+                "UPDATE employee_assignments "
+                "SET workweek_days = CASE "
+                "WHEN payroll_group = 'management' THEN 5 ELSE 6 END"
+            )
+        )
+        db.session.commit()
     db.session.execute(
         text(
             """
@@ -293,6 +384,9 @@ def ensure_schema():
     retire_legacy_tables()
     cleanup_orphaned_workflow_rows()
     retire_obsolete_audit_events()
+    repaired_special_day_summaries = (
+        repair_legacy_inferred_special_day_attendance()
+    )
     issues = schema_compatibility_issues()
     if issues:
         raise RuntimeError(
@@ -305,6 +399,9 @@ def ensure_schema():
         db.session.add(setting)
     setting.value_json = {"version": SCHEMA_VERSION}
     db.session.commit()
+    return {
+        "legacy_special_day_summaries": repaired_special_day_summaries,
+    }
 
 
 def reset_postgres_schema(expected_database):

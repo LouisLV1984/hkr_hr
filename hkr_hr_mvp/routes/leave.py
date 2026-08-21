@@ -99,6 +99,29 @@ def leave_home():
         }
         for employee in employees
     }
+    action_filter = request.args.get("action", "")
+    if action_filter == "attention":
+        if view == "injury":
+            employees = [
+                employee
+                for employee in employees
+                if any(
+                    item.status == "active"
+                    for item in employee.work_injury_periods
+                )
+            ]
+        else:
+            employees = [
+                employee
+                for employee in employees
+                if summaries[employee.id]["annual"]["remaining"] < 0
+                or any(
+                    record.status == "active"
+                    and record.leave_type == "sick"
+                    and not record.evidence_document_id
+                    for record in employee.annual_leave_records
+                )
+            ]
     selected_id = request.args.get("employee_id", type=int)
     selected = next(
         (employee for employee in employees if employee.id == selected_id),
@@ -189,6 +212,7 @@ def leave_home():
         status=status,
         payroll_group=payroll_group,
         project_id=project_id,
+        action_filter=action_filter,
         projects=WorkProject.query.filter_by(active=True).order_by(
             WorkProject.name
         ).all(),

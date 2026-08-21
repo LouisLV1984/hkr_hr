@@ -31,6 +31,7 @@ from models import (
     PayrollRun,
     ReferenceList,
     ReferenceValue,
+    WorkCalendarHoliday,
     WorkProject,
     db,
 )
@@ -261,6 +262,27 @@ PAYROLL_GROUPS = [
     ("management", "管理人員及總部人員"),
 ]
 
+WORKWEEK_DAY_OPTIONS = (
+    Decimal("5"),
+    Decimal("5.5"),
+    Decimal("6"),
+)
+
+
+def default_workweek_days(payroll_group):
+    return Decimal("5") if payroll_group == "management" else Decimal("6")
+
+
+def normalize_workweek_days(value, payroll_group):
+    if payroll_group == "site_daily":
+        return Decimal("6")
+    parsed = parse_decimal(value)
+    return (
+        parsed
+        if parsed in WORKWEEK_DAY_OPTIONS
+        else default_workweek_days(payroll_group)
+    )
+
 TERMINATION_REASONS = [
     ("resignation", "辭職"),
     ("company_termination", "公司終止"),
@@ -452,6 +474,27 @@ def ensure_reference_seed():
             list_id=lists["work_region"].id,
         ).all()
     }
+    hong_kong = regions.get("HK")
+    if hong_kong:
+        july_first = WorkCalendarHoliday.query.filter_by(
+            region_id=hong_kong.id,
+            holiday_date=date(2026, 7, 1),
+        ).first()
+        if not july_first:
+            db.session.add(
+                WorkCalendarHoliday(
+                    region=hong_kong,
+                    holiday_date=date(2026, 7, 1),
+                    name="香港特別行政區成立紀念日",
+                    applies_to_statutory=True,
+                    applies_to_public=True,
+                    active=True,
+                    remarks="V0.3.4 官方法定假日補正",
+                )
+            )
+        else:
+            july_first.applies_to_statutory = True
+            july_first.applies_to_public = True
     for seed in DEFAULT_PROJECTS:
         project = WorkProject.query.filter_by(code=seed["code"]).first()
         if not project:
@@ -774,6 +817,7 @@ def create_assignment(
     employee,
     effective_from,
     payroll_group,
+    workweek_days=None,
     region_id=None,
     project_id=None,
     department_id=None,
@@ -789,6 +833,7 @@ def create_assignment(
         employee=employee,
         effective_from=effective_from,
         payroll_group=payroll_group,
+        workweek_days=normalize_workweek_days(workweek_days, payroll_group),
         region_id=region_id,
         project_id=project_id,
         department_id=department_id,
@@ -822,6 +867,7 @@ def create_salary(
     salary_basis,
     currency,
     amount,
+    monthly_pay_method="full_month",
     evidence_document_id=None,
     remarks=None,
 ):
@@ -829,6 +875,9 @@ def create_salary(
         employee=employee,
         effective_from=effective_from,
         salary_basis=salary_basis,
+        monthly_pay_method=(
+            monthly_pay_method if salary_basis == "monthly" else "full_month"
+        ),
         currency=currency,
         amount=money(amount),
         evidence_document_id=evidence_document_id,

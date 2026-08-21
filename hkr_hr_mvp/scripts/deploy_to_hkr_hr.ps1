@@ -89,7 +89,9 @@ function Test-DeployablePath {
         "backup_hkr_hr_short_term.ps1",
         "backup_hkr_hr_to_laptop.ps1",
         "setup_hkr_hr_backup.ps1",
-        "verify_hkr_hr_backup_restore.ps1"
+        "verify_hkr_hr_backup_restore.ps1",
+        "repair_salary_timeline_20260811.py",
+        "mini_pc_repair_salary_timeline_20260811.bat"
     )
     foreach ($prefix in $excludedPrefixes) {
         if ($normalized.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -213,14 +215,24 @@ $operatorScripts = @(
     "backup_hkr_hr_short_term.ps1",
     "backup_hkr_hr_to_laptop.ps1",
     "setup_hkr_hr_backup.ps1",
-    "verify_hkr_hr_backup_restore.ps1",
-    "repair_salary_timeline_20260811.py",
-    "mini_pc_repair_salary_timeline_20260811.bat"
+    "verify_hkr_hr_backup_restore.ps1"
 )
 foreach ($scriptName in $operatorScripts) {
     $scriptPath = Join-Path $SourceRoot "scripts\$scriptName"
     if (Test-Path -LiteralPath $scriptPath) {
         Copy-Item -LiteralPath $scriptPath -Destination (Join-Path $OperatorScriptTarget $scriptName) -Force
+    }
+}
+
+$localRepairScripts = @(
+    "repair_salary_timeline_20260811.py",
+    "mini_pc_repair_salary_timeline_20260811.bat"
+)
+foreach ($scriptName in $localRepairScripts) {
+    $staleOperatorScript = Join-Path $OperatorScriptTarget $scriptName
+    if (Test-Path -LiteralPath $staleOperatorScript) {
+        Remove-Item -LiteralPath $staleOperatorScript -Force
+        Write-DeployLog "Removed local-only repair script from production mirror: $staleOperatorScript"
     }
 }
 

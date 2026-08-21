@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from flask import (
@@ -19,6 +20,7 @@ from models import (
     EmployeeAssignment,
     EmployeeAssignmentPosition,
     EmployeeCertificate,
+    EmployeeBankAccount,
     EmployeeMpfEnrollment,
     EmployeeSalary,
     EmployeeVisa,
@@ -28,18 +30,49 @@ from models import (
     ReferenceList,
     ReferenceValue,
     WorkProject,
+    WorkCalendarHoliday,
     db,
 )
 from tools.hr_core import (
     REFERENCE_LISTS,
+    current_assignment_on,
+    current_bank_account_on,
+    current_mpf_on,
+    current_salary_on,
     normalize_reference_display,
     parse_decimal,
+    parse_date,
     slug_code,
     write_audit,
+)
+from tools.hk_statutory_holidays import (
+    HolidayImportError,
+    PUBLIC_SOURCE_URL_TEMPLATE,
+    SOURCE_URL_TEMPLATE,
+    fetch_hong_kong_public_holidays,
+    fetch_hong_kong_statutory_holidays,
 )
 
 
 references_bp = Blueprint("references", __name__)
+
+
+def work_calendar_scope(value):
+    scope = (value or "").strip()
+    if scope not in {"statutory", "public", "both"}:
+        return None
+    return scope
+
+
+def set_work_calendar_scope(item, scope):
+    item.applies_to_statutory = scope in {"statutory", "both"}
+    item.applies_to_public = scope in {"public", "both"}
+
+
+def work_calendar_scope_value(item):
+    if item.applies_to_statutory and item.applies_to_public:
+        return "both"
+    return "public" if item.applies_to_public else "statutory"
 
 
 class ReferenceCodeConflict(ValueError):
@@ -206,8 +239,174 @@ def usage_query(value):
 
 
 def usage_count(value):
+    code = value.reference_list.code
+    if code == "bank":
+        return (
+            Employee.query.filter(Employee.bank_name == value.display_name).count()
+            + EmployeeBankAccount.query.filter(
+                EmployeeBankAccount.bank_name == value.display_name
+            ).count()
+        )
+    if code == "phone_region":
+        return Employee.query.filter(
+            db.or_(
+                Employee.mobile_region_code == value.code,
+                Employee.emergency_contact_region_code == value.code,
+            )
+        ).count()
+    if code == "currency":
+        return (
+            EmployeeSalary.query.filter(EmployeeSalary.currency == value.code).count()
+            + EmployeeAllowance.query.filter(
+                EmployeeAllowance.currency == value.code
+            ).count()
+        )
     query = usage_query(value)
     return query.count() if query is not None else 0
+
+
+def employee_link(employee):
+    return {
+        "id": employee.id,
+        "employee_no": employee.employee_no,
+        "display_name": employee.display_name,
+        "status": employee.status,
+    }
+
+
+def current_reference_employee_ids(value, employees, on_date):
+    code = value.reference_list.code
+    ids = set()
+    for employee in employees:
+        assignment = current_assignment_on(employee, on_date)
+        salary = current_salary_on(employee, on_date)
+        if code == "employee_type" and employee.employee_type_id == value.id:
+            ids.add(employee.id)
+        elif code in {
+            "work_region",
+            "department",
+            "employer",
+            "payroll_entity",
+            "social_insurance_entity",
+            "labour_dispatch_entity",
+        } and assignment and getattr(
+            assignment,
+            {
+                "work_region": "region_id",
+                "department": "department_id",
+                "employer": "employer_id",
+                "payroll_entity": "payroll_entity_id",
+                "social_insurance_entity": "social_insurance_entity_id",
+                "labour_dispatch_entity": "labour_dispatch_entity_id",
+            }[code],
+            None,
+        ) == value.id:
+            ids.add(employee.id)
+        elif code == "position" and assignment and any(
+            item.position_id == value.id for item in assignment.positions
+        ):
+            ids.add(employee.id)
+        elif code == "visa_category" and any(
+            item.status == "active" and item.visa_category_id == value.id
+            for item in employee.visas
+        ):
+            ids.add(employee.id)
+        elif code == "certificate_type" and any(
+            item.status == "active" and item.certificate_type_id == value.id
+            for item in employee.certificates
+        ):
+            ids.add(employee.id)
+        elif code == "bank" and (
+            employee.bank_name == value.display_name
+            or (
+                (bank := current_bank_account_on(employee, on_date))
+                and bank.bank_name == value.display_name
+            )
+        ):
+            ids.add(employee.id)
+        elif code == "education_level" and employee.education_level == value.display_name:
+            ids.add(employee.id)
+        elif code == "currency" and salary and salary.currency == value.code:
+            ids.add(employee.id)
+        elif code == "phone_region" and value.code in {
+            employee.mobile_region_code,
+            employee.emergency_contact_region_code,
+        }:
+            ids.add(employee.id)
+    return ids
+
+
+def historical_reference_employee_ids(value):
+    code = value.reference_list.code
+    if code == "bank":
+        return {
+            row.employee_id
+            for row in EmployeeBankAccount.query.filter_by(
+                bank_name=value.display_name
+            ).all()
+        } | {
+            row.id
+            for row in Employee.query.filter_by(
+                bank_name=value.display_name
+            ).all()
+        }
+    if code == "phone_region":
+        return {
+            row.id
+            for row in Employee.query.filter(
+                db.or_(
+                    Employee.mobile_region_code == value.code,
+                    Employee.emergency_contact_region_code == value.code,
+                )
+            ).all()
+        }
+    query = usage_query(value)
+    if query is None:
+        return set()
+    ids = set()
+    for row in query.all():
+        if isinstance(row, Employee):
+            ids.add(row.id)
+        elif hasattr(row, "employee_id"):
+            ids.add(row.employee_id)
+        elif hasattr(row, "assignment") and row.assignment:
+            ids.add(row.assignment.employee_id)
+    return ids
+
+
+def missing_employee_ids(selected_code, employees, on_date):
+    ids = set()
+    for employee in employees:
+        assignment = current_assignment_on(employee, on_date)
+        if selected_code == "projects":
+            if (
+                assignment
+                and assignment.payroll_group in {"site_daily", "site_monthly"}
+                and not assignment.project_id
+            ):
+                ids.add(employee.id)
+        elif selected_code in {
+            "work_region",
+            "department",
+            "employer",
+            "payroll_entity",
+        }:
+            field = {
+                "work_region": "region_id",
+                "department": "department_id",
+                "employer": "employer_id",
+                "payroll_entity": "payroll_entity_id",
+            }[selected_code]
+            if not assignment or not getattr(assignment, field):
+                ids.add(employee.id)
+        elif selected_code == "position":
+            if not assignment or not assignment.positions:
+                ids.add(employee.id)
+        elif selected_code == "bank" and not (
+            employee.bank_name and employee.bank_account_no
+        ):
+            ids.add(employee.id)
+    return ids
 
 
 def propagate_text_usage(value, old_name):
@@ -411,7 +610,11 @@ def references_home():
         else []
     )
     counts = {value.id: usage_count(value) for value in values}
-    projects = WorkProject.query.order_by(WorkProject.name.asc()).all()
+    projects = (
+        WorkProject.query.filter(WorkProject.code != "UNASSIGNED")
+        .order_by(WorkProject.name.asc())
+        .all()
+    )
     mpf_schemes = MpfScheme.query.order_by(MpfScheme.name.asc()).all()
     mpf_scheme_counts = {
         scheme.id: EmployeeMpfEnrollment.query.filter_by(
@@ -440,6 +643,123 @@ def references_home():
                 ).count(),
             )
         )
+    today = date.today()
+    all_employees = Employee.query.order_by(Employee.employee_no.asc()).all()
+    active_employees = [
+        employee for employee in all_employees if employee.is_active_on(today)
+    ]
+    employees_by_id = {employee.id: employee for employee in all_employees}
+    current_employee_links = {}
+    historical_employee_links = {}
+    for value in values:
+        current_ids = current_reference_employee_ids(
+            value,
+            active_employees,
+            today,
+        )
+        history_ids = historical_reference_employee_ids(value) - current_ids
+        current_employee_links[value.id] = [
+            employee_link(employees_by_id[item_id])
+            for item_id in sorted(current_ids)
+            if item_id in employees_by_id
+        ]
+        historical_employee_links[value.id] = [
+            employee_link(employees_by_id[item_id])
+            for item_id in sorted(history_ids)
+            if item_id in employees_by_id
+        ]
+    project_employee_links = {}
+    project_historical_links = {}
+    for project in projects:
+        current_ids = {
+            employee.id
+            for employee in active_employees
+            if (
+                (assignment := current_assignment_on(employee, today))
+                and assignment.project_id == project.id
+            )
+        }
+        historical_ids = {
+            row.employee_id
+            for row in EmployeeAssignment.query.filter_by(
+                project_id=project.id
+            ).all()
+        } - current_ids
+        project_employee_links[project.id] = [
+            employee_link(employees_by_id[item_id])
+            for item_id in sorted(current_ids)
+            if item_id in employees_by_id
+        ]
+        project_historical_links[project.id] = [
+            employee_link(employees_by_id[item_id])
+            for item_id in sorted(historical_ids)
+            if item_id in employees_by_id
+        ]
+    mpf_employee_links = {}
+    mpf_historical_links = {}
+    for scheme in mpf_schemes:
+        current_ids = {
+            employee.id
+            for employee in active_employees
+            if (
+                (enrollment := current_mpf_on(employee, today))
+                and enrollment.scheme_id == scheme.id
+            )
+        }
+        historical_ids = {
+            row.employee_id
+            for row in EmployeeMpfEnrollment.query.filter_by(
+                scheme_id=scheme.id
+            ).all()
+        } - current_ids
+        mpf_employee_links[scheme.id] = [
+            employee_link(employees_by_id[item_id])
+            for item_id in sorted(current_ids)
+            if item_id in employees_by_id
+        ]
+        mpf_historical_links[scheme.id] = [
+            employee_link(employees_by_id[item_id])
+            for item_id in sorted(historical_ids)
+            if item_id in employees_by_id
+        ]
+    missing_ids = missing_employee_ids(selected_code, active_employees, today)
+    missing_employees = [
+        employee_link(employees_by_id[item_id])
+        for item_id in sorted(missing_ids)
+        if item_id in employees_by_id
+    ]
+    calendar_year = request.args.get("calendar_year", type=int) or today.year
+    calendar_region_id = request.args.get("calendar_region_id", type=int)
+    calendar_query = WorkCalendarHoliday.query.filter(
+        db.extract("year", WorkCalendarHoliday.holiday_date) == calendar_year
+    )
+    if calendar_region_id:
+        calendar_query = calendar_query.filter_by(region_id=calendar_region_id)
+    calendar_holidays = calendar_query.order_by(
+        WorkCalendarHoliday.holiday_date.asc()
+    ).all()
+    regions = (
+        ReferenceValue.query.join(ReferenceList)
+        .filter(
+            ReferenceList.code == "work_region",
+            ReferenceValue.active.is_(True),
+        )
+        .order_by(ReferenceValue.display_name)
+        .all()
+    )
+    calendar_import_year = today.year + 1
+    hong_kong_region = next(
+        (region for region in regions if region.code == "HK"),
+        None,
+    )
+    calendar_import_existing_count = 0
+    if hong_kong_region:
+        calendar_import_existing_count = WorkCalendarHoliday.query.filter_by(
+            region_id=hong_kong_region.id,
+        ).filter(
+            db.extract("year", WorkCalendarHoliday.holiday_date)
+            == calendar_import_year
+        ).count()
     nav_groups = [
         (
             group_code,
@@ -458,15 +778,19 @@ def references_home():
         mpf_schemes=mpf_schemes,
         mpf_scheme_counts=mpf_scheme_counts,
         project_counts=project_counts,
-        regions=(
-            ReferenceValue.query.join(ReferenceList)
-            .filter(
-                ReferenceList.code == "work_region",
-                ReferenceValue.active.is_(True),
-            )
-            .order_by(ReferenceValue.display_name)
-            .all()
-        ),
+        current_employee_links=current_employee_links,
+        historical_employee_links=historical_employee_links,
+        project_employee_links=project_employee_links,
+        project_historical_links=project_historical_links,
+        mpf_employee_links=mpf_employee_links,
+        mpf_historical_links=mpf_historical_links,
+        missing_employees=missing_employees,
+        calendar_holidays=calendar_holidays,
+        calendar_year=calendar_year,
+        calendar_import_year=calendar_import_year,
+        calendar_import_existing_count=calendar_import_existing_count,
+        calendar_region_id=calendar_region_id,
+        regions=regions,
         selected_code=selected_code,
         can_edit=editor_allowed(),
         return_to=safe_return_to(request.args.get("return_to")),
@@ -551,7 +875,6 @@ def update_mpf_scheme(scheme_id):
     scheme.employer_account_no = employer_no
     scheme.payroll_group_no = group_no
     scheme.calculation_mode = mode
-    scheme.active = request.form.get("active") == "on"
     write_audit(
         "mpf_scheme_updated",
         "MpfScheme",
@@ -649,7 +972,6 @@ def update_value(value_id):
             before = {"display_name": old_name, "active": value.active}
             value.display_name = display_name
             value.normalized_name = display_name.casefold()
-            value.active = request.form.get("active") == "on"
             value.remarks = request.form.get("remarks", "").strip() or None
             propagate_text_usage(value, old_name)
             write_audit(
@@ -760,7 +1082,6 @@ def update_project(project_id):
         request.form.get("daily_ot_divisor"),
         Decimal("9"),
     )
-    project.active = request.form.get("active") == "on"
     write_audit(
         "project_updated",
         "WorkProject",
@@ -770,6 +1091,321 @@ def update_project(project_id):
     db.session.commit()
     flash("項目已更新，既有員工與考勤引用會同步顯示新名稱。", "success")
     return references_redirect("projects")
+
+
+def set_archive_state(item, active, entity_name, display_name, return_code):
+    before = {"active": item.active}
+    item.active = active
+    write_audit(
+        f"{entity_name}_{'restored' if active else 'archived'}",
+        type(item).__name__,
+        item.id,
+        detail=display_name,
+        before=before,
+        after={"active": active},
+    )
+    db.session.commit()
+    flash("選項已恢復使用。" if active else "選項已封存；既有及歷史資料不受影響。", "success")
+    return references_redirect(return_code)
+
+
+@references_bp.route("/references/values/<int:value_id>/archive", methods=["POST"])
+@login_required
+def archive_value(value_id):
+    if not editor_allowed():
+        abort(403)
+    value = db.get_or_404(ReferenceValue, value_id)
+    return set_archive_state(
+        value,
+        request.form.get("action") == "restore",
+        "reference",
+        value.display_name,
+        value.reference_list.code,
+    )
+
+
+@references_bp.route("/references/projects/<int:project_id>/archive", methods=["POST"])
+@login_required
+def archive_project(project_id):
+    if not editor_allowed():
+        abort(403)
+    project = db.get_or_404(WorkProject, project_id)
+    if project.code == "UNASSIGNED":
+        abort(400)
+    return set_archive_state(
+        project,
+        request.form.get("action") == "restore",
+        "project",
+        project.name,
+        "projects",
+    )
+
+
+@references_bp.route("/references/mpf-schemes/<int:scheme_id>/archive", methods=["POST"])
+@login_required
+def archive_mpf_scheme(scheme_id):
+    if not editor_allowed():
+        abort(403)
+    scheme = db.get_or_404(MpfScheme, scheme_id)
+    return set_archive_state(
+        scheme,
+        request.form.get("action") == "restore",
+        "mpf_scheme",
+        scheme.name,
+        "mpf_schemes",
+    )
+
+
+@references_bp.route("/references/work-calendar", methods=["POST"])
+@login_required
+def create_work_calendar_holiday():
+    if not editor_allowed():
+        abort(403)
+    region_id = request.form.get("region_id", type=int)
+    holiday_date = parse_date(request.form.get("holiday_date"))
+    name = normalize_reference_display(request.form.get("name"))
+    scope = work_calendar_scope(request.form.get("calendar_scope"))
+    if not region_id or not holiday_date or not name or not scope:
+        flash("請完整填寫工作地區、假日日期、名稱及適用日曆。", "error")
+        return references_redirect("work_calendar")
+    existing = WorkCalendarHoliday.query.filter_by(
+        region_id=region_id,
+        holiday_date=holiday_date,
+    ).first()
+    if existing:
+        flash("該工作地區及日期已有工作日曆記錄。", "error")
+        return references_redirect("work_calendar")
+    item = WorkCalendarHoliday(
+        region_id=region_id,
+        holiday_date=holiday_date,
+        name=name,
+        remarks=request.form.get("remarks", "").strip() or None,
+        active=True,
+    )
+    set_work_calendar_scope(item, scope)
+    db.session.add(item)
+    db.session.flush()
+    write_audit(
+        "work_calendar_created",
+        "WorkCalendarHoliday",
+        item.id,
+        detail=f"{holiday_date:%Y-%m-%d} {name} [{scope}]",
+    )
+    db.session.commit()
+    flash("假日已加入工作日曆。", "success")
+    return redirect(url_for("references.references_home", list="work_calendar", calendar_year=holiday_date.year, calendar_region_id=region_id))
+
+
+@references_bp.route(
+    "/references/work-calendar/import-hong-kong",
+    methods=["POST"],
+)
+@login_required
+def import_hong_kong_work_calendar():
+    if not editor_allowed():
+        abort(403)
+    calendar_year = request.form.get("calendar_year", type=int) or (
+        date.today().year + 1
+    )
+    hong_kong = (
+        ReferenceValue.query.join(ReferenceList)
+        .filter(
+            ReferenceList.code == "work_region",
+            ReferenceValue.code == "HK",
+        )
+        .first()
+    )
+    if not hong_kong:
+        flash("未找到香港工作地區，請先在資料選項中建立。", "error")
+        return references_redirect("work_calendar")
+    try:
+        statutory_holidays = fetch_hong_kong_statutory_holidays(calendar_year)
+        public_holidays = fetch_hong_kong_public_holidays(calendar_year)
+    except HolidayImportError as exc:
+        flash(str(exc), "error")
+        return redirect(
+            url_for(
+                "references.references_home",
+                list="work_calendar",
+                calendar_year=calendar_year,
+                calendar_region_id=hong_kong.id,
+            )
+        )
+
+    existing = {
+        item.holiday_date: item
+        for item in WorkCalendarHoliday.query.filter_by(
+            region_id=hong_kong.id,
+        ).filter(
+            db.extract("year", WorkCalendarHoliday.holiday_date)
+            == calendar_year
+        )
+    }
+    created = []
+    extended = []
+    retained = []
+
+    def persist_official_holidays(rows, scope, source_url):
+        for holiday_date, name in rows:
+            item = existing.get(holiday_date)
+            if not item:
+                item = WorkCalendarHoliday(
+                    region_id=hong_kong.id,
+                    holiday_date=holiday_date,
+                    name=name,
+                    applies_to_statutory=scope == "statutory",
+                    applies_to_public=scope == "public",
+                    remarks="由香港政府官方年度假日清單帶入：" + source_url,
+                    active=True,
+                )
+                db.session.add(item)
+                existing[holiday_date] = item
+                created.append(
+                    {"date": holiday_date.isoformat(), "name": name, "scope": scope}
+                )
+                continue
+            attribute = (
+                "applies_to_statutory"
+                if scope == "statutory"
+                else "applies_to_public"
+            )
+            if not getattr(item, attribute):
+                setattr(item, attribute, True)
+                extended.append(
+                    {"date": holiday_date.isoformat(), "scope": scope}
+                )
+            else:
+                retained.append(
+                    {"date": holiday_date.isoformat(), "scope": scope}
+                )
+
+    persist_official_holidays(
+        statutory_holidays,
+        "statutory",
+        SOURCE_URL_TEMPLATE.format(year=calendar_year),
+    )
+    persist_official_holidays(
+        public_holidays,
+        "public",
+        PUBLIC_SOURCE_URL_TEMPLATE.format(year=calendar_year),
+    )
+
+    write_audit(
+        "work_calendar_hk_imported",
+        "WorkCalendarHoliday",
+        detail=(
+            f"{calendar_year} 香港假日日曆：新增 {len(created)}，"
+            f"補充適用範圍 {len(extended)}，保留既有 {len(retained)}"
+        ),
+        after={
+            "year": calendar_year,
+            "statutory_christmas_choice": True,
+            "created": created,
+            "extended_existing_dates": extended,
+            "retained_existing_dates": retained,
+            "statutory_source_url": SOURCE_URL_TEMPLATE.format(year=calendar_year),
+            "public_source_url": PUBLIC_SOURCE_URL_TEMPLATE.format(year=calendar_year),
+        },
+    )
+    db.session.commit()
+    flash(
+        f"已帶入 {calendar_year} 年香港法定假日及公眾假期："
+        f"新增 {len(created)} 個日期，補充 {len(extended)} 個既有日期的適用範圍。",
+        "success",
+    )
+    return redirect(
+        url_for(
+            "references.references_home",
+            list="work_calendar",
+            calendar_year=calendar_year,
+            calendar_region_id=hong_kong.id,
+        )
+    )
+
+
+@references_bp.route("/references/work-calendar/<int:item_id>", methods=["POST"])
+@login_required
+def update_work_calendar_holiday(item_id):
+    if not editor_allowed():
+        abort(403)
+    item = db.get_or_404(WorkCalendarHoliday, item_id)
+    before = {
+        "region_id": item.region_id,
+        "holiday_date": item.holiday_date.isoformat(),
+        "name": item.name,
+        "calendar_scope": work_calendar_scope_value(item),
+        "active": item.active,
+    }
+    region_id = request.form.get("region_id", type=int)
+    holiday_date = parse_date(request.form.get("holiday_date"))
+    name = normalize_reference_display(request.form.get("name"))
+    scope = work_calendar_scope(request.form.get("calendar_scope"))
+    if not region_id or not holiday_date or not name or not scope:
+        flash("請完整填寫工作地區、假日日期、名稱及適用日曆。", "error")
+        return references_redirect("work_calendar")
+    duplicate = WorkCalendarHoliday.query.filter(
+        WorkCalendarHoliday.region_id == region_id,
+        WorkCalendarHoliday.holiday_date == holiday_date,
+        WorkCalendarHoliday.id != item.id,
+    ).first()
+    if duplicate:
+        flash("該工作地區及日期已有工作日曆記錄。", "error")
+        return references_redirect("work_calendar")
+    item.region_id = region_id
+    item.holiday_date = holiday_date
+    item.name = name
+    set_work_calendar_scope(item, scope)
+    item.remarks = request.form.get("remarks", "").strip() or None
+    write_audit(
+        "work_calendar_updated",
+        "WorkCalendarHoliday",
+        item.id,
+        detail=f"{holiday_date:%Y-%m-%d} {name}",
+        before=before,
+        after={
+            "region_id": region_id,
+            "holiday_date": holiday_date.isoformat(),
+            "name": name,
+            "calendar_scope": scope,
+            "active": item.active,
+        },
+    )
+    db.session.commit()
+    flash("工作日曆已更新。", "success")
+    return redirect(url_for("references.references_home", list="work_calendar", calendar_year=holiday_date.year, calendar_region_id=region_id))
+
+
+@references_bp.route("/references/work-calendar/<int:item_id>/archive", methods=["POST"])
+@login_required
+def archive_work_calendar_holiday(item_id):
+    if not editor_allowed():
+        abort(403)
+    item = db.get_or_404(WorkCalendarHoliday, item_id)
+    return set_archive_state(
+        item,
+        request.form.get("action") == "restore",
+        "work_calendar",
+        f"{item.holiday_date:%Y-%m-%d} {item.name}",
+        "work_calendar",
+    )
+
+
+@references_bp.route("/references/work-calendar/<int:item_id>/delete", methods=["POST"])
+@login_required
+def delete_work_calendar_holiday(item_id):
+    if not editor_allowed():
+        abort(403)
+    item = db.get_or_404(WorkCalendarHoliday, item_id)
+    write_audit(
+        "work_calendar_deleted",
+        "WorkCalendarHoliday",
+        item.id,
+        detail=f"{item.holiday_date:%Y-%m-%d} {item.name}",
+    )
+    db.session.delete(item)
+    db.session.commit()
+    flash("工作日曆記錄已刪除。", "success")
+    return references_redirect("work_calendar")
 
 
 @references_bp.route("/references/projects/<int:project_id>/delete", methods=["POST"])

@@ -111,7 +111,16 @@ def main():
                     "confirmation and rebuilds only hkr_hr_db."
                 )
                 return INCOMPATIBLE_SCHEMA_EXIT
-        ensure_schema()
+        repair_results = ensure_schema()
+        repaired_special_days = repair_results.get(
+            "legacy_special_day_summaries",
+            0,
+        )
+        if repaired_special_days:
+            print(
+                "Repaired legacy inferred Sunday/statutory-holiday "
+                f"attendance summaries: {repaired_special_days}"
+            )
         ensure_reference_seed()
         user = User.query.filter_by(username=args.username).first()
         password_required = user is None or args.reset_admin_password

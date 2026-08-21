@@ -92,6 +92,43 @@ class ReferenceValue(TimestampMixin, db.Model):
     reference_list = db.relationship("ReferenceList", back_populates="values")
 
 
+class WorkCalendarHoliday(TimestampMixin, db.Model):
+    __tablename__ = "work_calendar_holidays"
+    __table_args__ = (
+        db.UniqueConstraint(
+            "region_id",
+            "holiday_date",
+            name="uq_work_calendar_region_date",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    region_id = db.Column(
+        db.Integer,
+        db.ForeignKey("reference_values.id"),
+        nullable=False,
+        index=True,
+    )
+    holiday_date = db.Column(db.Date, nullable=False, index=True)
+    name = db.Column(db.String(200), nullable=False)
+    applies_to_statutory = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=True,
+        index=True,
+    )
+    applies_to_public = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False,
+        index=True,
+    )
+    active = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    remarks = db.Column(db.Text, nullable=True)
+
+    region = db.relationship("ReferenceValue", foreign_keys=[region_id])
+
+
 class WorkProject(TimestampMixin, db.Model):
     __tablename__ = "work_projects"
 
@@ -595,6 +632,11 @@ class EmployeeAssignment(TimestampMixin, db.Model):
         nullable=True,
     )
     payroll_group = db.Column(db.String(30), nullable=False, index=True)
+    workweek_days = db.Column(
+        db.Numeric(3, 1),
+        nullable=False,
+        default=6,
+    )
     status = db.Column(
         db.String(30),
         nullable=False,
@@ -685,6 +727,12 @@ class EmployeeSalary(TimestampMixin, db.Model):
     effective_from = db.Column(db.Date, nullable=False, index=True)
     effective_to = db.Column(db.Date, nullable=True, index=True)
     salary_basis = db.Column(db.String(30), nullable=False, index=True)
+    monthly_pay_method = db.Column(
+        db.String(30),
+        nullable=False,
+        default="full_month",
+        index=True,
+    )
     currency = db.Column(db.String(20), nullable=False, default="HKD")
     amount = db.Column(db.Numeric(12, 2), nullable=False)
     status = db.Column(
@@ -973,6 +1021,7 @@ class AttendanceBatchItem(TimestampMixin, db.Model):
     mime_type = db.Column(db.String(120), nullable=True)
     file_size = db.Column(db.Integer, nullable=True)
     content_sha256 = db.Column(db.String(64), nullable=True)
+    year_month = db.Column(db.String(7), nullable=True, index=True)
     status = db.Column(db.String(30), nullable=False, default="pending", index=True)
     employee_id = db.Column(
         db.Integer,
@@ -989,6 +1038,16 @@ class AttendanceBatchItem(TimestampMixin, db.Model):
 
     batch = db.relationship("AttendanceBatch", back_populates="items")
     employee = db.relationship("Employee", foreign_keys=[employee_id])
+    summary = db.relationship(
+        "AttendanceMonthlySummary",
+        foreign_keys=[summary_id],
+    )
+
+    @property
+    def effective_year_month(self):
+        if self.summary:
+            return self.summary.year_month
+        return self.year_month or (self.batch.year_month if self.batch else None)
 
 
 class AttendanceMonthlySummary(TimestampMixin, db.Model):

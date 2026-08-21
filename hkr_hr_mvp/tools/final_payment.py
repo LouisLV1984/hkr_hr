@@ -6,6 +6,8 @@ from models import (
     AttendanceMonthlySummary,
     EmployeeFinalPaymentCase,
     EmployeeEmploymentPeriod,
+    EmployeeWorkInjuryMonthlyExpense,
+    PayrollAdjustment,
 )
 from tools.hr_core import (
     annual_leave_buckets,
@@ -17,6 +19,7 @@ from tools.hr_core import (
 )
 from tools.payroll_engine import (
     ECALL_FLAT_AMOUNT,
+    active_allowances,
     decimal_value,
     mpf_amounts,
     rounded,
@@ -27,10 +30,14 @@ from tools.payroll_engine import (
 TRANSITION_DATE = date(2025, 5, 1)
 SP_LSP_ANNUAL_CAP = Decimal("15000")
 SP_LSP_TOTAL_CAP = Decimal("390000")
-FINAL_PAYMENT_RULE_VERSION = "V1.1-2026-08-17"
+FINAL_PAYMENT_RULE_VERSION = "V1.2-2026-08-18"
 
 
-def periods_for_final_payment(year_month, payroll_group="all"):
+def periods_for_final_payment(
+    year_month,
+    payroll_group="all",
+    payroll_entity_id=None,
+):
     month_start, month_end = parse_year_month(year_month)
     rows = (
         EmployeeEmploymentPeriod.query.filter(
@@ -40,13 +47,24 @@ def periods_for_final_payment(year_month, payroll_group="all"):
         .order_by(EmployeeEmploymentPeriod.end_date.asc())
         .all()
     )
-    if payroll_group == "all":
-        return rows
-    return [
-        period
-        for period in rows
-        if group_for_period(period) == payroll_group
-    ]
+    selected = rows
+    if payroll_group != "all":
+        selected = [
+            period
+            for period in selected
+            if group_for_period(period) == payroll_group
+        ]
+    if payroll_entity_id is not None:
+        entity_selected = []
+        for period in selected:
+            assignment = current_assignment_on(
+                period.employee,
+                period.end_date,
+            )
+            if assignment and assignment.payroll_entity_id == payroll_entity_id:
+                entity_selected.append(period)
+        selected = entity_selected
+    return selected
 
 
 def group_for_period(period):
@@ -87,6 +105,13 @@ def attendance_defaults(period):
         ),
         "large_ecall_count": sum(item.large_ecall_count or 0 for item in segments),
         "ecall_count": sum(item.ecall_count or 0 for item in segments),
+        "other_allowance_amount": sum(
+            (
+                decimal_value(item.other_allowance_amount)
+                for item in segments
+            ),
+            Decimal("0"),
+        ),
     }
 
 
@@ -264,7 +289,8 @@ def calculate_final_payment(period):
     attendance = attendance_defaults(period)
     benefit_defaults = default_benefit_inputs(period)
     legacy_default, regular_default, leave_overused_days, leave_buckets = leave_defaults(period)
-    _, month_end = parse_year_month(period.end_date.strftime("%Y-%m"))
+    year_month = period.end_date.strftime("%Y-%m")
+    month_start, month_end = parse_year_month(year_month)
     assignment = current_assignment_on(employee, period.end_date)
     project = assignment.project if assignment else None
     rates = salary_rate_for_date(employee, period.end_date, project)
@@ -272,6 +298,68 @@ def calculate_final_payment(period):
     blockers = []
     if not salary or not rates:
         blockers.append("缺離職日適用薪酬")
+    if not assignment or not assignment.payroll_entity_id:
+        blockers.append("發薪單位未設定")
+
+    attendance_prorated_monthly = bool(
+        salary
+        and salary.salary_basis == "monthly"
+        and salary.monthly_pay_method == "attendance_days"
+    )
+    allowance_attendance_days = (
+        decimal_value(
+            case.actual_working_days
+            if case and case.actual_working_days is not None
+            else attendance["working_days"]
+        )
+        if attendance_prorated_monthly
+        else None
+    )
+    fixed_allowance_rows = active_allowances(
+        employee,
+        month_start,
+        month_end,
+        payable_end=period.end_date,
+        attendance_working_days=allowance_attendance_days,
+    )
+    if group == "site_daily" and fixed_allowance_rows:
+        blockers.append("日工暫不支持固定補貼，請先撤回補貼記錄")
+    traffic_meal_allowance = sum(
+        (
+            amount
+            for allowance, amount in fixed_allowance_rows
+            if allowance.allowance_type in {"meal", "transport"}
+        ),
+        Decimal("0"),
+    )
+    special_allowance = sum(
+        (
+            amount
+            for allowance, amount in fixed_allowance_rows
+            if allowance.allowance_type not in {"meal", "transport"}
+        ),
+        Decimal("0"),
+    )
+    fixed_allowance = traffic_meal_allowance + special_allowance
+
+    month_adjustments = PayrollAdjustment.query.filter_by(
+        employee_id=employee.id,
+        year_month=year_month,
+        status="active",
+    ).all()
+    month_adjustment = sum(
+        (decimal_value(item.amount) for item in month_adjustments),
+        Decimal("0"),
+    )
+    medical_expenses = EmployeeWorkInjuryMonthlyExpense.query.filter_by(
+        employee_id=employee.id,
+        year_month=year_month,
+        status="active",
+    ).all()
+    medical_reimbursement = sum(
+        (decimal_value(item.amount) for item in medical_expenses),
+        Decimal("0"),
+    )
 
     confirmed = bool(case)
     working_days = decimal_value(
@@ -283,6 +371,8 @@ def calculate_final_payment(period):
     holiday_days = decimal_value(
         case.actual_holiday_days if case and case.actual_holiday_days is not None else attendance["holiday_days"]
     )
+    if attendance_prorated_monthly:
+        holiday_days = Decimal("0")
     large_ecall_count = decimal_value(
         case.large_ecall_count if case else attendance["large_ecall_count"]
     )
@@ -302,8 +392,17 @@ def calculate_final_payment(period):
     holiday_amount = holiday_rate * holiday_days
     ecall_amount = base_rate * large_ecall_count + ECALL_FLAT_AMOUNT * ecall_count
 
-    allowance = decimal_value(case.allowance_amount if case else 0)
-    other_payment = decimal_value(case.other_payment if case else 0)
+    manual_allowance = decimal_value(case.allowance_amount if case else 0)
+    manual_other_payment = decimal_value(case.other_payment if case else 0)
+    attendance_other_allowance = decimal_value(
+        attendance["other_allowance_amount"]
+    )
+    allowance = fixed_allowance + manual_allowance
+    other_payment = (
+        manual_other_payment
+        + month_adjustment
+        + attendance_other_allowance
+    )
     overpay = decimal_value(case.overpay_amount if case else 0)
     underpay = decimal_value(case.underpay_amount if case else 0)
     special = decimal_value(case.special_compensation if case else 0)
@@ -346,6 +445,11 @@ def calculate_final_payment(period):
     statutory_holiday_pay = statutory_days * holiday_rate
     benefit = calculate_benefit(period, case, benefit_defaults, group)
     blockers.extend(benefit["blockers"])
+    warnings = []
+    if any(not item.evidence_document_id for item in month_adjustments):
+        warnings.append("指定月份調整憑證待補")
+    if any(not item.evidence_document_id for item in medical_expenses):
+        warnings.append("工傷復診／醫療實銷憑證待補")
     payment_in_lieu = decimal_value(period.payment_in_lieu)
     wage_income = (
         base_amount
@@ -389,6 +493,7 @@ def calculate_final_payment(period):
         + payment_in_lieu
         + benefit["net"]
         + special
+        + medical_reimbursement
     )
     return {
         "employee": employee,
@@ -413,7 +518,21 @@ def calculate_final_payment(period):
         "holiday_amount": rounded(holiday_amount),
         "ecall_amount": rounded(ecall_amount),
         "allowance_amount": rounded(allowance),
+        "fixed_allowance_amount": rounded(fixed_allowance),
+        "traffic_meal_allowance_amount": rounded(
+            traffic_meal_allowance
+        ),
+        "special_allowance_amount": rounded(special_allowance),
+        "manual_allowance_amount": rounded(manual_allowance),
         "other_payment": rounded(other_payment),
+        "manual_other_payment": rounded(manual_other_payment),
+        "month_adjustment_amount": rounded(month_adjustment),
+        "attendance_other_allowance_amount": rounded(
+            attendance_other_allowance
+        ),
+        "work_injury_medical_reimbursement_amount": rounded(
+            medical_reimbursement
+        ),
         "overpay_amount": rounded(overpay),
         "underpay_amount": rounded(underpay),
         "legacy_leave_days": legacy_days,
@@ -443,12 +562,26 @@ def calculate_final_payment(period):
         "net_amount": rounded(net),
         "benefit_defaults": benefit_defaults,
         "blockers": list(dict.fromkeys(blockers)),
-        "warnings": list(dict.fromkeys(mpf_warnings + ["離職法定權益為系統估算，必須由 HR 核對。"])),
+        "warnings": list(
+            dict.fromkeys(
+                warnings
+                + mpf_warnings
+                + ["離職法定權益為系統估算，必須由 HR 核對。"]
+            )
+        ),
     }
 
 
-def calculate_final_payments(year_month, payroll_group="all"):
+def calculate_final_payments(
+    year_month,
+    payroll_group="all",
+    payroll_entity_id=None,
+):
     return [
         calculate_final_payment(period)
-        for period in periods_for_final_payment(year_month, payroll_group)
+        for period in periods_for_final_payment(
+            year_month,
+            payroll_group,
+            payroll_entity_id,
+        )
     ]

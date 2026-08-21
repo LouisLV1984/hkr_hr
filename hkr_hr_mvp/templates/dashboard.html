@@ -27,6 +27,10 @@
     <span>{{ t("dashboard.expiry") }}</span>
     <strong>{{ expiry_alerts|length }}</strong>
   </a>
+  <a class="metric-card warn" href="{{ url_for('dashboard.dashboard', month=year_month, panel='confirmation') }}#confirmation-alerts">
+    <span>{{ t("dashboard.confirmation_due") }}</span>
+    <strong>{{ confirmation_alerts|length }}</strong>
+  </a>
 </section>
 
 {% if active_count == 0 %}
@@ -36,6 +40,32 @@
 </section>
 {% else %}
 <section class="dashboard-sections">
+  <details class="panel dashboard-disclosure" id="confirmation-alerts" {% if open_panel == "confirmation" %}open{% endif %}>
+    <summary class="dashboard-section-summary">
+      <strong>{{ t("dashboard.confirmation_with_count", count=confirmation_alerts|length) }}</strong>
+    </summary>
+    <div class="dashboard-section-content">
+      <p class="form-note">{{ t("dashboard.confirmation_hint") }}</p>
+      <div class="table-wrap flat">
+        <table class="dense-table">
+          <thead><tr><th>{{ t("common.employee") }}</th><th>{{ t("employees.payroll_group") }}</th><th>{{ t("employee.probation_end") }}</th><th>{{ t("common.status") }}</th></tr></thead>
+          <tbody>
+            {% for alert in confirmation_alerts %}
+              <tr class="expiry-row {{ alert.severity }}">
+                <td><a href="{{ url_for('employees.view_employee', employee_id=alert.employee.id, tab='employment_status', focus='probation') }}">{{ alert.employee.employee_no }} · {{ alert.employee.display_name }}</a></td>
+                <td>{{ option_t("payroll_group", alert.employee.payroll_group, alert.employee.payroll_group) }}</td>
+                <td>{{ fmt_date(alert.date) }}</td>
+                <td><span class="flag expiry-status {{ alert.severity }}">{% if alert.days_remaining < 0 %}{{ t("dashboard.confirmation_overdue", days=-alert.days_remaining) }}{% elif alert.days_remaining == 0 %}{{ t("dashboard.confirmation_today") }}{% else %}{{ t("dashboard.confirmation_remaining", days=alert.days_remaining) }}{% endif %}</span></td>
+              </tr>
+            {% else %}
+              <tr><td colspan="4" class="empty-cell">{{ t("dashboard.no_confirmation_alerts") }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </details>
+
   <details class="panel dashboard-disclosure" id="expiry-alerts" {% if open_panel == "expiry" %}open{% endif %}>
     <summary class="dashboard-section-summary">
       <strong>{{ t("dashboard.expiry_with_count", count=expiry_alerts|length) }}</strong>

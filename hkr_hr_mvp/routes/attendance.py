@@ -30,10 +30,20 @@ from models import (
     EmployeeCompLeaveCredit,
     EmployeeDocument,
     EmployeeWorkInjuryPeriod,
+    PayrollEmployeeResult,
+    PayrollRun,
     WorkProject,
     db,
 )
-from tools.attendance_policy import attendance_required, policy_on
+from tools.attendance_policy import (
+    assignment_workweek_days,
+    attendance_required,
+    automatic_attendance_rows as policy_automatic_attendance_rows,
+    employee_payroll_holidays,
+    holiday_calendar_kind_for_payroll_group,
+    policy_on,
+    special_work_day_units,
+)
 from tools.hr_core import (
     attendance_period_bounds,
     PAYROLL_GROUPS,
@@ -42,6 +52,7 @@ from tools.hr_core import (
     copy_file_to_employee,
     create_assignment,
     current_assignment_on,
+    current_salary_on,
     current_month,
     file_sha256,
     find_duplicate_employee_document,
@@ -104,29 +115,35 @@ def selected_context():
     return selected_batch, selected_item
 
 
+def payroll_snapshot_exists(employee_id, year_month):
+    if not employee_id or not year_month:
+        return False
+    return (
+        db.session.query(PayrollEmployeeResult.id)
+        .join(PayrollRun, PayrollEmployeeResult.run_id == PayrollRun.id)
+        .filter(
+            PayrollEmployeeResult.employee_id == employee_id,
+            PayrollRun.year_month == year_month,
+        )
+        .first()
+        is not None
+    )
+
+
 def automatic_attendance_rows(employee, start_date, end_date):
-    day = start_date
-    rows = defaultdict(
-        lambda: {
-            "project_id": None,
-            "working_days": 0,
-            "sunday_holiday_days": 0,
+    return [
+        {
+            **row,
             "ot_hours": 0,
             "large_ecall_count": 0,
             "ecall_count": 0,
         }
-    )
-    while day <= end_date:
-        assignment = current_assignment_on(employee, day)
-        project_id = assignment.project_id if assignment else None
-        row = rows[project_id]
-        row["project_id"] = project_id
-        # Never infer special-day work. It must be entered as dated attendance
-        # so payroll can distinguish paid work from the employee's normal rest.
-        if day.weekday() != 6:
-            row["working_days"] += 1
-        day += timedelta(days=1)
-    return [row for row in rows.values() if row["working_days"] or row["sunday_holiday_days"]]
+        for row in policy_automatic_attendance_rows(
+            employee,
+            start_date,
+            end_date,
+        )
+    ]
 
 
 def automatic_forecast_rows(employee, year_month):
@@ -213,10 +230,16 @@ def add_default_full_attendance(summary, employee, year_month):
 
 
 def attendance_segment_rows(employee, summary, year_month):
+    bounds = attendance_period_bounds(year_month)
     rows = {}
-    for kind in ("current_1_20", "previous_21_end"):
-        existing = attendance_segments(summary, kind)
-        rows[kind] = existing or [None]
+    sources = {}
+
+    current_actual = attendance_segments(summary, "current_1_20")
+    rows["current_1_20"] = current_actual or automatic_attendance_rows(
+        employee,
+        *bounds["current_1_20"],
+    )
+    sources["current_1_20"] = "saved" if current_actual else "calendar"
 
     current_forecast = attendance_segments(
         summary,
@@ -225,27 +248,41 @@ def attendance_segment_rows(employee, summary, year_month):
     rows["current_21_end_forecast"] = (
         current_forecast or automatic_forecast_rows(employee, year_month)
     )
+    sources["current_21_end_forecast"] = (
+        "saved" if current_forecast else "calendar"
+    )
+
+    prior_summary = AttendanceMonthlySummary.query.filter_by(
+        employee_id=employee.id,
+        year_month=previous_month(year_month),
+    ).first()
+    prior_saved_forecast = attendance_segments(
+        prior_summary,
+        "current_21_end_forecast",
+    )
+    inferred_previous_tail = prior_saved_forecast or automatic_attendance_rows(
+        employee,
+        *bounds["previous_21_end"],
+    )
+    inferred_source = "prior_forecast" if prior_saved_forecast else "calendar"
+
+    previous_actual = attendance_segments(summary, "previous_21_end")
+    rows["previous_21_end"] = previous_actual or inferred_previous_tail
+    sources["previous_21_end"] = (
+        "saved" if previous_actual else inferred_source
+    )
 
     previous_forecast = attendance_segments(
         summary,
         "previous_21_end_forecast",
     )
-    if previous_forecast:
-        rows["previous_21_end_forecast"] = previous_forecast
-    else:
-        prior_summary = AttendanceMonthlySummary.query.filter_by(
-            employee_id=employee.id,
-            year_month=previous_month(year_month),
-        ).first()
-        prior_rows = attendance_segments(
-            prior_summary,
-            "current_21_end_forecast",
-        )
-        rows["previous_21_end_forecast"] = (
-            prior_rows
-            or [None]
-        )
-    return rows
+    rows["previous_21_end_forecast"] = (
+        previous_forecast or inferred_previous_tail
+    )
+    sources["previous_21_end_forecast"] = (
+        "saved" if previous_forecast else inferred_source
+    )
+    return rows, sources
 
 
 def linked_absences_for_attendance(employee, year_month):
@@ -255,6 +292,14 @@ def linked_absences_for_attendance(employee, year_month):
     previous_start, _ = parse_year_month(previous_month(year_month))
     window_start = previous_start.replace(day=21)
     rows = []
+
+    def attendance_scope(start, end):
+        if end < month_start:
+            return "previous_tail"
+        if start >= month_start:
+            return "current_month"
+        return "both_periods"
+
     for leave in EmployeeAnnualLeaveRecord.query.filter_by(
         employee_id=employee.id,
         status="active",
@@ -268,6 +313,16 @@ def linked_absences_for_attendance(employee, year_month):
                     "end": end,
                     "days": leave.days,
                     "source": "leave",
+                    "visible_start": max(leave.leave_date, window_start),
+                    "visible_end": min(end, month_end),
+                    "is_clipped": (
+                        leave.leave_date < window_start or end > month_end
+                    ),
+                    "scope": attendance_scope(leave.leave_date, end),
+                    "evidence_missing": (
+                        leave.leave_type == "sick"
+                        and not leave.evidence_document_id
+                    ),
                 }
             )
     for injury in EmployeeWorkInjuryPeriod.query.filter_by(
@@ -287,6 +342,17 @@ def linked_absences_for_attendance(employee, year_month):
                     ).days
                     + 1,
                     "source": "work_injury",
+                    "visible_start": max(
+                        injury.payroll_start_date,
+                        window_start,
+                    ),
+                    "visible_end": min(end, month_end),
+                    "is_clipped": False,
+                    "scope": attendance_scope(
+                        injury.payroll_start_date,
+                        end,
+                    ),
+                    "evidence_missing": False,
                 }
             )
     return sorted(rows, key=lambda item: (item["start"], item["kind"]))
@@ -380,7 +446,29 @@ def set_monthly_attendance_requirement(
 @attendance_bp.route("/attendance")
 @login_required
 def attendance_home():
-    year_month = request.args.get("month") or current_month()
+    selected_batch, selected_item = selected_context()
+    summary_id = request.args.get("summary_id", type=int)
+    selected_summary = (
+        db.session.get(AttendanceMonthlySummary, selected_item.summary_id)
+        if selected_item and selected_item.summary_id
+        else None
+    )
+    if summary_id:
+        selected_summary = db.session.get(AttendanceMonthlySummary, summary_id)
+    identity_correction_mode = bool(
+        selected_summary
+        and request.args.get("correct_identity") == "1"
+    )
+    year_month = (
+        (
+            selected_summary.year_month
+            if selected_summary and not identity_correction_mode
+            else None
+        )
+        or request.args.get("month")
+        or (selected_item.effective_year_month if selected_item else None)
+        or current_month()
+    )
     try:
         datetime.strptime(str(year_month), "%Y-%m")
     except (TypeError, ValueError):
@@ -499,22 +587,17 @@ def attendance_home():
     recent_batches = AttendanceBatch.query.order_by(
         AttendanceBatch.created_at.desc()
     ).limit(20).all()
-    selected_batch, selected_item = selected_context()
     if view == "collection" and not selected_batch and recent_batches:
         selected_batch = recent_batches[0]
-    selected_summary = (
-        db.session.get(AttendanceMonthlySummary, selected_item.summary_id)
-        if selected_item and selected_item.summary_id
-        else None
-    )
-    summary_id = request.args.get("summary_id", type=int)
     if summary_id:
-        candidate = db.session.get(AttendanceMonthlySummary, summary_id)
-        if candidate and candidate.year_month == year_month:
-            selected_summary = candidate
+        if selected_summary:
             selected_batch = None
             selected_item = None
-    selected_employee_id = request.args.get("employee_id", type=int)
+    selected_employee_id = (
+        request.args.get("employee_id", type=int)
+        if not selected_summary or identity_correction_mode
+        else selected_summary.employee_id
+    )
     if not selected_employee_id and selected_summary:
         selected_employee_id = selected_summary.employee_id
     selected_employee = (
@@ -522,7 +605,7 @@ def attendance_home():
         if selected_employee_id
         else None
     )
-    if selected_employee:
+    if selected_employee and not selected_item and not summary_id:
         employee_summary = AttendanceMonthlySummary.query.filter_by(
             employee_id=selected_employee.id,
             year_month=year_month,
@@ -555,15 +638,14 @@ def attendance_home():
         index = items.index(selected_item)
         previous_item = items[index - 1] if index > 0 else None
         next_item = items[index + 1] if index + 1 < len(items) else None
-    segment_rows = (
-        attendance_segment_rows(
+    if selected_employee:
+        segment_rows, segment_prefill_sources = attendance_segment_rows(
             selected_employee,
             selected_summary,
             year_month,
         )
-        if selected_employee
-        else {}
-    )
+    else:
+        segment_rows, segment_prefill_sources = {}, {}
     segment_special_days = defaultdict(list)
     if selected_summary:
         for special_day in selected_summary.special_days:
@@ -587,14 +669,105 @@ def attendance_home():
         if selected_employee
         else None
     )
-    employee_choices = list(employed)
-    if (
-        selected_employee
-        and selected_employee.id not in {item.id for item in employee_choices}
-    ):
-        employee_choices.append(selected_employee)
-        employee_choices.sort(key=lambda item: item.employee_no)
+    # The entry picker is for current employees only. Historical attendance
+    # can still show a departed employee when opened directly for correction,
+    # but departed employees are not offered as searchable choices.
+    employee_choices = [
+        employee for employee in employed if employee.derived_status == "active"
+    ]
+    attendance_employee_options = []
+    for employee in employee_choices:
+        option_assignment = current_assignment_on(employee, month_end)
+        option_payroll_group = (
+            option_assignment.payroll_group
+            if option_assignment
+            else employee.payroll_group
+        )
+        search_terms = {
+            employee.employee_no or "",
+            employee.chinese_name or "",
+            employee.english_name or "",
+            *chinese_search_variants(employee.chinese_name or ""),
+        }
+        attendance_employee_options.append(
+            {
+                "employee": employee,
+                "payroll_group": option_payroll_group,
+                "workweek_days": str(
+                    assignment_workweek_days(option_assignment)
+                ),
+                "monthly_pay_method": (
+                    salary.monthly_pay_method
+                    if (
+                        (salary := current_salary_on(employee, month_end))
+                        and salary.salary_basis == "monthly"
+                    )
+                    else "full_month"
+                ),
+                "search_text": " ".join(
+                    term for term in sorted(search_terms) if term
+                ),
+            }
+        )
     period_bounds = attendance_period_bounds(year_month)
+    selected_assignment = (
+        current_assignment_on(selected_employee, month_end)
+        if selected_employee
+        else None
+    )
+    selected_previous_assignment = (
+        current_assignment_on(
+            selected_employee,
+            period_bounds["previous_21_end"][1],
+        )
+        if selected_employee
+        else None
+    )
+    period_default_projects = {
+        kind: (
+            assignment.project
+            if (
+                assignment := current_assignment_on(
+                    selected_employee,
+                    bounds[1],
+                )
+            )
+            else None
+        )
+        for kind, bounds in period_bounds.items()
+    } if selected_employee else {}
+    selected_workweek_days = str(
+        assignment_workweek_days(selected_assignment)
+    )
+    current_sundays = []
+    calendar_day = month_start
+    while calendar_day <= month_end:
+        if calendar_day.weekday() == 6:
+            current_sundays.append(calendar_day)
+        calendar_day += timedelta(days=1)
+    current_statutory_holidays = (
+        employee_payroll_holidays(
+            selected_employee, month_start, month_end
+        )
+        if selected_employee
+        else {}
+    )
+    special_date_start = period_bounds["previous_21_end"][0]
+    selectable_statutory_holidays = (
+        employee_payroll_holidays(
+            selected_employee, special_date_start, month_end
+        )
+        if selected_employee
+        else {}
+    )
+    linked_absences = linked_absences_for_attendance(selected_employee, year_month)
+    linked_absence_counts = [
+        (kind, sum(1 for item in linked_absences if item["kind"] == kind))
+        for kind in ("annual", "sick", "unpaid", "work_injury")
+    ]
+    linked_absence_counts = [
+        (kind, count) for kind, count in linked_absence_counts if count
+    ]
     return render_template(
         "attendance/index.html",
         year_month=year_month,
@@ -616,24 +789,49 @@ def attendance_home():
         selected_item=selected_item,
         selected_summary=selected_summary,
         edit_summary_mode=bool(selected_summary and not selected_item),
+        identity_correction_mode=identity_correction_mode,
         selected_employee_id=selected_employee_id,
         selected_employee=selected_employee,
-        segment_rows=segment_rows,
-        segment_special_days=segment_special_days,
-        linked_absences=linked_absences_for_attendance(
-            selected_employee, year_month
+        selected_assignment=selected_assignment,
+        selected_previous_assignment=selected_previous_assignment,
+        period_default_projects=period_default_projects,
+        selected_workweek_days=selected_workweek_days,
+        selected_holiday_calendar_kind=(
+            holiday_calendar_kind_for_payroll_group(
+                selected_assignment.payroll_group
+                if selected_assignment
+                else selected_employee.payroll_group
+            )
+            if selected_employee
+            else "statutory"
         ),
+        selected_salary=(
+            current_salary_on(selected_employee, month_end)
+            if selected_employee
+            else None
+        ),
+        segment_rows=segment_rows,
+        segment_prefill_sources=segment_prefill_sources,
+        segment_special_days=segment_special_days,
+        linked_absences=linked_absences,
+        linked_absence_counts=linked_absence_counts,
         previous_summary=previous_summary,
         duplicate_document=duplicate_document,
         previous_item=previous_item,
         next_item=next_item,
         employees=employee_choices,
+        attendance_employee_options=attendance_employee_options,
         projects=WorkProject.query.filter_by(active=True).order_by(
             WorkProject.name
         ).all(),
         position_options=reference_options("position"),
         payroll_groups=PAYROLL_GROUPS,
         period_bounds=period_bounds,
+        current_sundays=current_sundays,
+        current_statutory_holidays=current_statutory_holidays,
+        selectable_statutory_holiday_dates=[
+            item.isoformat() for item in selectable_statutory_holidays
+        ],
     )
 
 
@@ -793,14 +991,14 @@ def update_monthly_exemptions():
 @attendance_bp.route("/attendance/batches", methods=["POST"])
 @login_required
 def create_batch():
-    year_month = request.form.get("year_month")
+    # Legacy clients may still submit a batch month. The current UI does not:
+    # each PDF owns its month and merely receives this value as an initial
+    # default until HR confirms it in the detail page.
+    year_month = request.form.get("year_month", "").strip() or current_month()
     try:
-        datetime.strptime(year_month or "", "%Y-%m")
-    except ValueError:
-        flash("請選擇考勤月份。", "error")
-        return redirect(
-            url_for("attendance.attendance_home", view="collection")
-        )
+        datetime.strptime(year_month, "%Y-%m")
+    except (TypeError, ValueError):
+        year_month = current_month()
     uploads = [
         item
         for item in request.files.getlist("files")
@@ -848,6 +1046,7 @@ def create_batch():
                 mime_type="application/pdf",
                 file_size=target.stat().st_size,
                 content_sha256=file_sha256(target),
+                year_month=year_month,
                 status="pending",
             )
         )
@@ -901,8 +1100,8 @@ def parsed_special_dates(value):
     return rows
 
 
-def parsed_special_day_entries_payload(value):
-    """Return one dated Sunday/statutory-holiday entry per selected date."""
+def parsed_special_day_entries_payload(value, employee=None, holiday_dates=None):
+    """Return dated non-normal-work entries with schedule-aware day units."""
     try:
         values = json.loads(value or "[]")
     except (TypeError, ValueError):
@@ -915,11 +1114,17 @@ def parsed_special_day_entries_payload(value):
         work_date = parse_date(str(item.get("date") or "").strip())
         if not work_date or work_date in seen:
             continue
+        units = (
+            special_work_day_units(employee, work_date, holiday_dates)
+            if employee
+            else parse_decimal("1")
+        )
         entries.append(
             {
                 "work_date": work_date,
-                "session": "full_day",
-                "days": parse_decimal("1"),
+                "session": "pm" if units == parse_decimal("0.5") else "full_day",
+                "days": units or parse_decimal("0"),
+                "valid": units is not None,
             }
         )
         seen.add(work_date)
@@ -934,6 +1139,21 @@ def validate_sunday_holiday_entries(year_month):
         "previous_21_end": (previous_start.replace(day=21), previous_end),
     }
     used_dates = set()
+    employee = db.session.get(Employee, request.form.get("employee_id", type=int))
+    employee_assignment = (
+        current_assignment_on(employee, month_end) if employee else None
+    )
+    employee_group = (
+        employee_assignment.payroll_group
+        if employee_assignment
+        else (employee.payroll_group if employee else "site_daily")
+    )
+    holiday_term = "公眾假期" if employee_group == "management" else "法定假日"
+    holiday_dates = (
+        employee_payroll_holidays(employee, previous_start, month_end)
+        if employee
+        else {}
+    )
     for prefix, (period_start, period_end) in bounds.items():
         day_values = request.form.getlist(f"{prefix}_holiday_days")
         payloads = request.form.getlist(f"{prefix}_special_work_entries")
@@ -944,22 +1164,90 @@ def validate_sunday_holiday_entries(year_month):
                 day_values[index] if index < len(day_values) else "0",
                 parse_decimal("0"),
             )
-            entries = parsed_special_day_entries_payload(payload)
+            entries = parsed_special_day_entries_payload(
+                payload, employee, holiday_dates
+            )
             selected_days = sum(
                 (entry["days"] for entry in entries),
                 parse_decimal("0"),
             )
-            if requested_days < 0 or requested_days != int(requested_days):
-                return "星期日／法定節假日出勤日數目前必須以 1 日為單位。"
+            if requested_days < 0 or requested_days % parse_decimal("0.5"):
+                return "非正常工作日出勤日數必須以 0.5 日為單位。"
+            if any(not entry["valid"] for entry in entries):
+                if employee and any(
+                    (
+                        assignment := current_assignment_on(
+                            employee, entry["work_date"]
+                        )
+                    )
+                    and assignment.payroll_group == "site_daily"
+                    for entry in entries
+                ):
+                    return (
+                        "日工的星期日工作應計入一般實際出勤日數；"
+                        "本欄只可選擇法定假日實際工作日期。"
+                    )
+                return f"所選日期並非該員工工作制外日期或{holiday_term}。"
             if requested_days != selected_days:
-                return "星期日／法定節假日的日期數必須與出勤日數一致。"
+                return f"工作制外／{holiday_term}的日期數必須與出勤日數一致。"
             for entry in entries:
                 work_date = entry["work_date"]
                 if work_date < period_start or work_date > period_end:
-                    return "星期日／法定節假日日期必須屬於所填寫的考勤期間。"
+                    return f"工作制外／{holiday_term}日期必須屬於所填寫的考勤期間。"
                 if work_date in used_dates:
-                    return "同一星期日／法定節假日日期不可重複填寫。"
+                    return f"同一工作制外／{holiday_term}日期不可重複填寫。"
                 used_dates.add(work_date)
+    return None
+
+
+def validate_attendance_segment_totals(year_month):
+    """Reject impossible or malformed four-period attendance totals."""
+    bounds = attendance_period_bounds(year_month)
+    for prefix, (period_start, period_end) in bounds.items():
+        span_days = (period_end - period_start).days + 1
+        working_values = request.form.getlist(f"{prefix}_working_days")
+        holiday_values = request.form.getlist(f"{prefix}_holiday_days")
+        ot_values = request.form.getlist(f"{prefix}_ot_hours")
+        large_values = request.form.getlist(f"{prefix}_large_ecall_count")
+        ecall_values = request.form.getlist(f"{prefix}_ecall_count")
+        row_count = max(
+            len(request.form.getlist(f"{prefix}_project_id")),
+            len(working_values),
+            len(holiday_values),
+            1,
+        )
+        working_total = parse_decimal("0")
+        holiday_total = parse_decimal("0")
+        for index in range(row_count):
+            working = parse_decimal(
+                working_values[index] if index < len(working_values) else "0",
+                parse_decimal("0"),
+            )
+            holiday = parse_decimal(
+                holiday_values[index] if index < len(holiday_values) else "0",
+                parse_decimal("0"),
+            )
+            if working < 0 or working % parse_decimal("0.5"):
+                return "一般工作日出勤日數必須為非負數，並以 0.5 日為單位。"
+            if holiday < 0 or holiday % parse_decimal("0.5"):
+                return "星期日／法定節假日出勤日數必須為非負數，並以 0.5 日為單位。"
+            working_total += working
+            holiday_total += holiday
+        if working_total + holiday_total > span_days:
+            return (
+                f"{period_start:%Y-%m-%d} 至 {period_end:%Y-%m-%d} "
+                f"的出勤合計不可超過 {span_days} 日。"
+            )
+        for values, label, integer_only in (
+            (ot_values, "OT 時數", False),
+            (large_values, "大 E-CALL 次數", True),
+            (ecall_values, "普通 E-CALL 次數", True),
+        ):
+            for value in values:
+                parsed = parse_decimal(value, parse_decimal("0"))
+                if parsed < 0 or (integer_only and parsed != int(parsed)):
+                    suffix = "非負整數" if integer_only else "非負數"
+                    return f"{label}必須為{suffix}。"
     return None
 
 
@@ -1026,6 +1314,13 @@ def add_special_days(
 
 
 def add_segments(summary, prefix):
+    _, month_end = parse_year_month(summary.year_month)
+    salary = current_salary_on(summary.employee, month_end)
+    attendance_prorated = bool(
+        salary
+        and salary.salary_basis == "monthly"
+        and salary.monthly_pay_method == "attendance_days"
+    )
     projects = request.form.getlist(f"{prefix}_project_id")
     working_days = request.form.getlist(f"{prefix}_working_days")
     ot_hours = request.form.getlist(f"{prefix}_ot_hours")
@@ -1066,7 +1361,8 @@ def add_segments(summary, prefix):
         entries = parsed_special_day_entries_payload(
             special_entry_values[index]
             if index < len(special_entry_values)
-            else ""
+            else "",
+            summary.employee,
         )
         if not entries:
             legacy_dates = []
@@ -1089,6 +1385,9 @@ def add_segments(summary, prefix):
         )
         if entries:
             holiday = dated_holiday_days
+        if attendance_prorated:
+            holiday = parse_decimal("0")
+            entries = []
         large_ecall = max(
             0,
             int(
@@ -1147,25 +1446,50 @@ def add_segments(summary, prefix):
 @login_required
 def save_item(item_id):
     item = db.get_or_404(AttendanceBatchItem, item_id)
+    if item.summary_id:
+        # Keep old bookmarks/forms safe while the UI now posts saved items to
+        # the explicit correction route.
+        return correct_summary(item.summary_id)
+    year_month = (
+        request.form.get("year_month", "").strip()
+        or item.effective_year_month
+        or current_month()
+    )
+    try:
+        datetime.strptime(year_month, "%Y-%m")
+    except (TypeError, ValueError):
+        flash("請選擇有效的考勤月份。", "error")
+        return redirect(
+            url_for(
+                "attendance.attendance_home",
+                month=item.effective_year_month or current_month(),
+                view="collection",
+                batch_id=item.batch_id,
+                item_id=item.id,
+            )
+        )
     employee = db.session.get(Employee, request.form.get("employee_id", type=int))
     if not employee:
         flash("必須選擇員工。", "error")
         return redirect(
             url_for(
                 "attendance.attendance_home",
-                month=item.batch.year_month,
+                month=year_month,
                 batch_id=item.batch_id,
                 item_id=item.id,
             )
         )
 
-    special_day_error = validate_sunday_holiday_entries(item.batch.year_month)
-    if special_day_error:
-        flash(special_day_error, "error")
+    attendance_error = (
+        validate_attendance_segment_totals(year_month)
+        or validate_sunday_holiday_entries(year_month)
+    )
+    if attendance_error:
+        flash(attendance_error, "error")
         return redirect(
             url_for(
                 "attendance.attendance_home",
-                month=item.batch.year_month,
+                month=year_month,
                 view="collection",
                 batch_id=item.batch_id,
                 item_id=item.id,
@@ -1179,7 +1503,7 @@ def save_item(item_id):
         employee.id,
         "attendance_pdf",
         item_sha256,
-        effective_month=item.batch.year_month,
+        effective_month=year_month,
     )
     if duplicate_document and not parse_bool(
         request.form.get("confirm_duplicate")
@@ -1189,7 +1513,7 @@ def save_item(item_id):
         return redirect(
             url_for(
                 "attendance.attendance_home",
-                month=item.batch.year_month,
+                month=year_month,
                 batch_id=item.batch_id,
                 item_id=item.id,
                 employee_id=employee.id,
@@ -1199,12 +1523,12 @@ def save_item(item_id):
 
     summary = AttendanceMonthlySummary.query.filter_by(
         employee_id=employee.id,
-        year_month=item.batch.year_month,
+        year_month=year_month,
     ).first()
     if not summary:
         summary = AttendanceMonthlySummary(
             employee=employee,
-            year_month=item.batch.year_month,
+            year_month=year_month,
         )
         db.session.add(summary)
         db.session.flush()
@@ -1218,7 +1542,7 @@ def save_item(item_id):
     document = EmployeeDocument(
         employee=employee,
         category="attendance_pdf",
-        title=f"{item.batch.year_month} 考勤表",
+        title=f"{year_month} 考勤表",
         original_filename=item.original_filename,
         stored_path=str(path),
         mime_type=item.mime_type,
@@ -1226,7 +1550,7 @@ def save_item(item_id):
         file_size=path.stat().st_size,
         content_sha256=item_sha256,
         status="active",
-        effective_month=item.batch.year_month,
+        effective_month=year_month,
         uploaded_by=current_user.id,
     )
     db.session.add(document)
@@ -1264,13 +1588,14 @@ def save_item(item_id):
 
     item.status = "saved"
     item.employee = employee
+    item.year_month = year_month
     item.summary_id = summary.id
     write_audit(
         "attendance_saved",
         "AttendanceMonthlySummary",
         summary.id,
         employee_id=employee.id,
-        detail=f"{item.batch.year_month} 考勤已錄入",
+        detail=f"{year_month} 考勤已錄入",
     )
     db.session.commit()
     next_item = next(
@@ -1279,7 +1604,7 @@ def save_item(item_id):
     )
     flash("考勤已保存。", "success")
     target = {
-        "month": item.batch.year_month,
+        "month": next_item.effective_year_month if next_item else year_month,
         "view": "collection",
         "batch_id": item.batch_id,
     }
@@ -1297,6 +1622,20 @@ def save_item(item_id):
 @login_required
 def correct_summary(summary_id):
     summary = db.get_or_404(AttendanceMonthlySummary, summary_id)
+    source_year_month = summary.year_month
+    target_year_month = request.form.get("year_month", source_year_month).strip()
+    try:
+        datetime.strptime(target_year_month, "%Y-%m")
+    except (TypeError, ValueError):
+        flash("請選擇有效的考勤月份。", "error")
+        return redirect(
+            url_for(
+                "attendance.attendance_home",
+                month=source_year_month,
+                employee_id=summary.employee_id,
+                summary_id=summary.id,
+            )
+        )
     employee = db.session.get(
         Employee,
         request.form.get("employee_id", type=int),
@@ -1311,9 +1650,12 @@ def correct_summary(summary_id):
                 summary_id=summary.id,
             )
         )
-    special_day_error = validate_sunday_holiday_entries(summary.year_month)
-    if special_day_error:
-        flash(special_day_error, "error")
+    attendance_error = (
+        validate_attendance_segment_totals(target_year_month)
+        or validate_sunday_holiday_entries(target_year_month)
+    )
+    if attendance_error:
+        flash(attendance_error, "error")
         return redirect(
             url_for(
                 "attendance.attendance_home",
@@ -1322,23 +1664,32 @@ def correct_summary(summary_id):
                 summary_id=summary.id,
             )
         )
-    if employee.id != summary.employee_id:
-        duplicate = AttendanceMonthlySummary.query.filter_by(
-            employee_id=employee.id,
-            year_month=summary.year_month,
-        ).first()
-        if duplicate and duplicate.id != summary.id:
-            flash("目標員工本月已有考勤，請先核對或撤回該筆記錄。", "error")
-            return redirect(
-                url_for(
-                    "attendance.attendance_home",
-                    month=summary.year_month,
-                    employee_id=summary.employee_id,
-                    summary_id=summary.id,
-                )
+    duplicate = AttendanceMonthlySummary.query.filter_by(
+        employee_id=employee.id,
+        year_month=target_year_month,
+    ).first()
+    if duplicate and duplicate.id != summary.id:
+        flash(
+            f"該員工在 {target_year_month} 已有考勤，請先核對原有記錄。",
+            "error",
+        )
+        return redirect(
+            url_for(
+                "attendance.attendance_home",
+                month=source_year_month,
+                employee_id=summary.employee_id,
+                summary_id=summary.id,
             )
+        )
     before = summary_snapshot(summary)
     old_employee_id = summary.employee_id
+    payroll_was_exported = any(
+        payroll_snapshot_exists(employee_id, month)
+        for employee_id, month in {
+            (old_employee_id, source_year_month),
+            (employee.id, target_year_month),
+        }
+    )
     if employee.id != old_employee_id and summary.document:
         old_document = summary.document
         new_path = copy_file_to_employee(
@@ -1350,7 +1701,7 @@ def correct_summary(summary_id):
         new_document = EmployeeDocument(
             employee=employee,
             category="attendance_pdf",
-            title=old_document.title,
+            title=f"{target_year_month} 考勤表",
             original_filename=old_document.original_filename,
             stored_path=str(new_path),
             mime_type=old_document.mime_type,
@@ -1359,16 +1710,20 @@ def correct_summary(summary_id):
             content_sha256=old_document.content_sha256
             or file_sha256(new_path),
             status="active",
-            effective_month=summary.year_month,
+            effective_month=target_year_month,
             uploaded_by=current_user.id,
         )
         db.session.add(new_document)
         db.session.flush()
         old_document.status = "replaced"
         old_document.replaced_by_document_id = new_document.id
-        old_document.replacement_reason = "更正考勤所屬員工"
+        old_document.replacement_reason = "更正考勤所屬員工／月份"
         summary.document = new_document
+    elif summary.document and target_year_month != source_year_month:
+        summary.document.title = f"{target_year_month} 考勤表"
+        summary.document.effective_month = target_year_month
     summary.employee = employee
+    summary.year_month = target_year_month
     summary.status = "received"
     summary.special_day_handling = (
         "comp_leave"
@@ -1381,6 +1736,7 @@ def correct_summary(summary_id):
     summary.remarks = request.form.get("remarks", "").strip() or None
     for item in AttendanceBatchItem.query.filter_by(summary_id=summary.id):
         item.employee = employee
+        item.year_month = target_year_month
         item.status = "saved"
     void_comp_credits_for_summary(summary)
     for segment in list(summary.segments):
@@ -1399,7 +1755,12 @@ def correct_summary(summary_id):
         summary.id,
         employee_id=employee.id,
         detail=(
-            f"更正 {summary.year_month} 考勤"
+            f"更正 {source_year_month} 考勤"
+            + (
+                f"，月份改為 {target_year_month}"
+                if source_year_month != target_year_month
+                else ""
+            )
             + (
                 f"，員工由 {old_employee_id} 改為 {employee.id}"
                 if old_employee_id != employee.id
@@ -1411,10 +1772,15 @@ def correct_summary(summary_id):
     )
     db.session.commit()
     flash("考勤資料已更正。", "success")
+    if payroll_was_exported:
+        flash(
+            "原月份或新月份曾經導出 Payroll。考勤更正後，請重新核對及導出 Payroll。",
+            "warning",
+        )
     return redirect(
         url_for(
             "attendance.attendance_home",
-            month=summary.year_month,
+            month=target_year_month,
             employee_id=employee.id,
             summary_id=summary.id,
         )
@@ -1468,7 +1834,7 @@ def skip_item(item_id):
         None,
     )
     target = {
-        "month": item.batch.year_month,
+        "month": next_item.effective_year_month if next_item else item.effective_year_month,
         "view": "collection",
         "batch_id": item.batch_id,
     }
@@ -1483,7 +1849,6 @@ def skip_item(item_id):
 @login_required
 def delete_batch(batch_id):
     batch = db.get_or_404(AttendanceBatch, batch_id)
-    year_month = batch.year_month
     folder = Path(current_app.config["ATTENDANCE_BATCH_ROOT"]) / batch.batch_no
     db.session.delete(batch)
     db.session.commit()
@@ -1492,7 +1857,6 @@ def delete_batch(batch_id):
     return redirect(
         url_for(
             "attendance.attendance_home",
-            month=year_month,
             view="collection",
         )
     )
@@ -1687,7 +2051,7 @@ def transfer_project(item_id):
     return redirect(
         url_for(
             "attendance.attendance_home",
-            month=item.batch.year_month,
+            month=item.effective_year_month,
             batch_id=item.batch_id,
             item_id=item.id,
         )

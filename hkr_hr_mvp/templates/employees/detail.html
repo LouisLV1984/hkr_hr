@@ -12,6 +12,7 @@
 {% block title %}{{ employee.display_name }} - HKR HR{% endblock %}
 {% block content %}
 {% set assignment = employee.current_assignment %}
+{% set default_workweek_days = assignment.workweek_days if assignment else (5 if employee.payroll_group == 'management' else 6) %}
 {% set salary = employee.current_salary %}
 {% set mpf = employee.current_mpf %}
 {% set period = employee.current_period %}
@@ -109,7 +110,7 @@
     <article class="panel current-state-card">
       <div class="section-head"><div><span class="eyebrow">{{ t("employee.current_assignment") }}</span><h2>{% if assignment and assignment.primary_position %}{{ assignment.primary_position.display_name }}{% elif assignment %}{{ t("employee.position_pending") }}{% else %}{{ t("employee.assignment_not_created") }}{% endif %}</h2></div><button class="mini-btn" type="button" data-dialog-open="add-assignment-dialog">{{ t("employee.add_assignment_record") }}</button></div>
       <dl class="detail-grid">
-        <div><dt>{{ t("employee.effective_date") }}</dt><dd>{{ fmt_date(assignment.effective_from) if assignment else "-" }}</dd></div>
+        <div><dt>{{ t("employees.start_date") }}</dt><dd>{{ fmt_date(period.start_date) if period else "-" }}</dd></div>
         <div><dt>{{ t("employee.work_region") }}</dt><dd>{{ assignment.region.display_name if assignment and assignment.region else "-" }}</dd></div>
         <div><dt>{{ t("common.project") }}</dt><dd>{{ project_t(assignment.project, t("common.unassigned")) if assignment else "-" }}</dd></div>
         <div><dt>{{ t("common.department") }}</dt><dd>{{ assignment.department.display_name if assignment and assignment.department else "-" }}</dd></div>
@@ -119,6 +120,8 @@
         <div><dt>{{ t("employee.social_entity") }}</dt><dd>{{ assignment.social_insurance_entity.display_name if assignment and assignment.social_insurance_entity else "-" }}</dd></div>
         <div><dt>{{ t("employee.dispatch_entity") }}</dt><dd>{{ assignment.labour_dispatch_entity.display_name if assignment and assignment.labour_dispatch_entity else "-" }}</dd></div>
         <div><dt>{{ t("employees.payroll_group") }}</dt><dd>{{ option_t("payroll_group", assignment.payroll_group, dict(payroll_groups).get(assignment.payroll_group, assignment.payroll_group)) if assignment else "-" }}</dd></div>
+        <div><dt>{{ t("employee.holiday_calendar") }}</dt><dd>{% if assignment %}{{ t("employee.holiday_calendar_public") if assignment.payroll_group == "management" else t("employee.holiday_calendar_statutory") }}<small>{{ t("employee.holiday_calendar_hint") }}</small>{% else %}-{% endif %}</dd></div>
+        {% if assignment and assignment.payroll_group in ('site_monthly', 'management') %}<div><dt>{{ t("employee.workweek_days") }}</dt><dd>{{ t("employee.workweek_five_half") if assignment.workweek_days|float == 5.5 else (t("employee.workweek_five") if assignment.workweek_days|float == 5 else t("employee.workweek_six")) }}</dd></div>{% endif %}
         <div><dt>{{ t("common.evidence") }}</dt><dd>{% if assignment and assignment.evidence_document and assignment.evidence_document.status == "active" %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=assignment.evidence_document.id) }}">{{ assignment.evidence_document.original_filename }}</a>{% elif assignment %}<span class="flag danger">{{ t("common.pending") }}</span>{% else %}-{% endif %}</dd></div>
       </dl>
     </article>
@@ -127,6 +130,7 @@
       <div class="salary-mpf-current-grid">
         <dl class="detail-grid">
           <div><dt>{{ t("employee.salary_basis") }}</dt><dd>{% if salary %}{{ t("employee.monthly") if salary.salary_basis == "monthly" else t("employee.daily") }}{% else %}-{% endif %}</dd></div>
+          {% if salary and salary.salary_basis == "monthly" %}<div><dt>{{ t("employee.monthly_pay_method") }}</dt><dd>{{ t("employee.monthly_pay_attendance_days") if salary.monthly_pay_method == "attendance_days" else t("employee.monthly_pay_full_month") }}</dd></div>{% endif %}
           <div><dt>{{ t("employee.effective_date") }}</dt><dd>{{ fmt_date(salary.effective_from) if salary else "-" }}</dd></div>
           <div><dt>{{ t("common.evidence") }}</dt><dd>{% if salary and salary.evidence_document and salary.evidence_document.status == "active" %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=salary.evidence_document.id) }}">{{ salary.evidence_document.original_filename }}</a>{% elif salary %}<span class="flag danger">{{ t("common.pending") }}</span>{% else %}-{% endif %}</dd></div>
         </dl>
@@ -141,10 +145,11 @@
       </div>
     </article>
     <article class="panel current-state-card">
-      <div class="section-head"><div><span class="eyebrow">{{ t("employee.current_allowances") }}</span><h2>{{ allowances|selectattr('status', 'equalto', 'active')|list|length }} {{ t("employee.allowance_items") }}</h2></div><button class="mini-btn" type="button" data-dialog-open="add-allowance-dialog">{{ t("employee.add_allowance") }}</button></div>
+      <div class="section-head"><div><span class="eyebrow">{{ t("employee.current_allowances") }}</span><h2>{{ allowances|selectattr('status', 'equalto', 'active')|list|length }} {{ t("employee.allowance_items") }}</h2></div>{% if employee.payroll_group != 'site_daily' %}<button class="mini-btn" type="button" data-dialog-open="add-allowance-dialog">{{ t("employee.add_allowance") }}</button>{% endif %}</div>
+      <p class="form-note">{{ t("employee.allowance_daily_rule") if employee.payroll_group != 'site_daily' else t("employee.allowance_daily_not_supported") }}</p>
       <ul class="compact-list">
         {% for item in allowances if item.status == 'active' %}
-          <li><strong>{{ t("allowance." ~ item.allowance_type) }} · {{ item.currency }} {{ fmt_money(item.amount) }}</strong><span>{{ fmt_date(item.effective_from) }}{% if item.effective_to %} – {{ fmt_date(item.effective_to) }}{% else %} – {{ t("employee.long_term") }}{% endif %}{% if salary and item.currency != salary.currency %} · {{ t("employee.exchange_rate") }} {{ item.exchange_rate or '-' }}{% endif %}</span></li>
+          <li><strong>{{ t("allowance." ~ item.allowance_type) }} · {{ item.currency }} {{ fmt_money(item.amount) }} / {{ t("employee.per_day") if item.allowance_type in ('meal', 'transport') else t("employee.per_month") }}</strong><span>{{ fmt_date(item.effective_from) }}{% if item.effective_to %} – {{ fmt_date(item.effective_to) }}{% else %} – {{ t("employee.long_term") }}{% endif %}{% if salary and item.currency != salary.currency %} · {{ t("employee.exchange_rate") }} {{ item.exchange_rate or '-' }}{% endif %}</span></li>
         {% else %}<li><span>{{ t("common.not_set") }}</span></li>{% endfor %}
       </ul>
     </article>
@@ -155,7 +160,7 @@
   </div>
   <div>
     <dialog class="app-dialog record-editor-dialog" id="add-assignment-dialog">
-      <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.add_assignment', employee_id=employee.id) }}" enctype="multipart/form-data">
+      <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.add_assignment', employee_id=employee.id) }}" enctype="multipart/form-data" data-assignment-form>
       <div class="section-head record-editor-head"><h2>{{ t("employee.add_assignment_record") }}</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div>
       <div class="record-editor-body">
       <p class="form-note">{{ t("employee.adjust_assignment_hint") if assignment else t("employee.create_assignment_hint") }} {{ t("employee.effective_hint") }}</p>
@@ -170,6 +175,7 @@
         <label>{{ quick_reference_label(t("employee.social_entity"), "social_insurance_entity", "social_insurance_entity_id") }}<select name="social_insurance_entity_id"><option value="">{{ t("common.not_set") }}</option>{% for item in refs.social_insurance_entity %}<option value="{{ item.id }}" {% if assignment and assignment.social_insurance_entity_id == item.id %}selected{% endif %}>{{ item.display_name }}</option>{% endfor %}</select></label>
         <label>{{ quick_reference_label(t("employee.dispatch_entity"), "labour_dispatch_entity", "labour_dispatch_entity_id") }}<select name="labour_dispatch_entity_id"><option value="">{{ t("common.not_set") }}</option>{% for item in refs.labour_dispatch_entity %}<option value="{{ item.id }}" {% if assignment and assignment.labour_dispatch_entity_id == item.id %}selected{% endif %}>{{ item.display_name }}</option>{% endfor %}</select></label>
         <label><span>{{ t("employees.payroll_group") }}</span><select name="payroll_group">{% for code, label in payroll_groups %}<option value="{{ code }}" {% if (assignment and assignment.payroll_group == code) or (not assignment and employee.payroll_group == code) %}selected{% endif %}>{{ option_t("payroll_group", code, label) }}</option>{% endfor %}</select></label>
+        <label data-workweek-field><span>{{ t("employee.workweek_days") }}</span><select name="workweek_days"><option value="5" {% if default_workweek_days|float == 5 %}selected{% endif %}>{{ t("employee.workweek_five") }}</option><option value="5.5" {% if default_workweek_days|float == 5.5 %}selected{% endif %}>{{ t("employee.workweek_five_half") }}</option><option value="6" {% if default_workweek_days|float == 6 %}selected{% endif %}>{{ t("employee.workweek_six") }}</option></select><small>{{ t("employee.workweek_hint") }}</small></label>
         <label><span>{{ t("employee.change_evidence") }}</span><input type="file" name="evidence"></label>
         <label class="wide"><span>{{ t("common.remarks") }}</span><textarea name="remarks"></textarea></label>
       </div>
@@ -178,13 +184,14 @@
       </form>
     </dialog>
     <dialog class="app-dialog record-editor-dialog" id="add-salary-dialog">
-      <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.add_salary', employee_id=employee.id) }}" enctype="multipart/form-data">
+      <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.add_salary', employee_id=employee.id) }}" enctype="multipart/form-data" data-salary-form>
       <div class="section-head record-editor-head"><h2>{{ t("employee.add_salary_record") }}</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div>
       <div class="record-editor-body">
       <p class="form-note">{{ t("employee.effective_hint") }}</p>
       <div class="stack-form">
         <label><span>{{ t("employee.effective_date") }} *</span><input type="date" name="effective_from" required></label>
         <label><span>{{ t("employee.salary_basis") }}</span><select name="salary_basis"><option value="monthly" {% if default_salary_basis == "monthly" %}selected{% endif %}>{{ t("employee.monthly") }}</option><option value="daily" {% if default_salary_basis == "daily" %}selected{% endif %}>{{ t("employee.daily") }}</option></select></label>
+        <label data-monthly-pay-method><span>{{ t("employee.monthly_pay_method") }}</span><select name="monthly_pay_method"><option value="full_month">{{ t("employee.monthly_pay_full_month") }}</option><option value="attendance_days">{{ t("employee.monthly_pay_attendance_days") }}</option></select><small>{{ t("employee.monthly_pay_exception_hint") }}</small></label>
         <label>{{ quick_reference_label(t("common.currency"), "currency", "currency", "code") }}<select name="currency">{% for item in refs.currency %}<option value="{{ item.code }}" {% if default_currency == item.code %}selected{% endif %}>{{ item.display_name }}</option>{% endfor %}</select></label>
         <label><span>{{ t("common.amount") }}</span><input name="amount" data-money-input required></label>
         <label><span>{{ t("employee.change_evidence") }}</span><input type="file" name="evidence"></label>
@@ -210,15 +217,15 @@
       <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
       </form>
     </dialog>
-    <dialog class="app-dialog record-editor-dialog" id="add-allowance-dialog">
+    {% if employee.payroll_group != 'site_daily' %}<dialog class="app-dialog record-editor-dialog" id="add-allowance-dialog">
       <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.add_allowance', employee_id=employee.id) }}" enctype="multipart/form-data">
         <div class="section-head record-editor-head"><div><h2>{{ t("employee.add_allowance") }}</h2><p>{{ t("employee.allowance_proration_hint") }}</p></div><button class="icon-btn" type="button" data-dialog-close>×</button></div>
         <div class="record-editor-body">
         <div class="form-grid">
-          <label><span>{{ t("employee.allowance_type") }} *</span><select name="allowance_type" required><option value="meal">{{ t("allowance.meal") }}</option><option value="transport">{{ t("allowance.transport") }}</option><option value="special">{{ t("allowance.special") }}</option></select></label>
+          <label><span>{{ t("employee.allowance_type") }} *</span><select name="allowance_type" required data-allowance-type><option value="meal">{{ t("allowance.meal") }}</option><option value="transport">{{ t("allowance.transport") }}</option><option value="special">{{ t("allowance.special") }}</option></select></label>
           <label><span>{{ t("employee.effective_date") }} *</span><input type="date" name="effective_from" required></label>
           <label><span>{{ t("employee.effective_to") }} · {{ t("common.optional") }}</span><input type="date" name="effective_to"><small>{{ t("employee.allowance_end_optional") }}</small></label>
-          <label><span>{{ t("common.amount") }} *</span><input name="amount" data-money-input required></label>
+          <label><span data-allowance-amount-label>{{ t("employee.daily_amount") }} *</span><input name="amount" data-money-input required><small>{{ t("employee.allowance_amount_hint") }}</small></label>
           <label><span>{{ t("common.currency") }} *</span><select name="currency" data-allowance-currency>{% for item in refs.currency %}<option value="{{ item.code }}" {% if default_currency == item.code %}selected{% endif %}>{{ item.display_name }}</option>{% endfor %}</select></label>
           <label data-exchange-rate-field hidden><span>{{ t("employee.exchange_rate") }} *</span><input name="exchange_rate" inputmode="decimal"><small>{{ t("employee.exchange_rate_hint", currency=default_currency) }}</small></label>
           <label><span>{{ t("common.evidence") }}</span><input type="file" name="evidence"></label>
@@ -227,7 +234,7 @@
         </div>
         <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
       </form>
-    </dialog>
+    </dialog>{% endif %}
     <dialog class="app-dialog record-editor-dialog" id="edit-attendance-policy-dialog">
       <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.update_personal', employee_id=employee.id) }}">
         <input type="hidden" name="form_scope" value="attendance_policy">
@@ -468,7 +475,8 @@
     {% endfor %}
   </div>
   <div class="table-wrap">
-    <table class="dense-table">
+    <table class="dense-table document-library-table">
+      <colgroup><col class="document-category-column"><col class="document-file-column"><col class="document-status-column"><col class="document-actions-column"></colgroup>
       <thead><tr><th>{{ t("documents.category") }}</th><th>{{ t("documents.file") }}</th><th>{{ t("common.status") }}</th><th>{{ t("common.actions") }}</th></tr></thead>
       <tbody>
         {% for document in employee.documents %}
@@ -580,6 +588,9 @@
             {% endif %}
           </div>
         </div>
+        {% if employee.payroll_group in ("site_monthly", "management") %}
+          <p class="form-note strong-note">{{ t("attendance.monthly_detail_rule") }}</p>
+        {% endif %}
         <div class="table-wrap flat">
           <table class="dense-table attendance-detail-table">
             <thead>
@@ -590,7 +601,16 @@
                 <tr>
                   <td>{{ attendance_period_t(item.year_month, segment.period_kind) }}</td>
                   <td>{{ project_t(segment.project, t("common.unassigned")) }}</td>
-                  <td>{{ segment.working_days }}</td>
+                  <td>
+                    {% if employee.payroll_group in ("site_monthly", "management") and segment.period_kind in ("current_1_20", "previous_21_end") %}
+                      <span class="muted">{{ t("attendance.monthly_ordinary_not_used") }}</span>
+                    {% else %}
+                      {{ segment.working_days }}
+                      {% if employee.payroll_group in ("site_monthly", "management") and segment.period_kind in ("current_21_end_forecast", "previous_21_end_forecast") %}
+                        <small class="muted">{{ t("attendance.monthly_forecast_reference") }}</small>
+                      {% endif %}
+                    {% endif %}
+                  </td>
                   <td>{{ segment.ot_hours }}</td>
                   <td>{{ segment.sunday_holiday_days }}</td>
                   <td>{{ segment.large_ecall_count }}</td>
@@ -602,6 +622,9 @@
             </tbody>
           </table>
         </div>
+        {% if item.remarks %}
+          <div class="attendance-history-remarks"><strong>{{ t("attendance.remarks") }}</strong><p>{{ item.remarks }}</p></div>
+        {% endif %}
         {% if payroll_result %}
           <div class="payroll-result-strip">
             <span>{{ t("employee.latest_payroll_snapshot") }} · {{ payroll_result.run.created_at.strftime("%Y-%m-%d %H:%M") }}</span>
@@ -682,6 +705,20 @@
 {% endblock %}
 {% block scripts %}
 <script>
+document.querySelectorAll("[data-salary-form]").forEach((form) => {
+  const basis = form.querySelector('[name="salary_basis"]');
+  const method = form.querySelector("[data-monthly-pay-method]");
+  const sync = () => { if (method) method.hidden = basis?.value !== "monthly"; };
+  basis?.addEventListener("change", sync);
+  sync();
+});
+document.querySelectorAll("[data-assignment-form]").forEach((form) => {
+  const group = form.querySelector('[name="payroll_group"]');
+  const field = form.querySelector("[data-workweek-field]");
+  const sync = () => { if (field) field.hidden = group?.value === "site_daily"; };
+  group?.addEventListener("change", sync);
+  sync();
+});
 const tabs = [...document.querySelectorAll("[data-tab]")];
 const panels = [...document.querySelectorAll("[data-panel]")];
 function openTab(name) {
@@ -703,10 +740,34 @@ function selectTab(name, updateUrl = true) {
 }
 tabs.forEach((tab) => tab.addEventListener("click", () => selectTab(tab.dataset.tab)));
 document.querySelectorAll("[data-open-tab]").forEach((button) => button.addEventListener("click", () => selectTab(button.dataset.openTab)));
-selectTab(new URLSearchParams(window.location.search).get("tab") || "overview", false);
+const employeeDetailParams = new URLSearchParams(window.location.search);
+selectTab(employeeDetailParams.get("tab") || "overview", false);
+if (employeeDetailParams.get("focus") === "probation") {
+  window.setTimeout(() => {
+    document.querySelector('[data-dialog-open="probation-editor-dialog"]')?.click();
+  }, 0);
+}
+const employeeFocusDialogs = {
+  employment: "add-assignment-dialog",
+  assignment: "add-assignment-dialog",
+  salary: "add-salary-dialog",
+  bank: "add-bank-dialog",
+  mpf: "add-mpf-dialog",
+  three_treasures: "certificate-add-dialog",
+  visa: "visa-add-dialog",
+  sick_evidence: "add-leave-dialog"
+};
+const employeeFocusDialog = employeeFocusDialogs[employeeDetailParams.get("focus")];
+if (employeeFocusDialog) {
+  window.setTimeout(() => {
+    document.querySelector(`[data-dialog-open="${employeeFocusDialog}"]`)?.click();
+  }, 0);
+}
 
 const allowanceCurrency = document.querySelector("[data-allowance-currency]");
 const exchangeRateField = document.querySelector("[data-exchange-rate-field]");
+const allowanceType = document.querySelector("[data-allowance-type]");
+const allowanceAmountLabel = document.querySelector("[data-allowance-amount-label]");
 function syncAllowanceExchangeRate() {
   if (!allowanceCurrency || !exchangeRateField) return;
   const differs = allowanceCurrency.value !== {{ (employee.current_salary.currency if employee.current_salary else 'HKD')|tojson }};
@@ -716,6 +777,14 @@ function syncAllowanceExchangeRate() {
 }
 allowanceCurrency?.addEventListener("change", syncAllowanceExchangeRate);
 syncAllowanceExchangeRate();
+function syncAllowanceAmountLabel() {
+  if (!allowanceType || !allowanceAmountLabel) return;
+  allowanceAmountLabel.textContent = allowanceType.value === "special"
+    ? {{ t("employee.monthly_amount")|tojson }} + " *"
+    : {{ t("employee.daily_amount")|tojson }} + " *";
+}
+allowanceType?.addEventListener("change", syncAllowanceAmountLabel);
+syncAllowanceAmountLabel();
 
 const leaveType = document.querySelector("[data-leave-type]");
 const leaveRule = document.querySelector("[data-leave-rule]");

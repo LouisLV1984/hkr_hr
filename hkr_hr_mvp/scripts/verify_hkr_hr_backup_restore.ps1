@@ -80,3 +80,18 @@ if ($Mode -eq "MiniPc") {
 Write-Host "Restore verification passed."
 Write-Host "Dump:     $($dump.FullName)"
 Write-Host "Template: $($template.FullName)"
+
+if ($Mode -eq "MiniPc") {
+    $logRoot = "D:\HKR_HR\03.Output\logs"
+} else {
+    $logRoot = Join-Path $env:LOCALAPPDATA "HKR_HR_Backup\logs"
+}
+New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
+$verificationLog = Join-Path $logRoot ("restore_verify_{0}.log" -f (Get-Date -Format "yyyyMMdd_HHmmss"))
+@(
+    "Restore verification passed."
+    "Verified at: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+    "Mode: $Mode"
+    "Dump: $($dump.Name)"
+    "Template: $($template.Name)"
+) | Set-Content -LiteralPath $verificationLog -Encoding UTF8

@@ -62,13 +62,13 @@
           <td class="change-content-cell">
             {% if entry.kind == "employment" %}
               <strong>{{ item.positions|map(attribute='position.display_name')|join('、') or t("common.not_set") }}</strong>
-              <span>{{ project_t(item.project, t("common.unassigned")) }} · {{ option_t("payroll_group", item.payroll_group, dict(payroll_groups).get(item.payroll_group, item.payroll_group)) }}</span>
+              <span>{{ project_t(item.project, t("common.unassigned")) }} · {{ option_t("payroll_group", item.payroll_group, dict(payroll_groups).get(item.payroll_group, item.payroll_group)) }}{% if item.payroll_group in ('site_monthly', 'management') %} · {{ t("employee.workweek_five_half") if item.workweek_days|float == 5.5 else (t("employee.workweek_five") if item.workweek_days|float == 5 else t("employee.workweek_six")) }}{% endif %}</span>
               {% if item.department %}<small>{{ item.department.display_name }}</small>{% endif %}
             {% elif entry.kind == "salary" %}
-              <strong>{{ t("employee.monthly") if item.salary_basis == "monthly" else t("employee.daily") }} · {{ item.currency }} {{ fmt_money(item.amount) }}</strong>
+              <strong>{{ t("employee.monthly") if item.salary_basis == "monthly" else t("employee.daily") }} · {{ item.currency }} {{ fmt_money(item.amount) }}</strong>{% if item.salary_basis == "monthly" %}<br><small>{{ t("employee.monthly_pay_attendance_days") if item.monthly_pay_method == "attendance_days" else t("employee.monthly_pay_full_month") }}</small>{% endif %}
               {% if item.remarks %}<small>{{ item.remarks }}</small>{% endif %}
             {% elif entry.kind == "allowance" %}
-              <strong>{{ t("allowance." ~ item.allowance_type) }} · {{ item.currency }} {{ fmt_money(item.amount) }}</strong>
+              <strong>{{ t("allowance." ~ item.allowance_type) }} · {{ item.currency }} {{ fmt_money(item.amount) }} / {{ t("employee.per_day") if item.allowance_type in ('meal', 'transport') else t("employee.per_month") }}</strong>
               <span>{{ fmt_date(item.effective_from) }} – {{ fmt_date(item.effective_to) if item.effective_to else t("employee.long_term") }}</span>
               {% if item.exchange_rate %}<small>{{ t("employee.exchange_rate") }}：{{ item.exchange_rate }}</small>{% endif %}
             {% else %}
@@ -108,7 +108,7 @@
 
         {% if item.status == "active" and entry.kind == "employment" %}
           <dialog class="app-dialog record-editor-dialog" id="employment-editor-{{ item.id }}">
-            <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.correct_assignment', assignment_id=item.id) }}" enctype="multipart/form-data">
+            <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.correct_assignment', assignment_id=item.id) }}" enctype="multipart/form-data" data-assignment-form>
               <div class="section-head record-editor-head"><div><h2>{{ t("common.correct") }} · {{ t("employee.employment") }}</h2><p>{{ fmt_date(item.effective_from) }}</p></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
               <div class="record-editor-body">
                 <label><span>{{ t("employee.effective_date") }}</span><input type="date" name="effective_from" value="{{ item.effective_from.isoformat() }}" required></label>
@@ -117,6 +117,7 @@
                 <label>{{ quick_reference_label(t("common.department"), "department", "department_id") }}<select name="department_id"><option value="">{{ t("common.not_set") }}</option>{% for ref in refs.department %}<option value="{{ ref.id }}" {% if item.department_id == ref.id %}selected{% endif %}>{{ ref.display_name }}</option>{% endfor %}</select></label>
                 <label>{{ quick_reference_label(t("common.position"), "position", "position_ids") }}<select class="multi-select-source" name="position_ids" multiple hidden data-empty-label="{{ t('common.not_set') }}">{% set selected_positions = item.positions|map(attribute='position_id')|list %}{% for ref in refs.position %}<option value="{{ ref.id }}" {% if ref.id in selected_positions %}selected{% endif %}>{{ ref.display_name }}</option>{% endfor %}</select></label>
                 <label><span>{{ t("employees.payroll_group") }}</span><select name="payroll_group">{% for code, label in payroll_groups %}<option value="{{ code }}" {% if item.payroll_group == code %}selected{% endif %}>{{ option_t("payroll_group", code, label) }}</option>{% endfor %}</select></label>
+                <label data-workweek-field><span>{{ t("employee.workweek_days") }}</span><select name="workweek_days"><option value="5" {% if item.workweek_days|float == 5 %}selected{% endif %}>{{ t("employee.workweek_five") }}</option><option value="5.5" {% if item.workweek_days|float == 5.5 %}selected{% endif %}>{{ t("employee.workweek_five_half") }}</option><option value="6" {% if item.workweek_days|float == 6 %}selected{% endif %}>{{ t("employee.workweek_six") }}</option></select><small>{{ t("employee.workweek_hint") }}</small></label>
                 <label>{{ quick_reference_label(t("employee.employer"), "employer", "employer_id") }}<select name="employer_id"><option value="">{{ t("common.not_set") }}</option>{% for ref in refs.employer %}<option value="{{ ref.id }}" {% if item.employer_id == ref.id %}selected{% endif %}>{{ ref.display_name }}</option>{% endfor %}</select></label>
                 <label>{{ quick_reference_label(t("employee.payroll_entity"), "payroll_entity", "payroll_entity_id") }}<select name="payroll_entity_id"><option value="">{{ t("common.not_set") }}</option>{% for ref in refs.payroll_entity %}<option value="{{ ref.id }}" {% if item.payroll_entity_id == ref.id %}selected{% endif %}>{{ ref.display_name }}</option>{% endfor %}</select></label>
                 <label>{{ quick_reference_label(t("employee.social_entity"), "social_insurance_entity", "social_insurance_entity_id") }}<select name="social_insurance_entity_id"><option value="">{{ t("common.not_set") }}</option>{% for ref in refs.social_insurance_entity %}<option value="{{ ref.id }}" {% if item.social_insurance_entity_id == ref.id %}selected{% endif %}>{{ ref.display_name }}</option>{% endfor %}</select></label>
@@ -129,11 +130,12 @@
           </dialog>
         {% elif item.status == "active" and entry.kind == "salary" %}
           <dialog class="app-dialog record-editor-dialog" id="salary-editor-{{ item.id }}">
-            <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.correct_salary', salary_id=item.id) }}" enctype="multipart/form-data">
+            <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.correct_salary', salary_id=item.id) }}" enctype="multipart/form-data" data-salary-form>
               <div class="section-head record-editor-head"><div><h2>{{ t("common.correct") }} · {{ t("employee.current_salary") }}</h2><p>{{ fmt_date(item.effective_from) }}</p></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
               <div class="record-editor-body">
                 <label><span>{{ t("employee.effective_date") }}</span><input type="date" name="effective_from" value="{{ item.effective_from.isoformat() }}" required></label>
                 <label><span>{{ t("employee.salary_basis") }}</span><select name="salary_basis"><option value="monthly" {% if item.salary_basis == "monthly" %}selected{% endif %}>{{ t("employee.monthly") }}</option><option value="daily" {% if item.salary_basis == "daily" %}selected{% endif %}>{{ t("employee.daily") }}</option></select></label>
+                <label data-monthly-pay-method><span>{{ t("employee.monthly_pay_method") }}</span><select name="monthly_pay_method"><option value="full_month" {% if item.monthly_pay_method != "attendance_days" %}selected{% endif %}>{{ t("employee.monthly_pay_full_month") }}</option><option value="attendance_days" {% if item.monthly_pay_method == "attendance_days" %}selected{% endif %}>{{ t("employee.monthly_pay_attendance_days") }}</option></select><small>{{ t("employee.monthly_pay_exception_hint") }}</small></label>
                 <label>{{ quick_reference_label(t("common.currency"), "currency", "currency", "code") }}<select name="currency">{% for ref in refs.currency %}<option value="{{ ref.code }}" {% if item.currency == ref.code %}selected{% endif %}>{{ ref.display_name }}</option>{% endfor %}</select></label>
                 <label><span>{{ t("common.amount") }}</span><input name="amount" value="{{ item.amount }}" data-money-input required></label>
                 <label><span>{{ t("common.evidence") }}</span><input type="file" name="evidence"></label>
@@ -147,10 +149,11 @@
             <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.correct_allowance', allowance_id=item.id) }}" enctype="multipart/form-data">
               <div class="section-head record-editor-head"><div><h2>{{ t("common.correct") }} · {{ t("allowance." ~ item.allowance_type) }}</h2><p>{{ fmt_date(item.effective_from) }}</p></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
               <div class="record-editor-body form-grid">
+                <p class="form-note wide">{{ t("employee.allowance_daily_rule") }}</p>
                 <label><span>{{ t("employee.allowance_type") }}</span><select name="allowance_type"><option value="meal" {% if item.allowance_type == 'meal' %}selected{% endif %}>{{ t("allowance.meal") }}</option><option value="transport" {% if item.allowance_type == 'transport' %}selected{% endif %}>{{ t("allowance.transport") }}</option><option value="special" {% if item.allowance_type == 'special' %}selected{% endif %}>{{ t("allowance.special") }}</option></select></label>
                 <label><span>{{ t("employee.effective_date") }}</span><input type="date" name="effective_from" value="{{ item.effective_from.isoformat() }}" required></label>
                 <label><span>{{ t("employee.effective_to") }} · {{ t("common.optional") }}</span><input type="date" name="effective_to" value="{{ item.effective_to.isoformat() if item.effective_to else '' }}"><small>{{ t("employee.allowance_end_optional") }}</small></label>
-                <label><span>{{ t("common.amount") }}</span><input name="amount" value="{{ item.amount }}" data-money-input required></label>
+                <label><span>{{ t("employee.daily_amount") if item.allowance_type in ('meal', 'transport') else t("employee.monthly_amount") }}</span><input name="amount" value="{{ item.amount }}" data-money-input required><small>{{ t("employee.allowance_amount_hint") }}</small></label>
                 <label><span>{{ t("common.currency") }}</span><select name="currency">{% for currency_item in refs.currency %}<option value="{{ currency_item.code }}" {% if item.currency == currency_item.code %}selected{% endif %}>{{ currency_item.display_name }}</option>{% endfor %}</select></label>
                 <label><span>{{ t("employee.exchange_rate") }}</span><input name="exchange_rate" value="{{ item.exchange_rate or '' }}"></label>
                 <label><span>{{ t("common.evidence") }}</span><input type="file" name="evidence"></label>

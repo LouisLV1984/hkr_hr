@@ -11,9 +11,8 @@
 </section>
 {% endblock %}
 {% block content %}
-<section class="period-context-bar payroll-period-context" aria-label="{{ t('payroll.current_payroll_month') }}">
-  <div><span>{{ t("payroll.current_payroll_month") }}</span><strong>{{ month_t(year_month) }}</strong></div>
-  <small>{{ t("mpf.period_context_hint") }}</small>
+<section class="period-context-bar payroll-period-context payroll-centered-context" aria-label="{{ t('payroll.current_payroll_month') }}">
+  <div class="payroll-context-month"><span>{{ t("payroll.current_payroll_month") }}</span><strong>{{ month_t(year_month) }}</strong></div>
 </section>
 <section class="page-head compact">
   <div><h1>{{ t("mpf.export_title") }}</h1><p>{{ t("mpf.export_hint") }}</p></div>

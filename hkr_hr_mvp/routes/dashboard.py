@@ -177,6 +177,35 @@ def dashboard():
         )
     expiry_alerts.sort(key=lambda item: item["date"] or date.max)
 
+    confirmation_threshold = today + timedelta(days=30)
+    confirmation_alerts = []
+    for employee in active_employees:
+        period = employee.current_period
+        if (
+            employee.payroll_group != "management"
+            or not period
+            or not period.probation_end_date
+            or period.confirmation_date
+            or period.probation_end_date > confirmation_threshold
+        ):
+            continue
+        days_remaining = (period.probation_end_date - today).days
+        confirmation_alerts.append(
+            {
+                "employee": employee,
+                "date": period.probation_end_date,
+                "days_remaining": days_remaining,
+                "severity": (
+                    "expired"
+                    if days_remaining < 0
+                    else "urgent"
+                    if days_remaining <= 7
+                    else "warning"
+                ),
+            }
+        )
+    confirmation_alerts.sort(key=lambda item: item["date"])
+
     return render_template(
         "dashboard.html",
         year_month=year_month,
@@ -190,5 +219,6 @@ def dashboard():
         attendance_issue_count=attendance_issue_count,
         payroll_issue_count=payroll_issue_count,
         expiry_alerts=expiry_alerts,
+        confirmation_alerts=confirmation_alerts,
         open_panel=request.args.get("panel", ""),
     )

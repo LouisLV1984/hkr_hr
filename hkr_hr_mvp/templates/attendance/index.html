@@ -4,6 +4,7 @@
 {% set attendance_month_label = t("attendance.month_label", year=year_month[:4], month=(year_month[5:7]|int)) %}
 {% block sidebar_content %}
 <div class="attendance-rail">
+  {% if view in ["details", "policies", "monthly_exemptions"] %}
   <section class="context-panel">
     <form class="stack-form" method="get">
       <label>
@@ -19,6 +20,7 @@
       {% endif %}
     </form>
   </section>
+  {% endif %}
 
   {% if view == "collection" %}
   <section class="context-panel attendance-upload-panel">
@@ -27,7 +29,6 @@
       <span>{{ t("attendance.upload_hint") }}</span>
     </div>
     <form class="stack-form" method="post" action="{{ url_for('attendance.create_batch') }}" enctype="multipart/form-data" data-attendance-upload-form>
-      <input type="hidden" name="year_month" value="{{ year_month }}">
       <label class="attendance-drop-zone" data-attendance-drop-zone tabindex="0" role="button">
         <span class="upload-mark" aria-hidden="true">↑</span>
         <strong>{{ t("attendance.drop_files") }}</strong>
@@ -54,14 +55,19 @@
     <div class="recent-batch-list">
       {% for batch in recent_batches %}
           {% set batch_done = batch.items|rejectattr("status", "equalto", "pending")|list|length %}
+          {% set first_pending = batch.items|selectattr("status", "equalto", "pending")|first %}
+          {% set repreview_item = first_pending or (batch.items|first) %}
           <article class="recent-batch-card {% if selected_batch and selected_batch.id == batch.id %}active{% endif %}">
-            <a href="{{ url_for('attendance.attendance_home', month=batch.year_month, view='collection', batch_id=batch.id) }}">
+            <a href="{{ url_for('attendance.attendance_home', view='collection', batch_id=batch.id) }}">
               <strong>{{ batch.batch_no }}</strong>
-              <span>{{ batch.year_month }} · {{ batch.items|length }} PDF · {{ batch_done }}/{{ batch.items|length }}</span>
+              <span>{{ batch.items|length }} PDF · {{ batch_done }}/{{ batch.items|length }}</span>
             </a>
-            <form method="post" action="{{ url_for('attendance.delete_batch', batch_id=batch.id) }}" data-confirm="{{ t('attendance.delete_confirm') }}">
-              <button class="icon-btn danger-text" type="submit" title="{{ t('attendance.delete_batch') }}" aria-label="{{ t('attendance.delete_batch') }}">×</button>
-            </form>
+            <div class="recent-batch-actions">
+              {% if repreview_item %}<a class="mini-btn" href="{{ url_for('attendance.attendance_home', month=repreview_item.effective_year_month, view='collection', batch_id=batch.id, item_id=repreview_item.id) }}">{{ t("attendance.repreview") }}</a>{% endif %}
+              <form method="post" action="{{ url_for('attendance.delete_batch', batch_id=batch.id) }}" data-confirm="{{ t('attendance.delete_confirm') }}">
+                <button class="icon-btn danger-text" type="submit" title="{{ t('attendance.delete_batch') }}" aria-label="{{ t('attendance.delete_batch') }}">×</button>
+              </form>
+            </div>
           </article>
       {% else %}
         <p class="empty-context">{{ t("common.not_set") }}</p>
@@ -72,20 +78,54 @@
 </div>
 {% endblock %}
 {% block content %}
-<section class="period-context-bar attendance-period-context" aria-label="{{ t('attendance.current_attendance_month') }}">
-  <div><span>{{ t("attendance.current_attendance_month") }}</span><strong>{{ month_t(year_month) }}</strong></div>
-  <small>{{ t("attendance.period_context_hint") }}</small>
-</section>
-{% if selected_item or edit_summary_mode %}
-<section class="attendance-detail-head">
-  {% if edit_summary_mode %}
-    <a class="secondary-btn" href="{{ url_for('employees.view_employee', employee_id=selected_summary.employee_id, tab='attendance') }}">← {{ t("attendance.exit_detail") }}</a>
-  {% else %}
-    <a class="secondary-btn" href="{{ url_for('attendance.attendance_home', month=year_month, view='collection', batch_id=selected_batch.id) }}">← {{ t("attendance.exit_detail") }}</a>
+{% if view != "collection" or selected_item or edit_summary_mode %}
+<section class="period-context-bar attendance-period-context{% if selected_item or edit_summary_mode %} attendance-detail-context{% endif %}" aria-label="{{ t('attendance.current_attendance_month') }}">
+  {% if selected_item or edit_summary_mode %}
+    {% if edit_summary_mode %}
+      <a class="attendance-context-exit" href="{{ url_for('employees.view_employee', employee_id=selected_summary.employee_id, tab='attendance') }}">← {{ t("attendance.exit_detail") }}</a>
+    {% else %}
+      <a class="attendance-context-exit" href="{{ url_for('attendance.attendance_home', month=year_month, view='collection', batch_id=selected_batch.id) }}">← {{ t("attendance.exit_detail") }}</a>
+    {% endif %}
   {% endif %}
-  <div><strong>{{ selected_item.original_filename if selected_item else selected_summary.document.original_filename }}</strong><span>{{ year_month }}{% if selected_batch %} · {{ selected_batch.batch_no }}{% endif %}</span></div>
+  <div class="attendance-context-month">
+    <span>{{ t("attendance.current_attendance_month") }}</span>
+    <strong>{{ month_t(year_month) }}</strong>
+    {% if selected_item or edit_summary_mode %}
+      <span class="attendance-context-dates">（<b>{{ t("attendance.sundays") }}：</b>{% for item in current_sundays %}{{ item.day }}日{% if not loop.last %}、{% endif %}{% endfor %}；<b>{{ t("attendance.public_holidays") if selected_holiday_calendar_kind == "public" else t("attendance.statutory_holidays") }}：</b>{% if selected_employee %}{% for day, item in current_statutory_holidays|dictsort %}{{ day.day }}日 {{ item.name }}{% if not loop.last %}、{% endif %}{% else %}{{ t("attendance.none_this_month") }}{% endfor %}{% else %}{{ t("attendance.select_employee_for_holidays") }}{% endif %}）</span>
+    {% endif %}
+  </div>
+  {% if selected_item or edit_summary_mode %}
+  <div class="attendance-context-actions">
+    {% if not edit_summary_mode and previous_item %}<a class="attendance-context-action" href="{{ url_for('attendance.attendance_home', month=previous_item.effective_year_month, view='collection', batch_id=selected_batch.id, item_id=previous_item.id) }}">← {{ t("attendance.previous") }}</a>{% endif %}
+    {% if edit_summary_mode or selected_summary %}
+      <button class="attendance-context-action attendance-context-action-primary" type="submit" form="attendance-review-form">{{ t("attendance.save_correction") if selected_summary else t("common.save") }}</button>
+    {% elif duplicate_document %}
+      <button class="attendance-context-action attendance-context-action-primary" type="submit" name="confirm_duplicate" value="1" form="attendance-review-form">{{ t("documents.duplicate_attendance_replace") }}</button>
+    {% else %}
+      <button class="attendance-context-action attendance-context-action-primary" type="submit" form="attendance-review-form">{{ t("attendance.save_next") }}</button>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% if selected_item or edit_summary_mode %}
+  <div class="attendance-calendar-check" aria-label="{{ t('attendance.month_calendar_check') }}">
+    <div class="attendance-calendar-employee">
+      <strong>{{ t("common.employee") }}：</strong>
+      <span>{% if selected_employee %}{{ selected_employee.employee_no }} · {{ selected_employee.display_name }}{% else %}{{ t("attendance.select_employee") }}{% endif %}</span>
+      {% if selected_employee %}
+        {% set banner_group = selected_assignment.payroll_group if selected_assignment else selected_employee.payroll_group %}
+        <strong>{{ t("attendance.payroll_category") }}：</strong><span>{{ option_t("payroll_group", banner_group, banner_group) }}</span>
+        <strong>{{ t("employee.holiday_calendar") }}：</strong><span>{{ t("employee.holiday_calendar_public") if selected_holiday_calendar_kind == "public" else t("employee.holiday_calendar_statutory") }}</span>
+        {% if selected_salary and selected_salary.salary_basis == 'monthly' %}<strong>{{ t("employee.monthly_pay_method") }}：</strong><span>{{ t("employee.monthly_pay_attendance_days") if selected_salary.monthly_pay_method == 'attendance_days' else t("employee.monthly_pay_full_month") }}</span>{% endif %}
+        {% if banner_group in ('site_monthly', 'management') %}<strong>{{ t("employee.workweek_days") }}：</strong><span>{{ t("employee.workweek_five_half") if selected_workweek_days|float == 5.5 else (t("employee.workweek_five") if selected_workweek_days|float == 5 else t("employee.workweek_six")) }}</span>{% endif %}
+        <strong>{{ t("common.project") }}：</strong><span class="{{ 'attendance-project-unassigned' if not selected_assignment or not selected_assignment.project else '' }}">{{ project_t(selected_assignment.project, t("common.unassigned")) if selected_assignment else t("common.unassigned") }}</span>
+        <button class="attendance-project-adjust" type="button" data-cross-project-open>{{ t("attendance.adjust_project_allocation") }}</button>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
 </section>
-{% else %}
+{% endif %}
+{% if not selected_item and not edit_summary_mode %}
 <section class="page-head compact workbench-head">
   {% if view == "policies" %}
     <div><h1>{{ t("attendance.long_term_policy") }}</h1><p>{{ t("attendance.long_term_policy_hint") }}</p></div>
@@ -161,7 +201,7 @@
 <section class="attendance-workbench">
   <section class="workbench-preview">
     {% if selected_item %}
-      <div class="preview-toolbar"><div><strong>{{ selected_item.original_filename }}</strong><span>{{ selected_batch.year_month }} · {{ option_t("workflow_status", selected_item.status, selected_item.status) }}</span></div><a href="{{ url_for('attendance.open_item', item_id=selected_item.id) }}" target="_blank">{{ t("common.open") }}</a></div>
+      <div class="preview-toolbar"><div><strong>{{ selected_item.original_filename }}</strong><span>{{ year_month }} · {{ option_t("workflow_status", selected_item.status, selected_item.status) }}</span></div><a href="{{ url_for('attendance.open_item', item_id=selected_item.id) }}" target="_blank">{{ t("common.open") }}</a></div>
       <iframe title="{{ selected_item.original_filename }}" src="{{ url_for('attendance.open_item', item_id=selected_item.id) }}#page=1&view=FitH&navpanes=0&pagemode=none"></iframe>
     {% elif selected_summary and selected_summary.document %}
       <div class="preview-toolbar"><div><strong>{{ selected_summary.document.original_filename }}</strong><span>{{ selected_summary.year_month }} · {{ t("attendance.correction_mode") }}</span></div><a href="{{ url_for('documents.open_document', document_id=selected_summary.document.id) }}" target="_blank">{{ t("common.open") }}</a></div>
@@ -173,16 +213,52 @@
 
   <aside class="workbench-review">
     {% if selected_item or edit_summary_mode %}
-      <form id="attendance-review-form" class="stack-form" method="post" action="{{ url_for('attendance.save_item', item_id=selected_item.id) if selected_item else url_for('attendance.correct_summary', summary_id=selected_summary.id) }}">
-        <section class="review-section">
-          <label><span>{{ t("attendance.select_employee") }}</span><select name="employee_id" required data-attendance-employee><option value="">{{ t("common.not_set") }}</option>{% for employee in employees %}<option value="{{ employee.id }}" data-payroll-group="{{ employee.payroll_group }}" data-payroll-label="{{ option_t('payroll_group', employee.payroll_group, employee.payroll_group) }}" {% if selected_employee_id == employee.id or (not selected_employee_id and selected_summary and selected_summary.employee_id == employee.id) %}selected{% endif %}>{{ employee.employee_no }} · {{ employee.display_name }}</option>{% endfor %}</select><small>{{ t("attendance.filename_hint") }}</small></label>
-          <div class="attendance-payroll-context" data-attendance-payroll-context hidden>
-            <span>{{ t("attendance.payroll_category") }}</span>
-            <strong data-attendance-payroll-label></strong>
-            <p data-payroll-rule="site_daily">{{ t("attendance.rule_site_daily") }}</p>
-            <p data-payroll-rule="site_monthly">{{ t("attendance.rule_site_monthly") }}</p>
-            <p data-payroll-rule="management">{{ t("attendance.rule_management") }}</p>
+      <form id="attendance-review-form" class="stack-form" method="post" action="{{ url_for('attendance.correct_summary', summary_id=selected_summary.id) if selected_summary else url_for('attendance.save_item', item_id=selected_item.id) }}" data-selected-workweek="{{ selected_workweek_days }}" data-statutory-dates='{{ selectable_statutory_holiday_dates|tojson }}'>
+        <section class="review-section attendance-identity-section">
+          {% if selected_summary and not identity_correction_mode %}
+          <div class="attendance-identity-lock">
+            <div><span>{{ t("attendance.saved_identity") }}</span><strong>{{ month_t(year_month) }} · {{ selected_employee.employee_no }} · {{ selected_employee.display_name }}</strong></div>
+            {% if selected_item %}
+            <a class="mini-btn" href="{{ url_for('attendance.attendance_home', month=year_month, view='collection', batch_id=selected_batch.id, item_id=selected_item.id, correct_identity=1) }}">{{ t("attendance.correct_identity") }}</a>
+            {% else %}
+            <a class="mini-btn" href="{{ url_for('attendance.attendance_home', month=year_month, summary_id=selected_summary.id, correct_identity=1) }}">{{ t("attendance.correct_identity") }}</a>
+            {% endif %}
           </div>
+          <input type="hidden" name="year_month" value="{{ year_month }}">
+          <input type="hidden" name="employee_id" value="{{ selected_employee.id }}" data-attendance-employee data-payroll-group="{{ selected_assignment.payroll_group if selected_assignment else selected_employee.payroll_group }}" data-holiday-calendar="{{ selected_holiday_calendar_kind }}" data-workweek-days="{{ selected_workweek_days }}" data-monthly-pay-method="{{ selected_salary.monthly_pay_method if selected_salary and selected_salary.salary_basis == 'monthly' else 'full_month' }}" data-payroll-label="{{ option_t('payroll_group', selected_assignment.payroll_group if selected_assignment else selected_employee.payroll_group, selected_assignment.payroll_group if selected_assignment else selected_employee.payroll_group) }}">
+          {% else %}
+          {% if identity_correction_mode %}
+          <div class="attendance-identity-warning">
+            <strong>{{ t("attendance.identity_correction_title") }}</strong>
+            <span>{{ t("attendance.identity_correction_hint") }}</span>
+            {% if selected_item %}
+            <a href="{{ url_for('attendance.attendance_home', month=selected_summary.year_month, view='collection', batch_id=selected_batch.id, item_id=selected_item.id) }}">{{ t("common.cancel") }}</a>
+            {% else %}
+            <a href="{{ url_for('attendance.attendance_home', month=selected_summary.year_month, summary_id=selected_summary.id) }}">{{ t("common.cancel") }}</a>
+            {% endif %}
+          </div>
+          {% endif %}
+          <label class="attendance-entry-month"><span>{{ t("attendance.entry_month") }}</span><input type="month" name="year_month" value="{{ year_month }}" required data-attendance-entry-month></label>
+          <div class="attendance-employee-picker" data-attendance-employee-picker>
+            <span>{{ t("attendance.select_employee") }}</span>
+            <input type="search" autocomplete="off" data-attendance-employee-search role="combobox" aria-autocomplete="list" aria-expanded="false" placeholder="{{ t('attendance.employee_search_placeholder') }}" value="{% if selected_employee %}{{ selected_employee.employee_no }} · {{ selected_employee.display_name }}{% endif %}">
+            <input type="hidden" name="employee_id" value="{{ selected_employee.id if selected_employee else '' }}" data-attendance-employee data-payroll-group="{{ selected_assignment.payroll_group if selected_assignment else (selected_employee.payroll_group if selected_employee else '') }}" data-holiday-calendar="{{ selected_holiday_calendar_kind }}" data-workweek-days="{{ selected_workweek_days }}" data-monthly-pay-method="{{ selected_salary.monthly_pay_method if selected_salary and selected_salary.salary_basis == 'monthly' else 'full_month' }}" data-payroll-label="{{ option_t('payroll_group', selected_assignment.payroll_group if selected_assignment else selected_employee.payroll_group, selected_assignment.payroll_group if selected_assignment else selected_employee.payroll_group) if selected_employee else '' }}">
+            <div class="attendance-employee-results" data-attendance-employee-results role="listbox" hidden>
+              {% for option in attendance_employee_options %}{% set employee = option.employee %}
+                <button type="button" role="option" data-attendance-employee-option data-employee-id="{{ employee.id }}" data-employee-label="{{ employee.employee_no }} · {{ employee.display_name }}" data-search="{{ option.search_text }}" data-payroll-group="{{ option.payroll_group }}" data-workweek-days="{{ option.workweek_days }}" data-monthly-pay-method="{{ option.monthly_pay_method }}" data-payroll-label="{{ option_t('payroll_group', option.payroll_group, option.payroll_group) }}"><strong>{{ employee.employee_no }} · {{ employee.display_name }}</strong>{% if employee.english_name and employee.english_name != employee.display_name %}<small>{{ employee.english_name }}</small>{% endif %}</button>
+              {% else %}<p class="empty-cell">{{ t("attendance.no_active_employee_results") }}</p>{% endfor %}
+            </div>
+          </div>
+          {% endif %}
+          <details class="attendance-payroll-context" data-attendance-payroll-context hidden>
+            <summary>{{ t("attendance.calculation_rules") }}</summary>
+            <div class="attendance-payroll-context-body">
+              <p data-payroll-rule="site_daily">{{ t("attendance.rule_site_daily") }}</p>
+              <p data-payroll-rule="site_monthly">{{ t("attendance.rule_site_monthly") }}</p>
+              <p data-payroll-rule="management">{{ t("attendance.rule_management") }}</p>
+              <p data-pay-method-rule="attendance_days">{{ t("attendance.attendance_prorated_rule") }}</p>
+            </div>
+          </details>
           {% if selected_item and duplicate_document %}
             <div class="duplicate-warning">
               <span class="flag warn">{{ t("documents.duplicate_badge") }}</span>
@@ -194,52 +270,109 @@
           {% endif %}
         </section>
         {% if linked_absences %}
-        <section class="review-section linked-absence-panel">
-          <h2>假期／工傷聯動</h2>
+        {% set linked_payroll_group = selected_assignment.payroll_group if selected_assignment else selected_employee.payroll_group %}
+        <section class="attendance-linked-alert" aria-labelledby="attendance-linked-title">
+          <details class="attendance-linked-disclosure">
+            <summary>
+              <span class="attendance-linked-badge">{{ t("attendance.linked_action_badge") }}</span>
+              <strong id="attendance-linked-title">{{ t("attendance.linked_title_prefix") }}{% for kind, count in linked_absence_counts %}{% if not loop.first %}、{% endif %}{% if kind == 'annual' %}{{ t("attendance.linked_count_annual", count=count) }}{% elif kind == 'sick' %}{{ t("attendance.linked_count_sick", count=count) }}{% elif kind == 'unpaid' %}{{ t("attendance.linked_count_unpaid", count=count) }}{% else %}{{ t("attendance.linked_count_injury", count=count) }}{% endif %}{% endfor %}</strong>
+              <span>{{ t("attendance.linked_title_hint") }}</span>
+              <span class="attendance-linked-toggle"><span class="when-closed">{{ t("common.view") }}</span><span class="when-open">{{ t("common.collapse") }}</span></span>
+            </summary>
+            <div class="attendance-linked-items">
           {% for item in linked_absences %}
-            <div class="status-line"><strong>{{ {'annual':'年假','sick':'病假','unpaid':'無薪假','work_injury':'工傷'}.get(item.kind, item.kind) }}</strong><span>{{ fmt_date(item.start) }} 至 {{ fmt_date(item.end) }} · {{ item.days }} 日</span></div>
-          {% endfor %}
-          <p class="form-note">{{ t("leave.sick_rule_short") }}</p>
-          {% if selected_employee and selected_employee.payroll_group == 'site_daily' %}<p class="form-note strong-note">日工無薪假只供核對：請勿把無薪假日計入「一般工作日實際出勤日數」。系統以 HR 輸入的實際出勤日數為唯一工資依據，不會再因假期記錄重複扣薪。</p>{% else %}<p class="form-note strong-note">月工／OFFICE 無薪假由假期記錄按當月曆日薪金率扣薪一次；考勤頁無需另行扣減，也不要自行調整其他數字重複扣薪。</p>{% endif %}
-          <p class="form-note">以上資料由假期管理或員工工傷記錄帶入，不允許在考勤頁修改；如需更改，請返回相應來源記錄。</p>
-        </section>
-        {% endif %}
-        <p class="form-note strong-note">{{ t("attendance.four_part_hint", current_actual=attendance_period_t(year_month, "current_1_20"), current_forecast=attendance_period_t(year_month, "current_21_end_forecast"), previous_actual=attendance_period_t(year_month, "previous_21_end"), previous_forecast=attendance_period_t(year_month, "previous_21_end_forecast")) }}</p>
-        {% for kind, title, actual in [
-          ("current_1_20", attendance_period_t(year_month, "current_1_20"), true),
-          ("current_21_end_forecast", attendance_period_t(year_month, "current_21_end_forecast"), false),
-          ("previous_21_end", attendance_period_t(year_month, "previous_21_end"), true),
-          ("previous_21_end_forecast", attendance_period_t(year_month, "previous_21_end_forecast"), false)
-        ] %}
-          <section class="review-section">
-            <div class="section-head compact">
-              <h2>{{ title }}</h2>
-              <div class="button-row">
-                {% if kind == "previous_21_end_forecast" %}
-                  <div class="section-action-stack">
-                    {% if previous_summary and previous_summary.document %}
-                      <a class="mini-btn" target="_blank" rel="noopener" href="{{ url_for('documents.open_document', document_id=previous_summary.document.id) }}">{{ t("attendance.open_previous_pdf", year=period_bounds["previous_21_end"][0].year, month=period_bounds["previous_21_end"][0].month) }}</a>
-                    {% else %}
-                      <button class="mini-btn" type="button" disabled aria-disabled="true">{{ t("attendance.open_previous_pdf", year=period_bounds["previous_21_end"][0].year, month=period_bounds["previous_21_end"][0].month) }}</button>
-                      <small>{{ t("attendance.previous_pdf_missing", year=period_bounds["previous_21_end"][0].year, month=period_bounds["previous_21_end"][0].month) }}</small>
-                    {% endif %}
-                  </div>
-                {% endif %}
-                <button class="mini-btn add-segment" type="button" data-kind="{{ kind }}" data-forecast="{{ '0' if actual else '1' }}" data-min-date="{{ period_bounds[kind][0].isoformat() }}" data-max-date="{{ period_bounds[kind][1].isoformat() }}">{{ t("attendance.add_project") }}</button>
+            <div class="attendance-linked-item">
+              <div class="attendance-linked-kind">
+                <strong>{% if item.kind == 'annual' %}{{ t("leave.type_annual") }}{% elif item.kind == 'sick' %}{{ t("leave.type_sick") }}{% elif item.kind == 'unpaid' %}{{ t("leave.type_unpaid") }}{% else %}{{ t("work_injury.title") }}{% endif %}</strong>
+                <span>{% if item.scope == 'previous_tail' %}{{ t("attendance.linked_scope_previous") }}{% elif item.scope == 'both_periods' %}{{ t("attendance.linked_scope_both") }}{% else %}{{ t("attendance.linked_scope_current") }}{% endif %}</span>
+              </div>
+              <span class="attendance-linked-dates">{{ t("attendance.linked_review_dates") }} {{ fmt_date(item.visible_start) }}–{{ fmt_date(item.visible_end) }}{% if item.is_clipped %}<small>{{ t("attendance.linked_original_record", start=fmt_date(item.start), end=fmt_date(item.end), days=item.days) }}</small>{% else %} · {{ item.days }} {{ t("leave.days") }}{% endif %}</span>
+              <div class="attendance-linked-effects">
+                {% if item.kind == 'annual' %}<span class="attendance-linked-effect ok">{{ t("attendance.linked_effect_annual") }}</span>
+                {% elif item.kind == 'sick' %}<span class="attendance-linked-effect warn">{{ t("attendance.linked_effect_sick") }}</span>{% if item.evidence_missing %}<span class="attendance-linked-effect danger">{{ t("leave.sick_evidence_missing") }}</span>{% endif %}
+                {% elif item.kind == 'unpaid' and linked_payroll_group == 'site_daily' %}<span class="attendance-linked-effect warn">{{ t("attendance.linked_effect_unpaid_daily") }}</span>
+                {% elif item.kind == 'unpaid' %}<span class="attendance-linked-effect warn">{{ t("attendance.linked_effect_unpaid_monthly") }}</span>
+                {% else %}<span class="attendance-linked-effect warn">{{ t("attendance.linked_effect_injury") }}</span>{% endif %}
               </div>
             </div>
-            <p class="form-note">{{ t("attendance.ecall_hint") if actual else t("attendance.forecast_hint") }}</p>
+          {% endfor %}
+            </div>
+            <p class="attendance-linked-action"><strong>{{ t("attendance.linked_action_label") }}</strong> {{ t("attendance.linked_action_hint") }}</p>
+          </details>
+          <a class="mini-btn" href="{{ url_for('leave.leave_home', employee_id=selected_employee.id, year=period_bounds['current_1_20'][0].year) }}#employee-leave">{{ t("attendance.linked_open_source") }}</a>
+        </section>
+        {% endif %}
+        <section class="attendance-validation-errors attendance-entry-validation" data-attendance-entry-summary data-attendance-validation-errors aria-live="polite" hidden><strong>{{ t("attendance.validation_title") }}</strong><ul></ul></section>
+        {% for group_key, group_title, periods in [
+          ("current", t("attendance.current_month_group"), [
+            ("current_1_20", attendance_period_t(year_month, "current_1_20"), true),
+            ("current_21_end_forecast", attendance_period_t(year_month, "current_21_end_forecast"), false)
+          ]),
+          ("previous", t("attendance.previous_tail_group"), [
+            ("previous_21_end", attendance_period_t(year_month, "previous_21_end"), true),
+            ("previous_21_end_forecast", attendance_period_t(year_month, "previous_21_end_forecast"), false)
+          ])
+        ] %}
+        <section class="attendance-period-group" data-attendance-period-group="{{ group_key }}">
+          <div class="attendance-period-group-head">
+            <div><h2>{{ group_title }}</h2>{% if group_key == "previous" %}<p>{{ t("attendance.previous_tail_group_hint") }}</p>{% if selected_previous_assignment and (not selected_assignment or selected_previous_assignment.project_id != selected_assignment.project_id) %}<span class="attendance-previous-project">{{ t("attendance.previous_project") }}：{{ project_t(selected_previous_assignment.project, t("common.unassigned")) }}</span>{% endif %}{% endif %}</div>
+            {% if group_key == "previous" %}
+              <div class="section-action-stack">
+                <span class="attendance-reconciliation" data-attendance-reconciliation></span>
+                {% if previous_summary and previous_summary.document %}
+                  <a class="mini-btn" target="_blank" rel="noopener" href="{{ url_for('documents.open_document', document_id=previous_summary.document.id) }}">{{ t("attendance.open_previous_pdf", year=period_bounds["previous_21_end"][0].year, month=period_bounds["previous_21_end"][0].month) }}</a>
+                {% else %}
+                  <button class="mini-btn" type="button" disabled aria-disabled="true">{{ t("attendance.open_previous_pdf", year=period_bounds["previous_21_end"][0].year, month=period_bounds["previous_21_end"][0].month) }}</button>
+                  <small>{{ t("attendance.previous_pdf_missing", year=period_bounds["previous_21_end"][0].year, month=period_bounds["previous_21_end"][0].month) }}</small>
+                {% endif %}
+              </div>
+            {% endif %}
+          </div>
+          <div class="attendance-period-table-head" aria-hidden="true">
+            <span>{{ t("attendance.period_column") }}</span>
+            <span>{{ t("attendance.base_attendance_column") }}</span>
+            <span data-summary-special-label>{{ t("attendance.summary_special_days") }}</span>
+            <span>{{ t("attendance.ot_ecall_column") }}</span>
+            <span>{{ t("attendance.other_allowance_short") }}</span>
+            <span>{{ t("common.action") }}</span>
+          </div>
+          {% for kind, title, actual in periods %}
+            {% set prefill_source = segment_prefill_sources.get(kind) %}
+          <details class="review-section attendance-period-row {{ 'actual-period-row' if actual else 'forecast-period-row' }}" data-attendance-period="{{ kind }}" data-period-days="{{ (period_bounds[kind][1] - period_bounds[kind][0]).days + 1 }}" data-period-title="{{ title }}" data-period-actual="{{ '1' if actual else '0' }}" data-period-source="{{ prefill_source or 'saved' }}">
+            <summary class="attendance-period-summary">
+              <span class="attendance-period-identity"><strong>{{ title }}</strong><small data-period-source-label>{% if prefill_source == 'saved' or not prefill_source %}{{ t("attendance.source_saved") }}{% elif prefill_source == 'prior_forecast' %}{{ t("attendance.source_prior_forecast") }}{% else %}{{ t("attendance.source_review_baseline") }}{% endif %}</small><small class="attendance-period-zero-state" data-period-zero-state></small></span>
+              <span class="attendance-period-metric" data-period-base>—</span>
+              <span class="attendance-period-metric" data-period-special>—</span>
+              <span class="attendance-period-metric" data-period-events>—</span>
+              <span class="attendance-period-metric" data-period-allowance>—</span>
+              <span class="attendance-period-edit"><span class="when-closed">{{ t("common.edit") }}</span><span class="when-open">{{ t("common.collapse") }}</span></span>
+            </summary>
+            <div class="attendance-period-editor">
+              <div class="section-head compact attendance-period-row-head">
+                <h3>{{ t("attendance.edit_period", period=title) }}</h3>
+                <div class="button-row">
+                  <button class="mini-btn add-segment" type="button" data-kind="{{ kind }}" data-forecast="{{ '0' if actual else '1' }}" data-min-date="{{ period_bounds[kind][0].isoformat() }}" data-max-date="{{ period_bounds[kind][1].isoformat() }}">{{ t("attendance.add_project") }}</button>
+                </div>
+              </div>
+            {% if prefill_source and prefill_source != 'saved' %}
+              <p class="form-note attendance-prefill-note" data-prefill-source="{{ prefill_source }}" data-prefill-period="{{ kind }}">
+                {% if prefill_source == 'prior_forecast' %}{{ t("attendance.prefill_prior_forecast") }}{% elif actual %}{{ t("attendance.prefill_actual_calendar") }}{% else %}{{ t("attendance.prefill_forecast_calendar") }}{% endif %}
+              </p>
+            {% endif %}
             <div class="segment-list" data-segments="{{ kind }}">
               {% set existing = segment_rows.get(kind, [none]) %}
               {% for segment in existing or [none] %}
-                <div class="segment-row {{ 'forecast-row' if not actual else '' }}">
-                  <label class="segment-project"><span>{{ t("common.project") }}</span><select name="{{ kind }}_project_id"><option value="">{{ t("common.not_set") }}</option>{% for project in projects %}<option value="{{ project.id }}" {% if segment and segment.project_id == project.id %}selected{% endif %}>{{ project.name }}</option>{% endfor %}</select></label>
+                {% set row_project = segment.project if segment and segment.project else period_default_projects.get(kind) %}
+                {% set row_project_id = segment.project_id if segment and segment.project_id else (row_project.id if row_project else none) %}
+                <div class="segment-row {{ 'forecast-row' if not actual else '' }}" data-segment-row>
+                  <div class="segment-project-summary" data-project-summary {% if (existing or [none])|length <= 1 %}hidden{% endif %}>{{ t("common.project") }}：<strong>{{ project_t(row_project, t("common.unassigned")) }}</strong></div>
+                  <label class="segment-project"><span>{{ t("common.project") }}</span><select name="{{ kind }}_project_id"><option value="">{{ t("common.not_set") }}</option>{% for project in projects %}<option value="{{ project.id }}" {% if row_project_id == project.id %}selected{% endif %}>{{ project.name }}</option>{% endfor %}</select></label>
                   {% if actual %}
-                    <label class="actual-daily-attendance-field"><span>一般工作日實際出勤日數</span><input type="number" min="0" step="0.5" name="{{ kind }}_working_days" value="{{ segment.working_days if segment else 0 }}"></label>
-                    <label class="special-work-days-count"><span>{{ t("attendance.sunday_holiday_work_days") }}</span><input class="special-work-days-input actual-special-work-days-input" type="number" min="0" step="1" name="{{ kind }}_holiday_days" value="{{ segment.sunday_holiday_days if segment else 0 }}"><small>{{ t("attendance.sunday_holiday_count_first") }}</small></label>
+                    <label class="actual-paid-days-field"><span data-paid-days-label>{{ t("attendance.ordinary_actual_days") }}</span><input type="number" min="0" step="0.5" name="{{ kind }}_working_days" value="{{ segment.working_days if segment else 0 }}"><small class="daily-only" hidden>{{ t("attendance.daily_working_days_hint") }}</small><small class="attendance-prorated-only" hidden>{{ t("attendance.attendance_prorated_actual_hint") }}</small></label>
+                    <label class="special-work-days-count"><span data-special-work-days-label>{{ t("attendance.non_normal_work_days") }}</span><input class="special-work-days-input actual-special-work-days-input" type="number" min="0" step="0.5" name="{{ kind }}_holiday_days" value="{{ segment.sunday_holiday_days if segment else 0 }}"><small data-special-work-hint>{{ t("attendance.non_normal_work_count_first") }}</small></label>
                     <div class="special-work-date-picker" data-special-work-picker data-min-date="{{ period_bounds[kind][0].isoformat() }}" data-max-date="{{ period_bounds[kind][1].isoformat() }}" hidden>
                       <input type="hidden" name="{{ kind }}_special_work_entries" data-special-work-entries value="[]">
-                      <div class="special-work-date-head"><strong>{{ t("attendance.sunday_holiday_dates") }}</strong><span>{{ t("attendance.sunday_holiday_dates_hint") }}</span></div>
+                      <div class="special-work-date-head"><strong data-special-date-title>{{ t("attendance.sunday_holiday_dates") }}</strong><span data-special-date-hint>{{ t("attendance.sunday_holiday_dates_hint") }}</span></div>
                       <div class="special-work-date-rows" data-special-work-rows>
                         {% if segment and segment.id %}{% for special_day in segment_special_days[segment.id] %}
                         <div class="special-work-date-row"><label><span>{{ t("common.date") }}</span><input type="date" value="{{ special_day.work_date.isoformat() }}" min="{{ period_bounds[kind][0].isoformat() }}" max="{{ period_bounds[kind][1].isoformat() }}" data-special-work-date required></label></div>
@@ -247,59 +380,45 @@
                       </div>
                     </div>
                   {% else %}
-                    <label><span>{{ t("attendance.forecast_days") }}</span><input type="number" min="0" step="0.5" name="{{ kind }}_working_days" value="{{ segment.working_days if segment else 0 }}"></label>
-                    <label><span>{{ t("attendance.sunday_holiday_forecast_days") }}</span><input type="number" min="0" step="1" name="{{ kind }}_holiday_days" value="{{ segment.sunday_holiday_days if segment else 0 }}"><small>{{ t("attendance.forecast_no_ot_ecall") }}</small></label>
+                    <label class="forecast-paid-days-field"><span>{{ t("attendance.forecast_days") }}</span><input type="number" min="0" step="0.5" name="{{ kind }}_working_days" value="{{ segment.working_days if segment else 0 }}"><small data-forecast-working-hint></small></label>
+                    <label class="forecast-special-days-field"><span data-special-forecast-days-label>{{ t("attendance.non_normal_forecast_days") }}</span><input type="number" min="0" step="0.5" name="{{ kind }}_holiday_days" value="{{ segment.sunday_holiday_days if segment else 0 }}"><small data-special-forecast-hint>{{ t("attendance.forecast_no_ot_ecall") }}</small></label>
                     <input type="hidden" name="{{ kind }}_special_work_entries" value="[]">
                   {% endif %}
                   {% if actual %}
-                    <label><span>{{ t("attendance.ot_hours") }}</span><input type="number" min="0" step="0.5" name="{{ kind }}_ot_hours" value="{{ segment.ot_hours if segment else 0 }}"></label>
-                    <label><span>{{ t("attendance.large_ecall_count") }}</span><input type="number" min="0" step="1" name="{{ kind }}_large_ecall_count" value="{{ segment.large_ecall_count if segment else 0 }}"></label>
-                    <label><span>{{ t("attendance.ecall_count") }}</span><input type="number" min="0" step="1" name="{{ kind }}_ecall_count" value="{{ segment.ecall_count if segment else 0 }}"></label>
-                    <label class="wide attendance-other-allowance-field"><span>替班其他津貼（HKD）</span><input type="number" min="0" step="0.01" name="{{ kind }}_other_allowance_amount" value="{{ segment.other_allowance_amount if segment else 0 }}"><small>只填寫該項目在本段實際發生的替班額外津貼，例如代替工傷同事當值所得的額外補貼。固定餐補、交通補貼、特殊津貼及一般工資更正不可填在此欄；金額會匯入 Payroll 的 Other Payment／其他付款。</small></label>
+                    <label><span>{{ t("attendance.ot_hours") }}</span><input type="number" min="0" step="0.5" name="{{ kind }}_ot_hours" value="{{ segment.ot_hours if segment else 0 }}"><small>{{ t("attendance.ot_hint") }}</small></label>
+                    <label><span>{{ t("attendance.large_ecall_count") }}</span><input type="number" min="0" step="1" name="{{ kind }}_large_ecall_count" value="{{ segment.large_ecall_count if segment else 0 }}"><small data-large-ecall-hint></small></label>
+                    <label><span>{{ t("attendance.ecall_count") }}</span><input type="number" min="0" step="1" name="{{ kind }}_ecall_count" value="{{ segment.ecall_count if segment else 0 }}"><small data-ordinary-ecall-hint></small></label>
+                    <label class="wide attendance-other-allowance-field"><span>{{ t("attendance.other_allowance") }}</span><input type="number" min="0" step="0.01" name="{{ kind }}_other_allowance_amount" value="{{ segment.other_allowance_amount if segment else 0 }}"><small>{{ t("attendance.other_allowance_hint") }}</small></label>
                   {% endif %}
+                  {% if loop.index > 1 %}<button class="mini-btn danger-text remove-segment" type="button">{{ t("attendance.remove_project_allocation") }}</button>{% endif %}
                 </div>
               {% endfor %}
             </div>
-          </section>
+            </div>
+          </details>
+          {% endfor %}
+        </section>
         {% endfor %}
+        <dialog class="app-dialog attendance-project-dialog" id="attendance-project-dialog">
+          <div class="dialog-panel attendance-project-dialog-panel">
+            <div class="section-head"><div><h2>{{ t("attendance.adjust_project_allocation") }}</h2><p>{{ t("attendance.project_allocation_hint") }}</p></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
+            <div class="attendance-project-dialog-body" data-cross-project-body></div>
+            <div class="dialog-actions"><button class="primary-btn" type="button" data-dialog-close>{{ t("attendance.finish_project_allocation") }}</button></div>
+          </div>
+        </dialog>
         <section class="review-section special-day-handling-section" data-special-day-handling hidden>
-          <h2>{{ t("attendance.sunday_holiday_handling") }}</h2>
+          <h2 data-special-handling-title>{{ t("attendance.sunday_holiday_handling") }}</h2>
           <label><span>{{ t("attendance.pay_or_comp") }}</span><select name="special_day_handling">
             <option value="pay" {% if not selected_summary or selected_summary.special_day_handling == 'pay' %}selected{% endif %}>{{ t("attendance.payroll") }}</option>
             <option value="comp_leave" {% if selected_summary and selected_summary.special_day_handling == 'comp_leave' %}selected{% endif %}>{{ t("leave.comp_balance") }}</option>
           </select></label>
-          <p class="form-note">{{ t("attendance.sunday_holiday_handling_hint") }}</p>
+          <p class="form-note" data-special-handling-hint>{{ t("attendance.sunday_holiday_handling_hint") }}</p>
         </section>
-        <label><span>{{ t("common.remarks") }}</span><textarea name="remarks">{{ selected_summary.remarks if selected_summary else '' }}</textarea></label>
+        <details class="attendance-optional-details" {% if selected_summary and selected_summary.remarks %}open{% endif %}>
+          <summary>{{ t("attendance.remarks_optional") }}</summary>
+          <label><span>{{ t("common.remarks") }}</span><textarea name="remarks">{{ selected_summary.remarks or '' if selected_summary else '' }}</textarea></label>
+        </details>
       </form>
-      {% if selected_item %}
-      <details class="review-section transfer-box">
-        <summary>{{ t("attendance.transfer") }}</summary>
-        <form class="stack-form" method="post" action="{{ url_for('attendance.transfer_project', item_id=selected_item.id) }}" enctype="multipart/form-data">
-          <label><span>{{ t("common.employee") }}</span><select name="employee_id">{% for employee in employees %}<option value="{{ employee.id }}">{{ employee.employee_no }} · {{ employee.display_name }}</option>{% endfor %}</select></label>
-          <label><span>{{ t("employee.effective_date") }}</span><input type="date" name="effective_from" required></label>
-          <label><span>{{ t("common.project") }}</span><select name="project_id">{% for project in projects %}<option value="{{ project.id }}">{{ project.name }}</option>{% endfor %}</select></label>
-          <label><span>{{ t("attendance.transfer_evidence") }}</span><input type="file" name="evidence"></label>
-          <button class="secondary-btn" type="submit">{{ t("attendance.transfer") }}</button>
-        </form>
-      </details>
-      {% endif %}
-      <div class="workbench-actions">
-        {% if edit_summary_mode %}
-          <a class="ghost-btn" href="{{ url_for('employees.view_employee', employee_id=selected_summary.employee_id, tab='attendance') }}">{{ t("common.cancel") }}</a>
-          <form method="post" action="{{ url_for('attendance.withdraw_summary', summary_id=selected_summary.id) }}" data-confirm="{{ t('attendance.withdraw_confirm') }}"><button class="ghost-btn danger-text" type="submit">{{ t("common.withdraw") }}</button></form>
-          <button class="primary-btn" type="submit" form="attendance-review-form">{{ t("common.save") }}</button>
-        {% else %}
-          {% if previous_item %}<a class="ghost-btn" href="{{ url_for('attendance.attendance_home', month=year_month, view='collection', batch_id=selected_batch.id, item_id=previous_item.id) }}">{{ t("attendance.previous") }}</a>{% else %}<a class="ghost-btn" href="{{ url_for('attendance.attendance_home', month=year_month, view='collection', batch_id=selected_batch.id) }}">{{ t("attendance.exit_detail") }}</a>{% endif %}
-          <form method="post" action="{{ url_for('attendance.skip_item', item_id=selected_item.id) }}"><button class="ghost-btn" type="submit">{{ t("attendance.skip") }}</button></form>
-          {% if duplicate_document %}
-            <button class="primary-btn" type="submit" name="confirm_duplicate" value="1" form="attendance-review-form">{{ t("documents.duplicate_attendance_replace") }}</button>
-          {% else %}
-            <button class="primary-btn" type="submit" form="attendance-review-form">{{ t("attendance.save_next") }}</button>
-          {% endif %}
-          {% if next_item %}<a class="mini-btn" href="{{ url_for('attendance.attendance_home', month=year_month, view='collection', batch_id=selected_batch.id, item_id=next_item.id) }}">{{ t("attendance.next") }}</a>{% endif %}
-        {% endif %}
-      </div>
     {% else %}
       <div class="empty-cell">{{ t("attendance.upload_batch") }}</div>
     {% endif %}
@@ -308,29 +427,35 @@
 {% elif view == "collection" %}
   {% if selected_batch %}
     {% set processed_count = selected_batch.items|rejectattr("status", "equalto", "pending")|list|length %}
+    {% set first_pending = selected_batch.items|selectattr("status", "equalto", "pending")|first %}
+    {% set repreview_item = first_pending or (selected_batch.items|first) %}
     <section class="attendance-batch-overview">
       <div class="attendance-batch-overview-head">
         <div>
           <span class="eyebrow">{{ t("attendance.current_batch") }}</span>
           <h2>{{ selected_batch.batch_no }}</h2>
-          <p>{{ selected_batch.year_month }} · {{ t("attendance.batch_progress", done=processed_count, total=selected_batch.items|length) }}</p>
+          <p>{{ t("attendance.batch_progress", done=processed_count, total=selected_batch.items|length) }}</p>
         </div>
-        <form method="post" action="{{ url_for('attendance.delete_batch', batch_id=selected_batch.id) }}" data-confirm="{{ t('attendance.delete_confirm') }}">
-          <button class="secondary-btn danger-text" type="submit">{{ t("attendance.delete_batch") }}</button>
-        </form>
+        <div class="button-row">
+          {% if repreview_item %}<a class="secondary-btn" href="{{ url_for('attendance.attendance_home', month=repreview_item.effective_year_month, view='collection', batch_id=selected_batch.id, item_id=repreview_item.id) }}">{{ t("attendance.repreview") }}</a>{% endif %}
+          <form method="post" action="{{ url_for('attendance.delete_batch', batch_id=selected_batch.id) }}" data-confirm="{{ t('attendance.delete_confirm') }}">
+            <button class="secondary-btn danger-text" type="submit">{{ t("attendance.delete_batch") }}</button>
+          </form>
+        </div>
       </div>
       <progress class="attendance-batch-overview-progress" value="{{ processed_count }}" max="{{ selected_batch.items|length or 1 }}"></progress>
       <div class="attendance-pdf-card-grid">
         {% for item in selected_batch.items %}
-          <a class="attendance-pdf-card" href="{{ url_for('attendance.attendance_home', month=selected_batch.year_month, view='collection', batch_id=selected_batch.id, item_id=item.id) }}">
+          <a class="attendance-pdf-card" href="{{ url_for('attendance.attendance_home', month=item.effective_year_month, view='collection', batch_id=selected_batch.id, item_id=item.id) }}">
             <span class="attendance-pdf-mark">PDF</span>
             <span class="attendance-pdf-card-copy">
               <strong>{{ item.original_filename }}</strong>
               <small>{{ loop.index }} / {{ selected_batch.items|length }}</small>
+              <small>{{ month_t(item.effective_year_month) }}</small>
               <span class="flag {% if item.status == 'saved' %}success{% elif item.status == 'skipped' %}warn{% else %}info{% endif %}">{{ option_t("workflow_status", item.status, item.status) }}</span>
               {% if item.employee %}<small>{{ item.employee.employee_no }} · {{ item.employee.display_name }}</small>{% endif %}
             </span>
-            <span class="attendance-pdf-open">{{ t("attendance.open_entry") }} →</span>
+            <span class="attendance-pdf-open">{{ t("attendance.repreview") if item.status != 'pending' else t("attendance.start_entry") }} →</span>
           </a>
         {% else %}
           <div class="empty-cell">{{ t("attendance.no_batch_files") }}</div>
@@ -372,23 +497,27 @@
 </section>
 {% endif %}
 <template id="segment-template">
-  <div class="segment-row">
+  <div class="segment-row" data-segment-row>
+    <div class="segment-project-summary" data-project-summary hidden>{{ t("common.project") }}：<strong>{{ t("common.unassigned") }}</strong></div>
     <label class="segment-project"><span>{{ t("common.project") }}</span><select data-name="project_id"><option value="">{{ t("common.not_set") }}</option>{% for project in projects %}<option value="{{ project.id }}">{{ project.name }}</option>{% endfor %}</select></label>
-    <label class="actual-daily-attendance-field"><span>一般工作日實際出勤日數</span><input type="number" min="0" step="0.5" value="0" data-name="working_days"></label>
-    <label class="special-work-days-count"><span>{{ t("attendance.sunday_holiday_work_days") }}</span><input class="special-work-days-input actual-special-work-days-input" type="number" min="0" step="1" value="0" data-name="holiday_days"><small>{{ t("attendance.sunday_holiday_count_first") }}</small></label>
-    <div class="special-work-date-picker" data-special-work-picker hidden><input type="hidden" value="[]" data-name="special_work_entries" data-special-work-entries><div class="special-work-date-head"><strong>{{ t("attendance.sunday_holiday_dates") }}</strong><span>{{ t("attendance.sunday_holiday_dates_hint") }}</span></div><div class="special-work-date-rows" data-special-work-rows></div></div>
+    <label class="actual-paid-days-field"><span data-paid-days-label>{{ t("attendance.ordinary_actual_days") }}</span><input type="number" min="0" step="0.5" value="0" data-name="working_days"><small class="daily-only" hidden>{{ t("attendance.daily_working_days_hint") }}</small><small class="attendance-prorated-only" hidden>{{ t("attendance.attendance_prorated_actual_hint") }}</small></label>
+    <label class="special-work-days-count"><span data-special-work-days-label>{{ t("attendance.non_normal_work_days") }}</span><input class="special-work-days-input actual-special-work-days-input" type="number" min="0" step="0.5" value="0" data-name="holiday_days"><small data-special-work-hint>{{ t("attendance.non_normal_work_count_first") }}</small></label>
+    <div class="special-work-date-picker" data-special-work-picker hidden><input type="hidden" value="[]" data-name="special_work_entries" data-special-work-entries><div class="special-work-date-head"><strong data-special-date-title>{{ t("attendance.sunday_holiday_dates") }}</strong><span data-special-date-hint>{{ t("attendance.sunday_holiday_dates_hint") }}</span></div><div class="special-work-date-rows" data-special-work-rows></div></div>
     <label><span>{{ t("attendance.ot_hours") }}</span><input type="number" min="0" step="0.5" value="0" data-name="ot_hours"></label>
-    <label><span>{{ t("attendance.large_ecall_count") }}</span><input type="number" min="0" step="1" value="0" data-name="large_ecall_count"></label>
-    <label><span>{{ t("attendance.ecall_count") }}</span><input type="number" min="0" step="1" value="0" data-name="ecall_count"></label>
-    <label class="wide attendance-other-allowance-field"><span>替班其他津貼（HKD）</span><input type="number" min="0" step="0.01" value="0" data-name="other_allowance_amount"><small>只填寫該項目本段實際發生的替班額外津貼；固定補貼及一般工資更正不可填在此欄。金額匯入 Other Payment／其他付款。</small></label>
+    <label><span>{{ t("attendance.large_ecall_count") }}</span><input type="number" min="0" step="1" value="0" data-name="large_ecall_count"><small data-large-ecall-hint></small></label>
+    <label><span>{{ t("attendance.ecall_count") }}</span><input type="number" min="0" step="1" value="0" data-name="ecall_count"><small data-ordinary-ecall-hint></small></label>
+    <label class="wide attendance-other-allowance-field"><span>{{ t("attendance.other_allowance") }}</span><input type="number" min="0" step="0.01" value="0" data-name="other_allowance_amount"><small>{{ t("attendance.other_allowance_hint") }}</small></label>
+    <button class="mini-btn danger-text remove-segment" type="button">{{ t("attendance.remove_project_allocation") }}</button>
   </div>
 </template>
 <template id="forecast-segment-template">
-  <div class="segment-row forecast-row">
+  <div class="segment-row forecast-row" data-segment-row>
+    <div class="segment-project-summary" data-project-summary hidden>{{ t("common.project") }}：<strong>{{ t("common.unassigned") }}</strong></div>
     <label class="segment-project"><span>{{ t("common.project") }}</span><select data-name="project_id"><option value="">{{ t("common.not_set") }}</option>{% for project in projects %}<option value="{{ project.id }}">{{ project.name }}</option>{% endfor %}</select></label>
-    <label><span>{{ t("attendance.forecast_days") }}</span><input type="number" min="0" step="0.5" value="0" data-name="working_days"></label>
-    <label><span>{{ t("attendance.sunday_holiday_forecast_days") }}</span><input type="number" min="0" step="1" value="0" data-name="holiday_days"><small>{{ t("attendance.forecast_no_ot_ecall") }}</small></label>
+    <label class="forecast-paid-days-field"><span>{{ t("attendance.forecast_days") }}</span><input type="number" min="0" step="0.5" value="0" data-name="working_days"><small data-forecast-working-hint></small></label>
+    <label class="forecast-special-days-field"><span data-special-forecast-days-label>{{ t("attendance.non_normal_forecast_days") }}</span><input type="number" min="0" step="0.5" value="0" data-name="holiday_days"><small data-special-forecast-hint>{{ t("attendance.forecast_no_ot_ecall") }}</small></label>
     <input type="hidden" value="[]" data-name="special_work_entries">
+    <button class="mini-btn danger-text remove-segment" type="button">{{ t("attendance.remove_project_allocation") }}</button>
   </div>
 </template>
 <template id="special-work-date-template">
@@ -441,25 +570,218 @@ const attendanceFileInput = document.querySelector("[data-attendance-file-input]
 const attendanceFileSummary = document.querySelector("[data-attendance-file-summary]");
 const attendanceUploadProgress = document.querySelector("[data-attendance-upload-progress]");
 const attendanceEmployee = document.querySelector("[data-attendance-employee]");
+const attendanceEmployeePicker = document.querySelector("[data-attendance-employee-picker]");
+const attendanceEmployeeSearch = document.querySelector("[data-attendance-employee-search]");
+const attendanceEmployeeResults = document.querySelector("[data-attendance-employee-results]");
+const attendanceEmployeeOptions = [...document.querySelectorAll("[data-attendance-employee-option]")];
+const attendanceEntryMonth = document.querySelector("[data-attendance-entry-month]");
 const attendancePayrollContext = document.querySelector("[data-attendance-payroll-context]");
 const specialDayHandling = document.querySelector("[data-special-day-handling]");
 function applyPayrollGroupFields() {
-  const group = attendanceEmployee?.selectedOptions?.[0]?.dataset.payrollGroup || "";
-  document.querySelectorAll(".actual-daily-attendance-field").forEach((field) => {
-    field.hidden = Boolean(group && group !== "site_daily");
+  const group = attendanceEmployee?.dataset.payrollGroup || "";
+  const workweek = attendanceEmployee?.dataset.workweekDays || "6";
+  const isDaily = group === "site_daily";
+  const isManagement = group === "management";
+  const attendanceProrated = attendanceEmployee?.dataset.monthlyPayMethod === "attendance_days";
+  document.querySelectorAll(".actual-paid-days-field").forEach((field) => {
+    field.hidden = Boolean(group && group !== "site_daily" && !attendanceProrated);
     const input = field.querySelector("input");
-    if (input) input.disabled = Boolean(group && group !== "site_daily");
+    if (input) input.disabled = Boolean(group && group !== "site_daily" && !attendanceProrated);
+    const label = field.querySelector("[data-paid-days-label]");
+    if (label) label.textContent = attendanceProrated
+      ? "{{ t('attendance.prorated_actual_days') }}"
+      : (isDaily ? "{{ t('attendance.daily_actual_days') }}" : "{{ t('attendance.ordinary_actual_days') }}");
+    field.querySelectorAll(".daily-only").forEach((note) => { note.hidden = !isDaily; });
+    field.querySelectorAll(".attendance-prorated-only").forEach((note) => { note.hidden = !attendanceProrated; });
+  });
+  document.querySelectorAll(".special-work-days-count, [data-special-work-picker], .forecast-special-days-field").forEach((field) => {
+    field.hidden = attendanceProrated;
+    field.querySelectorAll("input").forEach((input) => {
+      input.disabled = attendanceProrated;
+      if (attendanceProrated && input.type === "number") input.value = "0";
+    });
   });
   if (attendancePayrollContext) {
     attendancePayrollContext.hidden = !group;
-    const label = attendancePayrollContext.querySelector("[data-attendance-payroll-label]");
-    if (label) label.textContent = attendanceEmployee?.selectedOptions?.[0]?.dataset.payrollLabel || "";
     attendancePayrollContext.querySelectorAll("[data-payroll-rule]").forEach((rule) => {
       rule.hidden = rule.dataset.payrollRule !== group;
     });
+    attendancePayrollContext.querySelectorAll("[data-pay-method-rule]").forEach((rule) => {
+      rule.hidden = rule.dataset.payMethodRule !== attendanceEmployee?.dataset.monthlyPayMethod;
+    });
   }
+  document.querySelectorAll("[data-special-work-days-label]").forEach((label) => {
+    label.textContent = isDaily
+      ? "{{ t('attendance.daily_statutory_work_days') }}"
+      : (isManagement
+      ? (workweek === "5.5"
+        ? "{{ t('attendance.management_non_normal_work_days_five_half') }}"
+        : (workweek === "5" || workweek === "5.0" ? "{{ t('attendance.management_non_normal_work_days_five') }}" : "{{ t('attendance.management_non_normal_work_days_six') }}"))
+      : (workweek === "5.5"
+      ? "{{ t('attendance.non_normal_work_days_five_half') }}"
+      : (workweek === "5" || workweek === "5.0" ? "{{ t('attendance.non_normal_work_days_five') }}" : "{{ t('attendance.non_normal_work_days_six') }}")));
+  });
+  document.querySelectorAll("[data-special-forecast-days-label]").forEach((label) => {
+    label.textContent = isDaily
+      ? "{{ t('attendance.daily_statutory_forecast_days') }}"
+      : (isManagement
+      ? (workweek === "5.5"
+        ? "{{ t('attendance.management_non_normal_forecast_days_five_half') }}"
+        : (workweek === "5" || workweek === "5.0" ? "{{ t('attendance.management_non_normal_forecast_days_five') }}" : "{{ t('attendance.management_non_normal_forecast_days_six') }}"))
+      : (workweek === "5.5"
+      ? "{{ t('attendance.non_normal_forecast_days_five_half') }}"
+      : (workweek === "5" || workweek === "5.0" ? "{{ t('attendance.non_normal_forecast_days_five') }}" : "{{ t('attendance.non_normal_forecast_days_six') }}")));
+  });
+  document.querySelectorAll("[data-special-work-hint]").forEach((note) => {
+    note.textContent = isDaily
+      ? "{{ t('attendance.daily_statutory_work_hint') }}"
+      : (isManagement
+        ? (workweek === "5.5"
+          ? "{{ t('attendance.management_workweek_five_half_entry_hint') }}"
+          : (workweek === "5" || workweek === "5.0"
+            ? "{{ t('attendance.management_workweek_five_entry_hint') }}"
+            : "{{ t('attendance.management_workweek_six_entry_hint') }}"))
+      : (workweek === "5.5"
+        ? "{{ t('attendance.workweek_five_half_entry_hint') }}"
+        : (workweek === "5" || workweek === "5.0"
+          ? "{{ t('attendance.workweek_five_entry_hint') }}"
+          : "{{ t('attendance.workweek_six_entry_hint') }}")));
+  });
+  document.querySelectorAll("[data-forecast-working-hint]").forEach((note) => {
+    note.textContent = attendanceProrated
+      ? "{{ t('attendance.forecast_rule_attendance_days') }}"
+      : (isDaily
+        ? "{{ t('attendance.daily_forecast_working_hint') }}"
+        : (isManagement
+          ? (workweek === "5.5"
+            ? "{{ t('attendance.management_workweek_five_half_forecast_hint') }}"
+            : (workweek === "5" || workweek === "5.0"
+              ? "{{ t('attendance.management_workweek_five_forecast_hint') }}"
+              : "{{ t('attendance.management_workweek_six_forecast_hint') }}"))
+        : (workweek === "5.5"
+          ? "{{ t('attendance.workweek_five_half_forecast_hint') }}"
+          : (workweek === "5" || workweek === "5.0"
+            ? "{{ t('attendance.workweek_five_forecast_hint') }}"
+            : "{{ t('attendance.workweek_six_forecast_hint') }}"))));
+  });
+  document.querySelectorAll("[data-special-forecast-hint]").forEach((note) => {
+    note.textContent = isDaily
+      ? "{{ t('attendance.daily_statutory_forecast_hint') }}"
+      : "{{ t('attendance.forecast_no_ot_ecall') }}";
+  });
+  document.querySelectorAll("[data-special-date-title]").forEach((title) => {
+    title.textContent = isDaily
+      ? "{{ t('attendance.daily_statutory_dates') }}"
+      : (isManagement ? "{{ t('attendance.management_special_dates') }}" : "{{ t('attendance.sunday_holiday_dates') }}");
+  });
+  document.querySelectorAll("[data-special-date-hint]").forEach((note) => {
+    note.textContent = isDaily
+      ? "{{ t('attendance.daily_statutory_dates_hint') }}"
+      : (isManagement ? "{{ t('attendance.management_special_dates_hint') }}" : "{{ t('attendance.sunday_holiday_dates_hint') }}");
+  });
+  document.querySelectorAll("[data-large-ecall-hint]").forEach((note) => {
+    note.textContent = isDaily
+      ? "{{ t('attendance.daily_large_ecall_hint') }}"
+      : "{{ t('attendance.large_ecall_hint') }}";
+  });
+  document.querySelectorAll("[data-ordinary-ecall-hint]").forEach((note) => {
+    note.textContent = isDaily
+      ? "{{ t('attendance.daily_ordinary_ecall_hint') }}"
+      : "{{ t('attendance.ordinary_ecall_hint') }}";
+  });
+  document.querySelectorAll("[data-prefill-source]").forEach((note) => {
+    if (note.dataset.prefillSource === "prior_forecast") {
+      note.textContent = "{{ t('attendance.prefill_prior_forecast') }}";
+    } else if (attendanceProrated) {
+      note.textContent = "{{ t('attendance.prefill_attendance_days_zero') }}";
+    } else if (isDaily) {
+      note.textContent = note.dataset.prefillPeriod.includes("forecast")
+        ? "{{ t('attendance.prefill_daily_forecast') }}"
+        : "{{ t('attendance.prefill_daily_actual') }}";
+    } else {
+      note.textContent = note.dataset.prefillPeriod.includes("forecast")
+        ? "{{ t('attendance.prefill_workweek_forecast') }}"
+        : "{{ t('attendance.prefill_monthly_actual') }}";
+    }
+  });
+  document.querySelectorAll("[data-summary-special-label]").forEach((summarySpecialLabel) => {
+    summarySpecialLabel.textContent = isDaily
+      ? "{{ t('attendance.summary_statutory_work') }}"
+      : (isManagement ? "{{ t('attendance.management_summary_special_days') }}" : "{{ t('attendance.summary_special_days') }}");
+  });
+  const handlingTitle = document.querySelector("[data-special-handling-title]");
+  if (handlingTitle) handlingTitle.textContent = isDaily
+    ? "{{ t('attendance.daily_statutory_handling') }}"
+    : (isManagement ? "{{ t('attendance.management_holiday_handling') }}" : "{{ t('attendance.sunday_holiday_handling') }}");
+  const handlingHint = document.querySelector("[data-special-handling-hint]");
+  if (handlingHint) handlingHint.textContent = isDaily
+    ? "{{ t('attendance.daily_statutory_handling_hint') }}"
+    : (isManagement ? "{{ t('attendance.management_holiday_handling_hint') }}" : "{{ t('attendance.sunday_holiday_handling_hint') }}");
 }
-if (attendanceEmployee) {
+function normalizedEmployeeSearch(value) {
+  return (value || "").toLocaleLowerCase().replace(/\s+/g, "");
+}
+function filterAttendanceEmployees() {
+  if (!attendanceEmployeeSearch || !attendanceEmployeeResults) return;
+  const term = normalizedEmployeeSearch(attendanceEmployeeSearch.value);
+  attendanceEmployeeOptions.forEach((option) => {
+    option.hidden = Boolean(term && !normalizedEmployeeSearch(option.dataset.search).includes(term));
+  });
+  attendanceEmployeeResults.hidden = false;
+  attendanceEmployeeSearch.setAttribute("aria-expanded", "true");
+}
+function selectAttendanceEmployee(option) {
+  if (!attendanceEmployee || !attendanceEmployeeSearch || !option) return;
+  attendanceEmployee.value = option.dataset.employeeId;
+  attendanceEmployee.dataset.payrollGroup = option.dataset.payrollGroup;
+  attendanceEmployee.dataset.workweekDays = option.dataset.workweekDays || "6";
+  attendanceEmployee.dataset.monthlyPayMethod = option.dataset.monthlyPayMethod || "full_month";
+  attendanceEmployee.dataset.payrollLabel = option.dataset.payrollLabel;
+  attendanceEmployeeSearch.value = option.dataset.employeeLabel;
+  attendanceEmployeeSearch.setCustomValidity("");
+  attendanceEmployeeResults.hidden = true;
+  attendanceEmployeeSearch.setAttribute("aria-expanded", "false");
+  applyPayrollGroupFields();
+  const url = new URL(window.location.href);
+  url.searchParams.set("employee_id", attendanceEmployee.value);
+  window.location.href = url.toString();
+}
+if (attendanceEmployee && attendanceEmployeeSearch) {
+  attendanceEmployeeSearch.addEventListener("focus", filterAttendanceEmployees);
+  attendanceEmployeeSearch.addEventListener("input", () => {
+    attendanceEmployee.value = "";
+    attendanceEmployee.dataset.payrollGroup = "";
+    attendanceEmployee.dataset.workweekDays = "";
+    attendanceEmployee.dataset.monthlyPayMethod = "";
+    attendanceEmployee.dataset.payrollLabel = "";
+    applyPayrollGroupFields();
+    filterAttendanceEmployees();
+  });
+  attendanceEmployeeSearch.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    const firstVisible = attendanceEmployeeOptions.find((option) => !option.hidden);
+    if (!firstVisible) return;
+    event.preventDefault();
+    selectAttendanceEmployee(firstVisible);
+  });
+  attendanceEmployeeOptions.forEach((option) => {
+    option.addEventListener("click", () => selectAttendanceEmployee(option));
+  });
+  document.addEventListener("click", (event) => {
+    if (attendanceEmployeePicker?.contains(event.target)) return;
+    attendanceEmployeeResults.hidden = true;
+    attendanceEmployeeSearch.setAttribute("aria-expanded", "false");
+  });
+  document.getElementById("attendance-review-form")?.addEventListener("submit", (event) => {
+    if (attendanceEmployee.value) return;
+    event.preventDefault();
+    attendanceEmployeeSearch.setCustomValidity("{{ t('attendance.select_employee_required') }}");
+    attendanceEmployeeSearch.reportValidity();
+    attendanceEmployeeSearch.focus();
+  });
+  applyPayrollGroupFields();
+}
+if (attendanceEmployee && !attendanceEmployeeSearch) {
   attendanceEmployee.addEventListener("change", () => {
     const url = new URL(window.location.href);
     if (attendanceEmployee.value) {
@@ -470,6 +792,14 @@ if (attendanceEmployee) {
     window.location.href = url.toString();
   });
   applyPayrollGroupFields();
+}
+if (attendanceEntryMonth) {
+  attendanceEntryMonth.addEventListener("change", () => {
+    if (!attendanceEntryMonth.value) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("month", attendanceEntryMonth.value);
+    window.location.href = url.toString();
+  });
 }
 
 function updateAttendanceFileSummary() {
@@ -527,17 +857,34 @@ function updateSpecialDayHandlingVisibility() {
   specialDayHandling.hidden = total <= 0;
 }
 
+const attendanceReviewForm = document.getElementById("attendance-review-form");
+const statutoryDateSet = new Set(JSON.parse(attendanceReviewForm?.dataset.statutoryDates || "[]"));
+function specialWorkUnits(value) {
+  if (!value) return 1;
+  const day = new Date(`${value}T00:00:00`).getDay();
+  const isDaily = attendanceEmployee?.dataset.payrollGroup === "site_daily";
+  if (isDaily) return statutoryDateSet.has(value) ? 1 : null;
+  if (statutoryDateSet.has(value) || day === 0) return 1;
+  const workweek = attendanceEmployee?.dataset.workweekDays || "6";
+  if (day === 6 && workweek === "5.5") return 0.5;
+  if (day === 6 && (workweek === "5" || workweek === "5.0")) return 1;
+  return null;
+}
 function serializeSpecialWorkPicker(picker) {
   const entries = [...picker.querySelectorAll(".special-work-date-row")].map((row) => ({
     date: row.querySelector("[data-special-work-date]")?.value || "",
     session: "full_day",
+    days: specialWorkUnits(row.querySelector("[data-special-work-date]")?.value || "") || 0,
   }));
   const hidden = picker.querySelector("[data-special-work-entries]");
   if (hidden) hidden.value = JSON.stringify(entries);
   const usedDates = new Set();
   picker.querySelectorAll("[data-special-work-date]").forEach((input) => {
     const duplicate = input.value && usedDates.has(input.value);
-    input.setCustomValidity(duplicate ? "{{ t('attendance.duplicate_sunday_holiday_date') }}" : "");
+    const invalid = input.value && specialWorkUnits(input.value) === null;
+    input.setCustomValidity(duplicate
+      ? "{{ t('attendance.duplicate_sunday_holiday_date') }}"
+      : (invalid ? "{{ t('attendance.invalid_special_work_date') }}" : ""));
     if (input.value) usedDates.add(input.value);
   });
 }
@@ -558,9 +905,9 @@ function syncSpecialWorkPicker(input) {
   const row = input.closest(".segment-row");
   const picker = row?.querySelector("[data-special-work-picker]");
   if (!picker) return;
-  const days = Math.max(0, Math.round(Number.parseFloat(input.value) || 0));
+  const days = Math.max(0, Math.round((Number.parseFloat(input.value) || 0) * 2) / 2);
   input.value = days;
-  const wantedRows = days;
+  const wantedRows = Math.ceil(days);
   const rowsRoot = picker.querySelector("[data-special-work-rows]");
   while (rowsRoot.children.length < wantedRows) rowsRoot.append(makeSpecialWorkDateRow(picker));
   while (rowsRoot.children.length > wantedRows) rowsRoot.lastElementChild.remove();
@@ -600,12 +947,203 @@ document.querySelectorAll(".add-segment").forEach((button) => {
     list.append(fragment);
     applyPayrollGroupFields();
     bindSpecialWorkPickers(list.lastElementChild);
+    updateProjectAllocationSummaries();
+    updateAttendanceEntrySummary();
   });
 });
+function updateProjectAllocationSummaries() {
+  document.querySelectorAll("[data-segments]").forEach((list) => {
+    const rows = [...list.querySelectorAll(":scope > [data-segment-row]")];
+    const multiple = rows.length > 1;
+    rows.forEach((row) => {
+      const summary = row.querySelector("[data-project-summary]");
+      const select = row.querySelector(".segment-project select");
+      if (!summary || !select) return;
+      summary.hidden = !multiple;
+      const value = select.selectedOptions[0]?.textContent?.trim() || "{{ t('common.unassigned') }}";
+      const strong = summary.querySelector("strong");
+      if (strong) strong.textContent = value === "{{ t('common.not_set') }}" ? "{{ t('common.unassigned') }}" : value;
+    });
+  });
+}
+document.getElementById("attendance-review-form")?.addEventListener("change", (event) => {
+  if (event.target.matches(".segment-project select")) updateProjectAllocationSummaries();
+});
+document.getElementById("attendance-review-form")?.addEventListener("click", (event) => {
+  const remove = event.target.closest(".remove-segment");
+  if (!remove) return;
+  const row = remove.closest("[data-segment-row]");
+  const list = row?.parentElement;
+  row?.remove();
+  updateProjectAllocationSummaries();
+  updateSpecialDayHandlingVisibility();
+  updateAttendanceEntrySummary();
+  list?.querySelector(".segment-project select")?.focus();
+});
+const attendanceProjectDialog = document.getElementById("attendance-project-dialog");
+const attendanceProjectDialogBody = attendanceProjectDialog?.querySelector("[data-cross-project-body]");
+const attendanceProjectOpen = document.querySelector("[data-cross-project-open]");
+let attendanceProjectGroupSlots = [];
+function restoreAttendanceProjectGroups() {
+  attendanceProjectGroupSlots.forEach(({ group, slot, openStates }) => {
+    slot.replaceWith(group);
+    group.querySelectorAll("[data-attendance-period]").forEach((period, index) => {
+      period.open = Boolean(openStates[index]);
+    });
+  });
+  attendanceProjectGroupSlots = [];
+  updateProjectAllocationSummaries();
+}
+if (attendanceProjectDialog && attendanceProjectDialogBody && attendanceProjectOpen) {
+  attendanceProjectOpen.addEventListener("click", () => {
+    if (attendanceProjectDialog.open) return;
+    attendanceProjectGroupSlots = [...document.querySelectorAll("#attendance-review-form > [data-attendance-period-group]")].map((group) => {
+      const slot = document.createComment("attendance-project-group-slot");
+      const periods = [...group.querySelectorAll("[data-attendance-period]")];
+      const openStates = periods.map((period) => period.open);
+      periods.forEach((period) => { period.open = true; });
+      group.replaceWith(slot);
+      attendanceProjectDialogBody.appendChild(group);
+      return { group, slot, openStates };
+    });
+    attendanceProjectDialog._opener = attendanceProjectOpen;
+    attendanceProjectDialog.showModal();
+  });
+  attendanceProjectDialog.addEventListener("close", restoreAttendanceProjectGroups);
+}
+updateProjectAllocationSummaries();
 bindSpecialWorkPickers();
-document.getElementById("attendance-review-form")?.addEventListener("submit", () => {
+function attendanceNumber(value) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+function attendanceFieldTotal(root, suffix) {
+  return [...root.querySelectorAll(`input[name$="_${suffix}"]:not(:disabled)`)]
+    .reduce((total, input) => total + attendanceNumber(input.value), 0);
+}
+function attendanceSignedText(value, unit) {
+  const numberText = Number.isInteger(Math.abs(value)) ? String(Math.abs(value)) : Math.abs(value).toFixed(1);
+  return `${value > 0 ? "+" : "−"}${numberText}${unit}`;
+}
+function attendanceNumberText(value) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+function updateAttendancePeriodSummary(period, values, fullMonthSalary) {
+  const actual = period.dataset.periodActual === "1";
+  const base = period.querySelector("[data-period-base]");
+  const special = period.querySelector("[data-period-special]");
+  const events = period.querySelector("[data-period-events]");
+  const allowance = period.querySelector("[data-period-allowance]");
+  const zeroState = period.querySelector("[data-period-zero-state]");
+  if (base) {
+    if (fullMonthSalary && actual) {
+      base.textContent = "{{ t('attendance.full_month_salary_short') }}";
+    } else if (fullMonthSalary) {
+      base.textContent = "{{ t('attendance.forecast_baseline_days') }}".replace("__TOTAL__", attendanceNumberText(values.working));
+    } else {
+      base.textContent = "{{ t('attendance.days_short') }}".replace("__TOTAL__", attendanceNumberText(values.working));
+    }
+  }
+  if (special) special.textContent = values.holiday
+    ? "{{ t('attendance.days_short') }}".replace("__TOTAL__", attendanceNumberText(values.holiday))
+    : "—";
+  if (events) {
+    const parts = [];
+    if (values.ot) parts.push(`OT ${attendanceNumberText(values.ot)}h`);
+    if (values.largeEcall) parts.push(`{{ t('attendance.large_ecall_short') }} ${attendanceNumberText(values.largeEcall)}`);
+    if (values.ordinaryEcall) parts.push(`{{ t('attendance.ordinary_ecall_short') }} ${attendanceNumberText(values.ordinaryEcall)}`);
+    events.textContent = parts.length ? parts.join(" · ") : "—";
+  }
+  if (allowance) allowance.textContent = values.allowance
+    ? `HKD ${values.allowance.toFixed(2)}`
+    : "—";
+  if (zeroState) {
+    const hasExtra = values.holiday || values.ot || values.largeEcall || values.ordinaryEcall || values.allowance;
+    zeroState.textContent = actual && !hasExtra ? "{{ t('attendance.no_extra_items_entered') }}" : "";
+    zeroState.hidden = !zeroState.textContent;
+  }
+}
+function updateAttendanceEntrySummary() {
+  const form = document.getElementById("attendance-review-form");
+  const summary = document.querySelector("[data-attendance-entry-summary]");
+  if (!form || !summary) return [];
+  const periods = {};
+  const errors = [];
+  form.querySelectorAll("[data-attendance-period]").forEach((period) => {
+    const working = attendanceFieldTotal(period, "working_days");
+    const holiday = attendanceFieldTotal(period, "holiday_days");
+    const ot = attendanceFieldTotal(period, "ot_hours");
+    const largeEcall = attendanceFieldTotal(period, "large_ecall_count");
+    const ordinaryEcall = attendanceFieldTotal(period, "ecall_count");
+    const allowance = attendanceFieldTotal(period, "other_allowance_amount");
+    periods[period.dataset.attendancePeriod] = {
+      working,
+      holiday,
+      ot,
+      largeEcall,
+      ordinaryEcall,
+      allowance,
+    };
+    const limit = Number(period.dataset.periodDays || 0);
+    if (working < 0 || holiday < 0 || ot < 0 || largeEcall < 0 || ordinaryEcall < 0) errors.push(`${period.dataset.periodTitle}：數值不可小於 0。`);
+    if (working + holiday > limit) errors.push(`${period.dataset.periodTitle}：出勤合計 ${working + holiday} 日，超過本段 ${limit} 日。`);
+  });
+  const empty = { working: 0, holiday: 0, ot: 0, largeEcall: 0, ordinaryEcall: 0, allowance: 0 };
+  const currentActual = periods.current_1_20 || empty;
+  const currentForecast = periods.current_21_end_forecast || empty;
+  const previousActual = periods.previous_21_end || empty;
+  const previousForecast = periods.previous_21_end_forecast || empty;
+  const fullMonthSalary = ["site_monthly", "management"].includes(attendanceEmployee?.dataset.payrollGroup)
+    && attendanceEmployee?.dataset.monthlyPayMethod !== "attendance_days";
+  form.querySelectorAll("[data-attendance-period]").forEach((period) => {
+    updateAttendancePeriodSummary(period, periods[period.dataset.attendancePeriod] || empty, fullMonthSalary);
+    period.classList.toggle("attendance-period-invalid", errors.some((message) => message.startsWith(`${period.dataset.periodTitle}：`)));
+  });
+  const reconciliation = document.querySelector("[data-attendance-reconciliation]");
+  if (reconciliation) {
+    const differences = [];
+    if (!fullMonthSalary && previousActual.working !== previousForecast.working) differences.push(attendanceSignedText(previousActual.working - previousForecast.working, "{{ t('attendance.day_unit') }}"));
+    if (previousActual.holiday !== previousForecast.holiday) differences.push(`{{ t('attendance.special_short') }} ${attendanceSignedText(previousActual.holiday - previousForecast.holiday, "{{ t('attendance.day_unit') }}")}`);
+    if (previousActual.ot !== previousForecast.ot) differences.push(`OT ${attendanceSignedText(previousActual.ot - previousForecast.ot, "h")}`);
+    if (previousActual.largeEcall !== previousForecast.largeEcall) differences.push(`{{ t('attendance.large_ecall_short') }} ${attendanceSignedText(previousActual.largeEcall - previousForecast.largeEcall, "")}`);
+    if (previousActual.ordinaryEcall !== previousForecast.ordinaryEcall) differences.push(`{{ t('attendance.ordinary_ecall_short') }} ${attendanceSignedText(previousActual.ordinaryEcall - previousForecast.ordinaryEcall, "")}`);
+    if (previousActual.allowance !== previousForecast.allowance) differences.push(`{{ t('attendance.other_allowance_short') }} ${attendanceSignedText(previousActual.allowance - previousForecast.allowance, "")}`);
+    reconciliation.textContent = differences.length
+      ? "{{ t('attendance.reconciliation_difference') }}".replace("__DETAILS__", differences.join(" · "))
+      : "{{ t('attendance.reconciliation_match') }}";
+    reconciliation.classList.toggle("has-difference", differences.length > 0);
+  }
+  const errorBox = summary;
+  const list = errorBox.querySelector("ul");
+  if (errorBox && list) {
+    list.replaceChildren(...errors.map((message) => {
+      const item = document.createElement("li");
+      item.textContent = message;
+      return item;
+    }));
+    errorBox.hidden = errors.length === 0;
+  }
+  return errors;
+}
+document.getElementById("attendance-review-form")?.addEventListener("input", updateAttendanceEntrySummary);
+document.getElementById("attendance-review-form")?.addEventListener("wheel", (event) => {
+  const input = event.target.closest("input[type='number']");
+  if (input && document.activeElement === input) input.blur();
+}, { passive: true, capture: true });
+document.getElementById("attendance-review-form")?.addEventListener("submit", (event) => {
   document.querySelectorAll("[data-special-work-picker]").forEach(serializeSpecialWorkPicker);
+  if (updateAttendanceEntrySummary().length) {
+    event.preventDefault();
+    document.querySelectorAll(".attendance-period-invalid").forEach((period) => { period.open = true; });
+    document.querySelector("[data-attendance-entry-summary]")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+});
+document.getElementById("attendance-review-form")?.addEventListener("keydown", (event) => {
+  if (!(event.ctrlKey && event.key === "Enter")) return;
+  event.preventDefault();
+  document.querySelector("button[type='submit'][form='attendance-review-form']")?.click();
 });
 updateSpecialDayHandlingVisibility();
+updateAttendanceEntrySummary();
 </script>
 {% endblock %}

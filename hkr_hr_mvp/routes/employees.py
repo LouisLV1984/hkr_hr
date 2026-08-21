@@ -79,6 +79,7 @@ from tools.hr_core import (
     masked_bank_account,
     next_employee_no,
     normalize_identity_number,
+    normalize_workweek_days,
     parse_bool,
     parse_date,
     parse_decimal,
@@ -310,6 +311,7 @@ def assignment_snapshot(assignment):
         "project_id": assignment.project_id,
         "department_id": assignment.department_id,
         "payroll_group": assignment.payroll_group,
+        "workweek_days": str(assignment.workweek_days),
         "position_ids": [
             item.position_id for item in assignment.positions
         ],
@@ -325,6 +327,7 @@ def salary_snapshot(salary):
             salary.effective_to.isoformat() if salary.effective_to else None
         ),
         "salary_basis": salary.salary_basis,
+        "monthly_pay_method": salary.monthly_pay_method or "full_month",
         "currency": salary.currency,
         "amount": str(salary.amount),
         "status": salary.status,
@@ -399,7 +402,9 @@ AUDIT_FIELD_LABELS = {
     "department_id": "audit.field.department",
     "position_ids": "audit.field.positions",
     "payroll_group": "audit.field.payroll_group",
+    "workweek_days": "employee.workweek_days",
     "salary_basis": "audit.field.salary_basis",
+    "monthly_pay_method": "employee.monthly_pay_method",
     "currency": "audit.field.currency",
     "amount": "audit.field.amount",
     "label": "audit.field.label",
@@ -445,6 +450,7 @@ AUDIT_OPTION_CATEGORIES = {
     "identity_type": "identity_type",
     "payroll_group": "payroll_group",
     "salary_basis": "salary_basis",
+    "monthly_pay_method": "monthly_pay_method",
     "status": "document_status",
     "termination_reason": "termination_reason",
 }
@@ -774,6 +780,35 @@ def list_employees():
         )
         for employee in employees
     ]
+    document_codes = {
+        "staff_record",
+        "signed_contract",
+        "three_treasures",
+        "visa",
+        "sick_evidence",
+    }
+    impact_counts = {
+        "payroll": 0,
+        "leave": 0,
+        "mpf": 0,
+        "documents": 0,
+    }
+    for row in readiness_rows:
+        missing_codes = {
+            item["code"] for item in row["employee_data"] if not item["ok"]
+        }
+        row["impact"] = {
+            "payroll": (
+                not row["attendance"]["ok"]
+                or any(not item["ok"] for item in row["payroll"])
+            ),
+            "leave": "employment" in missing_codes,
+            "mpf": "mpf" in missing_codes,
+            "documents": bool(missing_codes & document_codes),
+        }
+        for code, affected in row["impact"].items():
+            if affected:
+                impact_counts[code] += 1
     readiness_filter = request.args.get("readiness", "")
     if readiness_filter == "needs_action":
         readiness_rows = [row for row in readiness_rows if row["has_issue"]]
@@ -793,11 +828,18 @@ def list_employees():
             for row in readiness_rows
             if any(not item["ok"] for item in row["payroll"])
         ]
+    impact_filter = request.args.get("impact", "")
+    if impact_filter in impact_counts:
+        readiness_rows = [
+            row for row in readiness_rows if row["impact"][impact_filter]
+        ]
     return render_template(
         "employees/list.html",
         readiness_rows=readiness_rows,
         year_month=year_month,
         readiness_filter=readiness_filter,
+        impact_filter=impact_filter,
+        impact_counts=impact_counts,
         employee_types=reference_options("employee_type"),
         projects=WorkProject.query.filter_by(active=True).order_by(
             WorkProject.name
@@ -1268,10 +1310,16 @@ def add_assignment(employee_id):
         "change_evidence",
         "任職調整憑證",
     )
+    payroll_group = request.form.get("payroll_group") or employee.payroll_group
+    workweek_days = normalize_workweek_days(
+        request.form.get("workweek_days"),
+        payroll_group,
+    )
     assignment = create_assignment(
         employee=employee,
         effective_from=effective_from,
-        payroll_group=request.form.get("payroll_group") or employee.payroll_group,
+        payroll_group=payroll_group,
+        workweek_days=workweek_days,
         region_id=form_int("region_id"),
         project_id=form_int("project_id"),
         department_id=form_int("department_id"),
@@ -1301,6 +1349,7 @@ def add_assignment(employee_id):
             "project_id": assignment.project_id,
             "department_id": assignment.department_id,
             "payroll_group": assignment.payroll_group,
+            "workweek_days": str(assignment.workweek_days),
             "evidence_missing": evidence is None,
         },
     )
@@ -1324,8 +1373,12 @@ def add_salary(employee_id):
     effective_from = parse_date(request.form.get("effective_from"))
     amount = parse_decimal(request.form.get("amount"))
     salary_basis = request.form.get("salary_basis")
+    monthly_pay_method = request.form.get("monthly_pay_method") or "full_month"
     if not effective_from or amount is None or salary_basis not in {"monthly", "daily"}:
         flash("請完整填寫薪酬類型、金額及生效日期。", "error")
+        return employee_redirect(employee.id, "employment")
+    if monthly_pay_method not in {"full_month", "attendance_days"}:
+        flash("請選擇有效的月薪計薪方式。", "error")
         return employee_redirect(employee.id, "employment")
     if any(
         item.status == "active" and item.effective_from == effective_from
@@ -1345,6 +1398,7 @@ def add_salary(employee_id):
         salary_basis,
         request.form.get("currency") or "HKD",
         amount,
+        monthly_pay_method=monthly_pay_method,
         evidence_document_id=evidence.id if evidence else None,
         remarks=request.form.get("remarks", "").strip() or None,
     )
@@ -1356,6 +1410,7 @@ def add_salary(employee_id):
         detail=f"薪酬由 {effective_from:%Y-%m-%d} 生效",
         after={
             "basis": salary_basis,
+            "monthly_pay_method": salary.monthly_pay_method,
             "currency": salary.currency,
             "amount": str(salary.amount),
             "evidence_missing": evidence is None,
@@ -1447,6 +1502,10 @@ def correct_assignment(assignment_id):
         "labour_dispatch_entity_id"
     )
     assignment.payroll_group = payroll_group
+    assignment.workweek_days = normalize_workweek_days(
+        request.form.get("workweek_days"),
+        payroll_group,
+    )
     assignment.remarks = request.form.get("remarks", "").strip() or None
     assignment.positions.clear()
     db.session.flush()
@@ -1563,10 +1622,12 @@ def correct_salary(salary_id):
     effective_from = parse_date(request.form.get("effective_from"))
     amount = parse_decimal(request.form.get("amount"))
     salary_basis = request.form.get("salary_basis")
+    monthly_pay_method = request.form.get("monthly_pay_method") or "full_month"
     if (
         not effective_from
         or amount is None
         or salary_basis not in {"monthly", "daily"}
+        or monthly_pay_method not in {"full_month", "attendance_days"}
     ):
         flash("請完整填寫薪酬類型、金額及生效日期。", "error")
         return employee_redirect(salary.employee_id, "employment")
@@ -1581,6 +1642,9 @@ def correct_salary(salary_id):
         return employee_redirect(salary.employee_id, "employment")
     salary.effective_from = effective_from
     salary.salary_basis = salary_basis
+    salary.monthly_pay_method = (
+        monthly_pay_method if salary_basis == "monthly" else "full_month"
+    )
     salary.currency = request.form.get("currency") or "HKD"
     salary.amount = amount
     salary.remarks = request.form.get("remarks", "").strip() or None
@@ -2604,6 +2668,9 @@ def update_leave_balance(employee_id):
 @login_required
 def add_allowance(employee_id):
     employee = db.get_or_404(Employee, employee_id)
+    if employee.payroll_group == "site_daily":
+        flash("固定補貼目前只支持月工及 OFFICE，不支持日工。", "error")
+        return employee_redirect(employee.id, "employment")
     allowance_type = request.form.get("allowance_type", "").strip()
     effective_from = parse_date(request.form.get("effective_from"))
     effective_to = parse_date(request.form.get("effective_to"))
@@ -2665,6 +2732,9 @@ def add_allowance(employee_id):
 @login_required
 def correct_allowance(allowance_id):
     allowance = db.get_or_404(EmployeeAllowance, allowance_id)
+    if allowance.employee.payroll_group == "site_daily":
+        flash("固定補貼目前只支持月工及 OFFICE，不支持日工。", "error")
+        return employee_redirect(allowance.employee_id, "employment")
     before = {
         "allowance_type": allowance.allowance_type,
         "currency": allowance.currency,

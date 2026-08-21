@@ -27,11 +27,14 @@ from tools.hr_core import (
 from tools.attendance_policy import (
     attendance_required,
     default_attendance_summary,
+    employee_statutory_holidays,
+    is_legacy_inferred_special_day_summary,
     policy_on,
+    scheduled_work_units,
 )
 
 
-RULE_VERSION = "V1.6-2026-08-17"
+RULE_VERSION = "V2.0-2026-08-19"
 PAYROLL_GROUP_CODES = ("site_daily", "site_monthly", "management")
 ECALL_FLAT_AMOUNT = Decimal("400")
 
@@ -349,8 +352,16 @@ def monthly_salary_components(employee, start, end):
     return result
 
 
-def daily_leave_components(employee, start, end):
+def daily_leave_components(
+    employee,
+    start,
+    end,
+    *,
+    include_attendance_prorated=False,
+    excluded_dates=None,
+):
     leave_units = leave_units_by_date(employee, start, end)
+    excluded_dates = set(excluded_dates or ())
     sick_full_remaining = Decimal("1")
     result = {
         "annual": Decimal("0"),
@@ -362,8 +373,17 @@ def daily_leave_components(employee, start, end):
         "injury_days": Decimal("0"),
     }
     for day in date_range(start, end):
+        if day in excluded_dates:
+            continue
         rates = salary_rate_for_date(employee, day)
-        if not rates or rates["salary"].salary_basis != "daily":
+        if not rates:
+            continue
+        salary = rates["salary"]
+        if salary.salary_basis != "daily" and not (
+            include_attendance_prorated
+            and salary.salary_basis == "monthly"
+            and salary.monthly_pay_method == "attendance_days"
+        ):
             continue
         daily = rates["base_rate"]
         injury = work_injury_on(employee, day)
@@ -410,6 +430,51 @@ def daily_leave_components(employee, start, end):
     return result
 
 
+def add_daily_statutory_holiday_pay(
+    employee,
+    start,
+    end,
+    lines,
+    casual_components=None,
+):
+    """Pay daily-rated staff one normal day from their employment start date."""
+    holidays = employee_statutory_holidays(employee, start, end)
+    paid_dates = set()
+    amount = Decimal("0")
+    for day in sorted(holidays):
+        if not employment_period_on(employee, day):
+            continue
+        assignment = current_assignment_on(employee, day)
+        if not assignment or assignment.payroll_group != "site_daily":
+            continue
+        rates = salary_rate_for_date(employee, day, assignment.project)
+        if not rates or rates["salary"].salary_basis != "daily":
+            continue
+        daily_amount = rates["holiday_rate"]
+        line = lines.setdefault(line_key(assignment.project), empty_line(assignment.project))
+        line["holiday_days"] += Decimal("1")
+        line["holiday_amount"] += daily_amount
+        line["holiday_rate"] = rates["holiday_rate"]
+        line["base_rate"] = rates["base_rate"]
+        line["ot_rate"] = rates["ot_rate"]
+        line["ot_divisor"] = rates["ot_divisor"]
+        amount += daily_amount
+        paid_dates.add(day)
+        if casual_components is not None:
+            casual_components.append(
+                {
+                    "income": daily_amount,
+                    "days": Decimal("1"),
+                    "sign": Decimal("1"),
+                }
+            )
+    return {
+        "amount": amount,
+        "days": Decimal(len(paid_dates)),
+        "dates": paid_dates,
+    }
+
+
 def paid_special_days(summary, segment):
     dated = [
         row
@@ -441,6 +506,7 @@ def apply_actual_segments(
     casual_components=None,
     summary=None,
     breakdown=None,
+    ignore_special_days=False,
 ):
     total = Decimal("0")
     for segment in segments:
@@ -451,7 +517,11 @@ def apply_actual_segments(
         key = line_key(project)
         line = lines.setdefault(key, empty_line(project))
         working_days = decimal_value(segment.working_days)
-        holiday_days = (
+        attendance_prorated = bool(
+            rates["salary"].salary_basis == "monthly"
+            and rates["salary"].monthly_pay_method == "attendance_days"
+        )
+        holiday_days = Decimal("0") if (ignore_special_days or attendance_prorated) else (
             paid_special_days(summary, segment)
             if summary
             else decimal_value(segment.sunday_holiday_days)
@@ -461,7 +531,8 @@ def apply_actual_segments(
         ecall_count = decimal_value(segment.ecall_count)
         other_allowance = decimal_value(segment.other_allowance_amount)
         is_daily = rates["salary"].salary_basis == "daily"
-        base = rates["base_rate"] * working_days if is_daily else Decimal("0")
+        is_paid_by_days = is_daily or attendance_prorated
+        base = rates["base_rate"] * working_days if is_paid_by_days else Decimal("0")
         holiday = rates["holiday_rate"] * holiday_days
         overtime = rates["ot_rate"] * ot_hours
         large_ecall = rates["base_rate"] * large_ecall_count
@@ -483,7 +554,7 @@ def apply_actual_segments(
         else:
             # Monthly / OFFICE salary is calendar-based. Legacy ordinary-day
             # entries must not inflate the paid-day denominator or base pay.
-            if is_daily:
+            if is_paid_by_days:
                 line["working_days"] += working_days
             line["holiday_days"] += holiday_days
             line["current_ot_hours"] += ot_hours
@@ -530,6 +601,7 @@ def apply_forecast_segments(
     casual_components=None,
     sign=Decimal("1"),
     breakdown=None,
+    ignore_special_days=False,
 ):
     lines = lines if lines is not None else {}
     total = Decimal("0")
@@ -539,9 +611,18 @@ def apply_forecast_segments(
         if not rates:
             continue
         working_days = decimal_value(segment.working_days)
-        holiday_days = decimal_value(segment.sunday_holiday_days)
+        attendance_prorated = bool(
+            rates["salary"].salary_basis == "monthly"
+            and rates["salary"].monthly_pay_method == "attendance_days"
+        )
+        holiday_days = (
+            Decimal("0")
+            if ignore_special_days or attendance_prorated
+            else decimal_value(segment.sunday_holiday_days)
+        )
         is_daily = rates["salary"].salary_basis == "daily"
-        base = rates["base_rate"] * working_days if is_daily else Decimal("0")
+        is_paid_by_days = is_daily or attendance_prorated
+        base = rates["base_rate"] * working_days if is_paid_by_days else Decimal("0")
         # Sunday/statutory-holiday forecast work is paid at the confirmed
         # 1x applicable daily rate for both daily and monthly payroll groups.
         holiday = rates["holiday_rate"] * holiday_days
@@ -554,7 +635,7 @@ def apply_forecast_segments(
             line["forecast_holiday_days"] += holiday_days
             line["forecast_base_amount"] += base
             line["forecast_holiday_amount"] += holiday
-            if is_daily:
+            if is_paid_by_days:
                 line["working_days"] += working_days
             line["holiday_days"] += holiday_days
             line["base_amount"] += base
@@ -585,33 +666,30 @@ def forecast_tail(
 ):
     lines = lines if lines is not None else {}
     total = Decimal("0")
+    holiday_dates = employee_statutory_holidays(employee, start, end)
     for day in date_range(start, end):
         assignment = current_assignment_on(employee, day)
         project = assignment.project if assignment else None
         rates = salary_rate_for_date(employee, day, project)
         if not rates:
             continue
-        if (
-            rates["salary"].salary_basis == "daily"
-            and day.weekday() == 6
-        ):
-            continue
         if rates["salary"].salary_basis != "daily":
+            continue
+        # Statutory-holiday entitlement is added separately for every daily
+        # worker from the employment start date.  The forecast therefore only
+        # assumes ordinary scheduled work and must not add another base day for
+        # the holiday itself.
+        work_units = scheduled_work_units(assignment, day)
+        if not work_units or day in holiday_dates:
             continue
         key = line_key(project)
         line = lines.setdefault(key, empty_line(project))
-        if day.weekday() == 6:
-            line["forecast_holiday_days"] += Decimal("1")
-            line["forecast_holiday_amount"] += rates["holiday_rate"]
-            line["holiday_days"] += Decimal("1")
-            line["holiday_amount"] += rates["holiday_rate"]
-            total += rates["holiday_rate"]
-        else:
-            line["forecast_working_days"] += Decimal("1")
-            line["forecast_base_amount"] += rates["base_rate"]
-            line["working_days"] += Decimal("1")
-            line["base_amount"] += rates["base_rate"]
-            total += rates["base_rate"]
+        base_amount = rates["base_rate"] * work_units
+        line["forecast_working_days"] += work_units
+        line["forecast_base_amount"] += base_amount
+        line["working_days"] += work_units
+        line["base_amount"] += base_amount
+        total += base_amount
         line["base_rate"] = rates["base_rate"]
         line["holiday_rate"] = rates["holiday_rate"]
         line["ot_rate"] = rates["ot_rate"]
@@ -619,33 +697,107 @@ def forecast_tail(
         if casual_components is not None:
             casual_components.append(
                 {
-                    "income": rates["holiday_rate"]
-                    if day.weekday() == 6
-                    else rates["base_rate"],
-                    "days": Decimal("1"),
+                    "income": base_amount,
+                    "days": work_units,
                     "sign": sign,
                 }
             )
     return total
 
 
-def active_allowances(employee, month_start, month_end):
+def monthly_paid_calendar_days(employee, start, end):
+    """Return the same paid-calendar-day basis shown in Monthly/OFFICE XLSX."""
+    leave_units = leave_units_by_date(employee, start, end)
+    paid_days = Decimal("0")
+    for day in date_range(start, end):
+        rates = salary_rate_for_date(employee, day)
+        if not rates or rates["salary"].salary_basis == "daily":
+            continue
+        if work_injury_on(employee, day):
+            continue
+        day_leave = leave_units[day]
+        annual = min(Decimal("1"), day_leave["annual"])
+        sick = min(Decimal("1") - annual, day_leave["sick"])
+        unpaid = min(
+            Decimal("1") - annual - sick,
+            day_leave["unpaid"],
+        )
+        paid_days += Decimal("1") - sick - unpaid
+    return paid_days
+
+
+def active_allowances(
+    employee,
+    month_start,
+    month_end,
+    *,
+    payable_end=None,
+    attendance_working_days=None,
+):
     rows = []
     days_in_month = Decimal((month_end - month_start).days + 1)
+    calculation_end = min(month_end, payable_end or month_end)
     for allowance in employee.allowances:
         if allowance.status != "active":
             continue
         start = max(month_start, allowance.effective_from)
-        end = min(month_end, allowance.effective_to or month_end)
+        end = min(
+            calculation_end,
+            allowance.effective_to or calculation_end,
+        )
         if end < start:
             continue
-        ratio = Decimal((end - start).days + 1) / days_in_month
-        converted = decimal_value(allowance.amount)
+        unit_amount = decimal_value(allowance.amount)
+        if allowance.allowance_type in {"meal", "transport"}:
+            # HR records meal and transport allowance as a daily rate. The
+            # payable quantity is the same paid-calendar-day count shown on
+            # the Monthly/OFFICE payroll row, limited to the effective dates.
+            salary = current_salary_on(employee, start)
+            if (
+                attendance_working_days is not None
+                and salary
+                and salary.salary_basis == "monthly"
+                and salary.monthly_pay_method == "attendance_days"
+            ):
+                converted = unit_amount * attendance_working_days
+            else:
+                converted = unit_amount * monthly_paid_calendar_days(
+                    employee,
+                    start,
+                    end,
+                )
+        else:
+            ratio = Decimal((end - start).days + 1) / days_in_month
+            converted = unit_amount * ratio
         salary = current_salary_on(employee, start)
         if salary and allowance.currency != salary.currency:
             converted *= decimal_value(allowance.exchange_rate)
-        rows.append((allowance, converted * ratio))
+        rows.append((allowance, converted))
     return rows
+
+
+def line_has_payroll_activity(line):
+    """A payroll line must carry money, not merely legacy attendance counts."""
+    return any(
+        decimal_value(line.get(key)) != 0
+        for key in (
+            "base_amount",
+            "holiday_amount",
+            "ot_amount",
+            "previous_ot_amount",
+            "previous_holiday_amount",
+            "large_ecall_amount",
+            "ecall_amount",
+            "previous_large_ecall_amount",
+            "previous_ecall_amount",
+            "allowance_amount",
+            "sick_leave_amount",
+            "work_injury_amount",
+            "adjustment_amount",
+            "attendance_other_allowance_amount",
+            "gross_amount",
+        )
+    )
 
 
 def casual_daily_mpf(daily_income):
@@ -858,6 +1010,9 @@ def calculate_employee(employee, year_month):
     if not summary and not attendance_required(employee, year_month):
         summary = default_attendance_summary(employee, year_month)
         generated_from_policy = True
+    legacy_inferred_special_days = is_legacy_inferred_special_day_summary(
+        summary
+    )
     blockers = []
     warnings = employee_warnings(employee)
     if not summary or summary.status not in {"received", "not_required"}:
@@ -876,6 +1031,11 @@ def calculate_employee(employee, year_month):
         warnings.append("整月工傷期間無需考勤；工傷日期由員工工傷記錄帶入")
     elif summary.status == "not_required":
         warnings.append("本月無需考勤表，按預設全勤及零 OT／E-CALL 計算")
+    if legacy_inferred_special_days:
+        warnings.append(
+            "已忽略舊版按日曆自動產生的星期日／法定節假日數；"
+            "只有逐日記錄的真正額外工作才會出薪或增加補休"
+        )
     salary = current_salary_on(employee, month_end)
     assignment = current_assignment_on(employee, month_end)
     if not salary:
@@ -889,12 +1049,25 @@ def calculate_employee(employee, year_month):
         warnings.append("發薪單位未設定；正式導出時不會納入任何發薪單位")
 
     group = group_on(employee, month_end)
+    if group == "site_daily" and any(
+        allowance.status == "active"
+        and allowance.effective_from <= month_end
+        and (
+            allowance.effective_to is None
+            or allowance.effective_to >= month_start
+        )
+        for allowance in employee.allowances
+    ):
+        blockers.append("日工暫不支持固定補貼，請先撤回補貼記錄")
     if blockers:
         return {
             "employee": employee,
             "group": group,
             "currency": salary.currency if salary else None,
             "salary_basis": salary.salary_basis if salary else None,
+            "monthly_pay_method": (
+                salary.monthly_pay_method if salary else None
+            ),
             "salary_amount": rounded(salary.amount) if salary else None,
             "assignment": assignment,
             "bank_account": bank_account,
@@ -920,6 +1093,7 @@ def calculate_employee(employee, year_month):
         lines,
         casual_components=casual_components,
         summary=summary,
+        ignore_special_days=legacy_inferred_special_days,
     )
     previous_actual_segments = attendance_segments(
         summary,
@@ -936,6 +1110,7 @@ def calculate_employee(employee, year_month):
         casual_components=casual_components,
         summary=summary,
         breakdown=previous_actual_breakdown,
+        ignore_special_days=legacy_inferred_special_days,
     )
     current_forecast_segments = attendance_segments(
         summary,
@@ -950,6 +1125,7 @@ def calculate_employee(employee, year_month):
             lines,
             apply_to_lines=True,
             casual_components=casual_components,
+            ignore_special_days=legacy_inferred_special_days,
         )
     else:
         forecast_tail_total = forecast_tail(
@@ -974,6 +1150,7 @@ def calculate_employee(employee, year_month):
             casual_components=casual_components,
             sign=Decimal("-1"),
             breakdown=previous_forecast_breakdown,
+            ignore_special_days=legacy_inferred_special_days,
         )
     else:
         expected_previous_tail = prior_forecast_total(employee, year_month)
@@ -1043,9 +1220,39 @@ def calculate_employee(employee, year_month):
     assignment = current_assignment_on(employee, month_end)
     project = assignment.project if assignment else None
     leave_line = lines.setdefault(line_key(project), empty_line(project))
+    attendance_prorated_monthly = bool(
+        current_salary
+        and current_salary.salary_basis == "monthly"
+        and current_salary.monthly_pay_method == "attendance_days"
+    )
+    daily_statutory_holidays = {
+        "amount": Decimal("0"),
+        "days": Decimal("0"),
+        "dates": set(),
+    }
     if current_salary and current_salary.salary_basis == "daily":
+        daily_statutory_holidays = add_daily_statutory_holiday_pay(
+            employee,
+            month_start,
+            month_end,
+            lines,
+            casual_components,
+        )
+        current_actual_total += daily_statutory_holidays["amount"]
+        if daily_statutory_holidays["days"]:
+            warnings.append(
+                "日工法定假日薪酬："
+                f"{daily_statutory_holidays['days']} 日，從入職日起按正常日薪 1 倍"
+            )
+    if current_salary and (
+        current_salary.salary_basis == "daily" or attendance_prorated_monthly
+    ):
         daily_components = daily_leave_components(
-            employee, month_start, month_end
+            employee,
+            month_start,
+            month_end,
+            include_attendance_prorated=attendance_prorated_monthly,
+            excluded_dates=daily_statutory_holidays["dates"],
         )
         leave_line["base_amount"] += daily_components["annual"]
         # Annual leave is a paid ordinary day. Including it in the displayed
@@ -1076,10 +1283,23 @@ def calculate_employee(employee, year_month):
             + monthly_components["injury"]
         )
 
+    attendance_allowance_days = None
+    if attendance_prorated_monthly:
+        attendance_allowance_days = sum(
+            (
+                decimal_value(segment.working_days)
+                for segment in (
+                    list(current_actual_segments)
+                    + list(current_forecast_segments)
+                )
+            ),
+            Decimal("0"),
+        )
     for allowance, amount in active_allowances(
         employee,
         month_start,
         month_end,
+        attendance_working_days=attendance_allowance_days,
     ):
         project = allowance.project
         if not project:
@@ -1124,6 +1344,16 @@ def calculate_employee(employee, year_month):
         for key in list(line):
             if isinstance(line[key], Decimal):
                 line[key] = rounded(line[key])
+    active_line_rows = [line for line in line_rows if line_has_payroll_activity(line)]
+    if active_line_rows:
+        line_rows = active_line_rows
+    line_rows.sort(
+        key=lambda line: (
+            decimal_value(line.get("base_amount")),
+            decimal_value(line.get("gross_amount")),
+        ),
+        reverse=True,
+    )
 
     base = sum(
         decimal_value(line["base_amount"]) for line in line_rows
@@ -1223,12 +1453,19 @@ def calculate_employee(employee, year_month):
         "group": group,
         "currency": salary.currency,
         "salary_basis": salary.salary_basis,
+        "monthly_pay_method": salary.monthly_pay_method,
+        "workweek_days": str(
+            assignment.workweek_days if assignment else "6"
+        ),
         "salary_amount": rounded(salary.amount),
         "assignment": assignment,
         "bank_account": bank_account,
         "attendance": summary,
         "base_amount": rounded(base),
         "holiday_amount": rounded(holiday),
+        "statutory_holiday_paid_days": rounded(
+            daily_statutory_holidays["days"]
+        ),
         "ot_amount": rounded(overtime),
         "large_ecall_amount": rounded(large_ecall),
         "ecall_amount": rounded(ecall),
@@ -1441,6 +1678,11 @@ def snapshot_payroll(year_month, payroll_group, rows, user_id):
                     else None
                 ),
                 "salary_basis": row["salary_basis"],
+                "monthly_pay_method": row["monthly_pay_method"],
+                "workweek_days": row["workweek_days"],
+                "statutory_holiday_paid_days": str(
+                    row["statutory_holiday_paid_days"]
+                ),
                 "salary_amount": str(row["salary_amount"]),
                 "forecast_tail_total": str(row["forecast_tail_total"]),
                 "current_actual_total": str(row["current_actual_total"]),
@@ -1457,6 +1699,11 @@ def snapshot_payroll(year_month, payroll_group, rows, user_id):
                 ),
                 "reconciliation_amount": str(
                     row["reconciliation_amount"]
+                ),
+                "attendance_remarks": (
+                    row["attendance"].remarks
+                    if row.get("attendance")
+                    else None
                 ),
                 "leave": {
                     "annual_days": str(row["annual_leave_days"]),

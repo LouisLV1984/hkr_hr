@@ -9,6 +9,10 @@ tmp/
 _verification/
 ocr/tessdata/
 
+# One-time production repairs may encode employee-specific matching facts.
+scripts/repair_salary_timeline_*.py
+scripts/mini_pc_repair_salary_timeline_*.bat
+
 uploads/*
 !uploads/.gitkeep
 generated_contracts/*

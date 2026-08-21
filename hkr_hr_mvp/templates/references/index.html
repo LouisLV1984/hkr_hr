@@ -1,222 +1,44 @@
 {% extends "base.html" %}
 {% block title %}{{ t("references.title") }} - HKR HR{% endblock %}
+{% macro employee_dialog(dialog_id, title, current_rows, history_rows) %}
+<dialog class="app-dialog" id="{{ dialog_id }}"><div class="dialog-panel record-editor-form">
+  <div class="section-head"><div><h2>{{ title }}</h2><p>預設顯示目前在職且正在使用此選項的員工。</p></div><button class="icon-btn" type="button" data-dialog-close>×</button></div>
+  <div class="reference-employee-list">{% for row in current_rows %}<a href="{{ url_for('employees.view_employee', employee_id=row.id) }}"><strong>{{ row.employee_no }}</strong><span>{{ row.display_name }}</span></a>{% else %}<p class="empty-cell">目前沒有在職員工使用此選項。</p>{% endfor %}</div>
+  {% if history_rows %}<details class="reference-history"><summary>查看離職及歷史引用（{{ history_rows|length }}）</summary><div class="reference-employee-list">{% for row in history_rows %}<a href="{{ url_for('employees.view_employee', employee_id=row.id) }}"><strong>{{ row.employee_no }}</strong><span>{{ row.display_name }}</span></a>{% endfor %}</div></details>{% endif %}
+  <div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.close") }}</button></div>
+</div></dialog>
+{% endmacro %}
 {% block sidebar_content %}
-<nav class="reference-nav context-reference-nav">
-  {% for group_code, items in nav_groups %}
-    <section class="reference-nav-group">
-      <strong>{{ t("references.group_" ~ group_code) }}</strong>
-      {% if group_code == "organization" %}
-        <a class="{% if selected_code == 'projects' %}active{% endif %}" href="{{ url_for('references.references_home', list='projects', return_to=return_to) }}">{{ t("references.projects") }}</a>
-      {% endif %}
-      {% if group_code == "finance_contact" %}
-        <a class="{% if selected_code == 'mpf_schemes' %}active{% endif %}" href="{{ url_for('references.references_home', list='mpf_schemes', return_to=return_to) }}">{{ t("mpf.schemes") }}</a>
-      {% endif %}
-      {% for item in items %}
-        <a class="{% if selected and selected.id == item.id %}active{% endif %}" href="{{ url_for('references.references_home', list=item.code, return_to=return_to) }}">{{ option_t("reference_list", item.code, item.label) }}</a>
-      {% endfor %}
-    </section>
-  {% endfor %}
-</nav>
+<nav class="reference-nav context-reference-nav">{% for group_code, items in nav_groups %}<section class="reference-nav-group"><strong>{{ t("references.group_" ~ group_code) }}</strong>
+  {% if group_code == "organization" %}<a class="{% if selected_code == 'projects' %}active{% endif %}" href="{{ url_for('references.references_home', list='projects') }}">{{ t("references.projects") }}</a><a class="{% if selected_code == 'work_calendar' %}active{% endif %}" href="{{ url_for('references.references_home', list='work_calendar') }}">工作日曆</a>{% endif %}
+  {% if group_code == "finance_contact" %}<a class="{% if selected_code == 'mpf_schemes' %}active{% endif %}" href="{{ url_for('references.references_home', list='mpf_schemes') }}">{{ t("mpf.schemes") }}</a>{% endif %}
+  {% for item in items %}<a class="{% if selected and selected.id == item.id %}active{% endif %}" href="{{ url_for('references.references_home', list=item.code) }}">{{ option_t("reference_list", item.code, item.label) }}</a>{% endfor %}
+</section>{% endfor %}</nav>
 {% endblock %}
 {% block content %}
-<section class="page-head">
-  <div>
-    <h1>{{ t("references.title") }}</h1>
-    <p>{{ t("references.subtitle") }}</p>
-  </div>
-  {% if return_to %}<a class="secondary-btn" href="{{ return_to }}">{{ t("references.return_to_employee") }}</a>{% endif %}
-</section>
-
-<section class="panel reference-editor">
-    {% if selected_code == "projects" %}
-      <div class="section-head">
-        <div>
-          <h2>{{ t("references.projects") }}</h2>
-          <p>{{ t("references.project_hint") }}</p>
-        </div>
-        {% if can_edit %}
-          <button class="secondary-btn" type="button" data-add-row="project-new-row">{{ t("references.new_row") }}</button>
-        {% endif %}
-      </div>
-
-      {% if can_edit %}
-        {% for project in projects %}
-          <form id="project-update-{{ project.id }}" method="post" action="{{ url_for('references.update_project', project_id=project.id) }}"><input type="hidden" name="return_to" value="{{ return_to or '' }}"></form>
-          <form id="project-delete-{{ project.id }}" method="post" action="{{ url_for('references.delete_project', project_id=project.id) }}" data-confirm="{{ t('references.project_delete_confirm', count=project_counts[project.id]) }}"><input type="hidden" name="return_to" value="{{ return_to or '' }}"></form>
-        {% endfor %}
-        <form id="project-create" method="post" action="{{ url_for('references.create_project') }}"><input type="hidden" name="return_to" value="{{ return_to or '' }}"></form>
-      {% endif %}
-
-      <div class="table-wrap flat">
-        <table class="dense-table reference-table">
-          <thead>
-            <tr>
-              <th>{{ t("references.name") }}</th>
-              <th>{{ t("employee.work_region") }}</th>
-              <th>{{ t("common.location") }}</th>
-              <th>{{ t("common.contact_person") }}</th>
-              <th>{{ t("references.ot_divisor") }}</th>
-              <th>{{ t("references.in_use") }}</th>
-              <th>{{ t("common.actions") }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for project in projects %}
-              {% set update_form = "project-update-" ~ project.id %}
-              <tr>
-                <td><input form="{{ update_form }}" name="name" value="{{ project.name }}" required {% if not can_edit %}readonly{% endif %}></td>
-                <td>
-                  <select form="{{ update_form }}" name="region_id" {% if not can_edit %}disabled{% endif %}>
-                    <option value=""></option>
-                    {% for item in regions %}
-                      <option value="{{ item.id }}" {% if project.region_id == item.id %}selected{% endif %}>{{ item.display_name }}</option>
-                    {% endfor %}
-                  </select>
-                </td>
-                <td><input form="{{ update_form }}" name="work_location" value="{{ project.work_location or '' }}" {% if not can_edit %}readonly{% endif %}></td>
-                <td>
-                  <input form="{{ update_form }}" name="contact_name" value="{{ project.contact_name or '' }}" {% if not can_edit %}readonly{% endif %}>
-                  <input form="{{ update_form }}" name="contact_phone" value="{{ project.contact_phone or '' }}" placeholder="{{ t('employees.contact') }}" {% if not can_edit %}readonly{% endif %}>
-                </td>
-                <td><input form="{{ update_form }}" type="number" min="1" step="0.5" name="daily_ot_divisor" value="{{ project.daily_ot_divisor }}" {% if not can_edit %}readonly{% endif %}></td>
-                <td>{{ project_counts[project.id] }}</td>
-                <td class="row-actions">
-                  {% if can_edit %}
-                    <label class="check-line"><input form="{{ update_form }}" type="checkbox" name="active" {% if project.active %}checked{% endif %}><span>{{ t("references.available_for_new") }}</span></label>
-                    <button class="mini-btn" type="submit" form="{{ update_form }}">{{ t("common.save") }}</button>
-                    {% if project_counts[project.id] == 0 %}
-                      <button class="mini-btn danger-text" type="submit" form="project-delete-{{ project.id }}">{{ t("common.delete") }}</button>
-                    {% else %}
-                      <button class="mini-btn" type="button" disabled title="{{ t('references.delete_in_use_hint') }}">{{ t("common.delete") }}</button>
-                    {% endif %}
-                  {% endif %}
-                </td>
-              </tr>
-            {% endfor %}
-            {% if can_edit %}
-              <tr id="project-new-row" hidden>
-                <td><input form="project-create" name="name" required></td>
-                <td>
-                  <select form="project-create" name="region_id">
-                    <option value=""></option>
-                    {% for item in regions %}<option value="{{ item.id }}">{{ item.display_name }}</option>{% endfor %}
-                  </select>
-                </td>
-                <td><input form="project-create" name="work_location"></td>
-                <td><input form="project-create" name="contact_name"><input form="project-create" name="contact_phone"></td>
-                <td><input form="project-create" type="number" name="daily_ot_divisor" value="9" step="0.5"></td>
-                <td>0</td>
-                <td><button class="primary-btn" type="submit" form="project-create">{{ t("common.save") }}</button></td>
-              </tr>
-            {% endif %}
-          </tbody>
-        </table>
-      </div>
-    {% elif selected_code == "mpf_schemes" %}
-      <div class="section-head">
-        <div><h2>{{ t("mpf.schemes") }}</h2><p>{{ t("mpf.scheme_reference_hint") }}</p></div>
-        {% if can_edit %}<button class="secondary-btn" type="button" data-add-row="mpf-new-row">{{ t("references.new_row") }}</button>{% endif %}
-      </div>
-      {% if can_edit %}
-        {% for scheme in mpf_schemes %}
-          <form id="mpf-update-{{ scheme.id }}" method="post" action="{{ url_for('references.update_mpf_scheme', scheme_id=scheme.id) }}"></form>
-          <form id="mpf-delete-{{ scheme.id }}" method="post" action="{{ url_for('references.delete_mpf_scheme', scheme_id=scheme.id) }}" data-confirm="{{ t('mpf.scheme_delete_confirm', count=mpf_scheme_counts[scheme.id]) }}"></form>
-        {% endfor %}
-        <form id="mpf-create" method="post" action="{{ url_for('references.create_mpf_scheme') }}"></form>
-      {% endif %}
-      <div class="table-wrap flat">
-        <table class="dense-table reference-table mpf-scheme-table">
-          <thead><tr><th>{{ t("mpf.scheme_name") }}</th><th>{{ t("mpf.employer_account_no") }}</th><th>{{ t("mpf.payroll_group_no") }}</th><th>{{ t("mpf.calculation_mode") }}</th><th>{{ t("references.in_use") }}</th><th>{{ t("common.actions") }}</th></tr></thead>
-          <tbody>
-            {% for scheme in mpf_schemes %}
-              {% set update_form = "mpf-update-" ~ scheme.id %}
-              <tr>
-                <td><input form="{{ update_form }}" name="name" value="{{ scheme.name }}" required {% if not can_edit %}readonly{% endif %}></td>
-                <td><input form="{{ update_form }}" name="employer_account_no" value="{{ scheme.employer_account_no }}" required {% if not can_edit %}readonly{% endif %}></td>
-                <td><input form="{{ update_form }}" name="payroll_group_no" value="{{ scheme.payroll_group_no or 'N/A' }}" {% if not can_edit %}readonly{% endif %}></td>
-                <td><select form="{{ update_form }}" name="calculation_mode" {% if not can_edit %}disabled{% endif %}><option value="regular" {% if scheme.calculation_mode == "regular" %}selected{% endif %}>{{ t("mpf.mode_regular") }}</option><option value="casual" {% if scheme.calculation_mode == "casual" %}selected{% endif %}>{{ t("mpf.mode_casual") }}</option></select></td>
-                <td>{{ mpf_scheme_counts[scheme.id] }}</td>
-                <td class="row-actions">{% if can_edit %}<label class="check-line"><input form="{{ update_form }}" type="checkbox" name="active" {% if scheme.active %}checked{% endif %}><span>{{ t("references.available_for_new") }}</span></label><button class="mini-btn" type="submit" form="{{ update_form }}">{{ t("common.save") }}</button>{% if mpf_scheme_counts[scheme.id] == 0 %}<button class="mini-btn danger-text" type="submit" form="mpf-delete-{{ scheme.id }}">{{ t("common.delete") }}</button>{% else %}<button class="mini-btn" type="button" disabled>{{ t("common.delete") }}</button>{% endif %}{% endif %}</td>
-              </tr>
-            {% endfor %}
-            {% if can_edit %}<tr id="mpf-new-row" hidden><td><input form="mpf-create" name="name" required></td><td><input form="mpf-create" name="employer_account_no" required></td><td><input form="mpf-create" name="payroll_group_no" placeholder="N/A"></td><td><select form="mpf-create" name="calculation_mode"><option value="regular">{{ t("mpf.mode_regular") }}</option><option value="casual">{{ t("mpf.mode_casual") }}</option></select></td><td>0</td><td><button class="primary-btn" type="submit" form="mpf-create">{{ t("common.save") }}</button></td></tr>{% endif %}
-          </tbody>
-        </table>
-      </div>
-    {% elif selected %}
-      <div class="section-head">
-        <div>
-          <h2>{{ option_t("reference_list", selected.code, selected.label) }}</h2>
-          <p>{{ t("references.option_hint") }}</p>
-        </div>
-        {% if can_edit %}
-          <button class="secondary-btn" type="button" data-add-row="reference-new-row">{{ t("references.new_row") }}</button>
-        {% endif %}
-      </div>
-
-      {% if can_edit %}
-        {% for value in values %}
-          <form id="reference-update-{{ value.id }}" method="post" action="{{ url_for('references.update_value', value_id=value.id) }}" data-confirm="{{ t('references.rename_confirm', count=usage_counts[value.id]) }}"><input type="hidden" name="return_to" value="{{ return_to or '' }}"></form>
-          <form id="reference-delete-{{ value.id }}" method="post" action="{{ url_for('references.delete_value', value_id=value.id) }}" data-confirm="{{ t('references.delete_confirm', count=usage_counts[value.id]) }}"><input type="hidden" name="return_to" value="{{ return_to or '' }}"></form>
-        {% endfor %}
-        <form id="reference-create" method="post" action="{{ url_for('references.create_value', list_id=selected.id) }}"><input type="hidden" name="return_to" value="{{ return_to or '' }}"></form>
-      {% endif %}
-
-      <div class="table-wrap flat">
-        <table class="dense-table reference-table">
-          <thead>
-            <tr>
-              <th>{{ t("references.name") }}</th>
-              <th>{{ t("common.remarks") }}</th>
-              <th>{{ t("references.in_use") }}</th>
-              <th>{{ t("references.available_for_new") }}</th>
-              <th>{{ t("common.actions") }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for value in values %}
-              {% set update_form = "reference-update-" ~ value.id %}
-              <tr>
-                <td><input form="{{ update_form }}" name="display_name" value="{{ value.display_name }}" required {% if not can_edit %}readonly{% endif %}></td>
-                <td><input form="{{ update_form }}" name="remarks" value="{{ value.remarks or '' }}" {% if not can_edit %}readonly{% endif %}></td>
-                <td>{{ usage_counts[value.id] }}</td>
-                <td><label class="check-line"><input form="{{ update_form }}" type="checkbox" name="active" {% if value.active %}checked{% endif %} {% if not can_edit %}disabled{% endif %}><span>{{ t("references.available_for_new") }}</span></label></td>
-                <td class="row-actions">
-                  {% if can_edit %}
-                    <button class="mini-btn" type="submit" form="{{ update_form }}">{{ t("common.save") }}</button>
-                    {% if usage_counts[value.id] == 0 %}
-                      <button class="mini-btn danger-text" type="submit" form="reference-delete-{{ value.id }}">{{ t("common.delete") }}</button>
-                    {% else %}
-                      <button class="mini-btn" type="button" disabled title="{{ t('references.delete_in_use_hint') }}">{{ t("common.delete") }}</button>
-                    {% endif %}
-                  {% endif %}
-                </td>
-              </tr>
-            {% endfor %}
-            {% if can_edit %}
-              <tr id="reference-new-row" hidden>
-                <td><input form="reference-create" name="display_name" required></td>
-                <td><input form="reference-create" name="remarks"></td>
-                <td>0</td>
-                <td>{{ t("references.available_for_new") }}</td>
-                <td><button class="primary-btn" type="submit" form="reference-create">{{ t("common.save") }}</button></td>
-              </tr>
-            {% endif %}
-          </tbody>
-        </table>
-      </div>
-    {% endif %}
-</section>
-{% endblock %}
-
-{% block scripts %}
-<script>
-document.querySelectorAll("[data-add-row]").forEach((button) => {
-  button.addEventListener("click", () => {
-    const row = document.getElementById(button.dataset.addRow);
-    row.hidden = false;
-    row.querySelector("input:not([readonly])")?.focus();
-  });
-});
-</script>
+<section class="page-head"><div><h1>{{ t("references.title") }}</h1><p>{{ t("references.subtitle") }}</p></div>{% if return_to %}<a class="secondary-btn" href="{{ return_to }}">{{ t("references.return_to_employee") }}</a>{% endif %}</section>
+{% if missing_employees %}<section class="reference-missing-card"><div><span class="eyebrow">待補資料</span><h2>{{ missing_employees|length }} 名在職員工未設定</h2><p>{% if selected_code == 'projects' %}只列出需要分配項目的日工及月工；管理人員可不適用。{% else %}這是資料缺失，不會建立名為「未分配」的選項。{% endif %}</p></div><button class="secondary-btn" type="button" data-dialog-open="missing-employees">查看員工</button></section>{{ employee_dialog('missing-employees', '待補資料員工', missing_employees, []) }}{% endif %}
+<section class="panel reference-editor">{% set archived_view = request.args.get('show') == 'archived' %}
+{% if selected_code == "work_calendar" %}
+  <div class="section-head"><div><h2>工作日曆</h2><p>地盤日工／月工使用香港法定假日；管理人員及總部人員使用香港公眾假期。系統按 Payroll 類別自動套用。</p></div>{% if can_edit %}<div class="row-actions"><form class="mini-form" method="post" action="{{ url_for('references.import_hong_kong_work_calendar') }}"><input type="hidden" name="calendar_year" value="{{ calendar_import_year }}"><button class="secondary-btn" type="submit">{{ '核對並補齊' if calendar_import_existing_count else '帶入' }} {{ calendar_import_year }} 年香港假日日曆</button></form><button class="primary-btn" type="button" data-dialog-open="calendar-add">新增假日</button></div>{% endif %}</div>
+  <form class="reference-filter-bar" method="get"><input type="hidden" name="list" value="work_calendar"><label><span>年份</span><input type="number" name="calendar_year" min="2000" max="2100" value="{{ calendar_year }}"></label><label><span>工作地區</span><select name="calendar_region_id"><option value="">全部地區</option>{% for region in regions %}<option value="{{ region.id }}" {% if calendar_region_id == region.id %}selected{% endif %}>{{ region.display_name }}</option>{% endfor %}</select></label><button class="secondary-btn" type="submit">篩選</button></form>
+  <div class="reference-toolbar"><span>{{ calendar_year }} 年工作日曆</span><a class="mini-btn" href="{{ url_for('references.references_home', list='work_calendar', calendar_year=calendar_year, calendar_region_id=calendar_region_id, show='archived' if not archived_view else None) }}">{{ '返回使用中' if archived_view else '查看已封存選項' }}</a></div>
+  <div class="table-wrap flat"><table class="dense-table reference-table"><thead><tr><th>日期</th><th>假日</th><th>適用日曆</th><th>工作地區</th><th>{{ t("common.remarks") }}</th><th>{{ t("common.actions") }}</th></tr></thead><tbody>{% for item in calendar_holidays if item.active != archived_view %}<tr><td>{{ item.holiday_date }}</td><td><strong>{{ item.name }}</strong></td><td>{% if item.applies_to_statutory and item.applies_to_public %}法定假日／公眾假期{% elif item.applies_to_public %}公眾假期{% else %}法定假日{% endif %}</td><td>{{ item.region.display_name }}</td><td>{{ item.remarks or '-' }}</td><td class="row-actions">{% if can_edit %}<button class="mini-btn" type="button" data-dialog-open="calendar-edit-{{ item.id }}">{{ t("common.edit") }}</button><form class="mini-form" method="post" action="{{ url_for('references.archive_work_calendar_holiday', item_id=item.id) }}"><input type="hidden" name="action" value="{{ 'restore' if archived_view else 'archive' }}"><button class="mini-btn" type="submit">{{ '恢復使用' if archived_view else '封存選項' }}</button></form>{% if not item.active %}<form class="mini-form" method="post" action="{{ url_for('references.delete_work_calendar_holiday', item_id=item.id) }}" data-confirm="確認永久刪除此記錄？"><button class="mini-btn danger-text" type="submit">{{ t("common.delete") }}</button></form>{% endif %}{% endif %}</td></tr>{% else %}<tr><td colspan="6" class="empty-cell">沒有記錄</td></tr>{% endfor %}</tbody></table></div>
+  <p class="form-note">公司規則：地盤日工／月工採用香港法定假日，冬節／聖誕節固定選擇聖誕節；管理人員及總部人員採用香港公眾假期。星期日及工作週由員工工作制另行判斷。帶入只補充缺少日期及官方適用範圍，不會恢復或刪除既有記錄。</p>
+  {% if can_edit %}<dialog class="app-dialog" id="calendar-add"><form class="dialog-panel record-editor-form" method="post" action="{{ url_for('references.create_work_calendar_holiday') }}"><div class="section-head"><h2>新增假日</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div><div class="record-editor-body"><label><span>工作地區</span><select name="region_id" required>{% for region in regions %}<option value="{{ region.id }}">{{ region.display_name }}</option>{% endfor %}</select></label><label><span>日期</span><input type="date" name="holiday_date" required></label><label><span>假日名稱</span><input name="name" required></label><label><span>適用日曆</span><select name="calendar_scope" required><option value="statutory">法定假日（地盤日工／月工）</option><option value="public">公眾假期（管理人員及總部人員）</option><option value="both">兩者均適用</option></select></label><label><span>{{ t("common.remarks") }}</span><textarea name="remarks"></textarea></label><p class="form-note wide">星期六、星期日由 Payroll 類別及員工工作制判斷，不需要逐日新增。</p></div><div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div></form></dialog>{% for item in calendar_holidays %}<dialog class="app-dialog" id="calendar-edit-{{ item.id }}"><form class="dialog-panel record-editor-form" method="post" action="{{ url_for('references.update_work_calendar_holiday', item_id=item.id) }}"><div class="section-head"><h2>編輯假日</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div><div class="record-editor-body"><label><span>工作地區</span><select name="region_id" required>{% for region in regions %}<option value="{{ region.id }}" {% if item.region_id == region.id %}selected{% endif %}>{{ region.display_name }}</option>{% endfor %}</select></label><label><span>日期</span><input type="date" name="holiday_date" value="{{ item.holiday_date.isoformat() }}" required></label><label><span>假日名稱</span><input name="name" value="{{ item.name }}" required></label><label><span>適用日曆</span><select name="calendar_scope" required><option value="statutory" {% if item.applies_to_statutory and not item.applies_to_public %}selected{% endif %}>法定假日（地盤日工／月工）</option><option value="public" {% if item.applies_to_public and not item.applies_to_statutory %}selected{% endif %}>公眾假期（管理人員及總部人員）</option><option value="both" {% if item.applies_to_statutory and item.applies_to_public %}selected{% endif %}>兩者均適用</option></select></label><label><span>{{ t("common.remarks") }}</span><textarea name="remarks">{{ item.remarks or '' }}</textarea></label></div><div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div></form></dialog>{% endfor %}{% endif %}
+{% elif selected_code == "projects" %}
+  <div class="section-head"><div><h2>{{ t("references.projects") }}</h2><p>「未分配」是待補資料狀態，不是項目名稱。引用員工數只計目前在職且當前歸屬此項目的員工。</p></div>{% if can_edit %}<button class="primary-btn" type="button" data-dialog-open="project-add">{{ t("references.new_row") }}</button>{% endif %}</div>
+  <div class="reference-toolbar"><span>{{ projects|selectattr('active')|list|length }} 個使用中項目</span><a class="mini-btn" href="{{ url_for('references.references_home', list='projects', show='archived' if not archived_view else None) }}">{{ '返回使用中' if archived_view else '查看已封存選項' }}</a></div>
+  <div class="table-wrap flat"><table class="dense-table reference-table project-reference-table"><thead><tr><th>{{ t("references.name") }}</th><th>{{ t("employee.work_region") }}</th><th>{{ t("common.location") }}</th><th>{{ t("common.contact_person") }}</th><th>聯絡電話</th><th>{{ t("references.ot_divisor") }}</th><th>引用員工數</th><th>{{ t("common.actions") }}</th></tr></thead><tbody>{% for project in projects if project.active != archived_view %}<tr><td><strong>{{ project.name }}</strong></td><td>{{ project.region.display_name if project.region else '-' }}</td><td>{{ project.work_location or '-' }}</td><td>{{ project.contact_name or '-' }}</td><td>{{ project.contact_phone or '-' }}</td><td>{{ project.daily_ot_divisor }}</td><td><button class="count-link" type="button" data-dialog-open="project-employees-{{ project.id }}">{{ project_employee_links[project.id]|length }}</button></td><td class="row-actions">{% if can_edit %}<button class="mini-btn" type="button" data-dialog-open="project-edit-{{ project.id }}">{{ t("common.edit") }}</button><form class="mini-form" method="post" action="{{ url_for('references.archive_project', project_id=project.id) }}"><input type="hidden" name="action" value="{{ 'restore' if archived_view else 'archive' }}"><button class="mini-btn" type="submit">{{ '恢復使用' if archived_view else '封存選項' }}</button></form>{% if project_counts[project.id] == 0 %}<form class="mini-form" method="post" action="{{ url_for('references.delete_project', project_id=project.id) }}" data-confirm="確認永久刪除這個從未使用的項目？"><button class="mini-btn danger-text" type="submit">{{ t("common.delete") }}</button></form>{% endif %}{% endif %}</td></tr>{{ employee_dialog('project-employees-' ~ project.id, project.name ~ ' · 引用員工', project_employee_links[project.id], project_historical_links[project.id]) }}{% else %}<tr><td colspan="8" class="empty-cell">沒有記錄</td></tr>{% endfor %}</tbody></table></div>
+  {% if can_edit %}<dialog class="app-dialog" id="project-add"><form class="dialog-panel record-editor-form" method="post" action="{{ url_for('references.create_project') }}"><div class="section-head"><h2>新增項目</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div>{% include "references/_project_fields.html" %}<div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div></form></dialog>{% for project in projects %}<dialog class="app-dialog" id="project-edit-{{ project.id }}"><form class="dialog-panel record-editor-form" method="post" action="{{ url_for('references.update_project', project_id=project.id) }}"><div class="section-head"><h2>編輯項目</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div>{% with item=project %}{% include "references/_project_fields.html" %}{% endwith %}<div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div></form></dialog>{% endfor %}{% endif %}
+{% elif selected_code == "mpf_schemes" %}
+  <div class="section-head"><div><h2>{{ t("mpf.schemes") }}</h2><p>列表只供查看；新增及修改在彈窗完成。引用員工數只計目前有效供款記錄。</p></div>{% if can_edit %}<button class="primary-btn" type="button" data-dialog-open="mpf-add">{{ t("references.new_row") }}</button>{% endif %}</div>
+  <div class="reference-toolbar"><span>{{ mpf_schemes|selectattr('active')|list|length }} 個使用中計劃</span><a class="mini-btn" href="{{ url_for('references.references_home', list='mpf_schemes', show='archived' if not archived_view else None) }}">{{ '返回使用中' if archived_view else '查看已封存選項' }}</a></div>
+  <div class="table-wrap flat"><table class="dense-table reference-table"><thead><tr><th>{{ t("mpf.scheme_name") }}</th><th>{{ t("mpf.employer_account_no") }}</th><th>{{ t("mpf.payroll_group_no") }}</th><th>{{ t("mpf.calculation_mode") }}</th><th>引用員工數</th><th>{{ t("common.actions") }}</th></tr></thead><tbody>{% for scheme in mpf_schemes if scheme.active != archived_view %}<tr><td><strong>{{ scheme.name }}</strong></td><td>{{ scheme.employer_account_no }}</td><td>{{ scheme.payroll_group_no or 'N/A' }}</td><td>{{ t('mpf.mode_' ~ scheme.calculation_mode) }}</td><td><button class="count-link" type="button" data-dialog-open="mpf-employees-{{ scheme.id }}">{{ mpf_employee_links[scheme.id]|length }}</button></td><td class="row-actions">{% if can_edit %}<button class="mini-btn" type="button" data-dialog-open="mpf-edit-{{ scheme.id }}">{{ t("common.edit") }}</button><form class="mini-form" method="post" action="{{ url_for('references.archive_mpf_scheme', scheme_id=scheme.id) }}"><input type="hidden" name="action" value="{{ 'restore' if archived_view else 'archive' }}"><button class="mini-btn" type="submit">{{ '恢復使用' if archived_view else '封存選項' }}</button></form>{% if mpf_scheme_counts[scheme.id] == 0 %}<form class="mini-form" method="post" action="{{ url_for('references.delete_mpf_scheme', scheme_id=scheme.id) }}"><button class="mini-btn danger-text" type="submit">{{ t("common.delete") }}</button></form>{% endif %}{% endif %}</td></tr>{{ employee_dialog('mpf-employees-' ~ scheme.id, scheme.name ~ ' · 引用員工', mpf_employee_links[scheme.id], mpf_historical_links[scheme.id]) }}{% else %}<tr><td colspan="6" class="empty-cell">沒有記錄</td></tr>{% endfor %}</tbody></table></div>{% if can_edit %}{% include "references/_mpf_dialogs.html" %}{% endif %}
+{% elif selected %}
+  <div class="section-head"><div><h2>{{ option_t("reference_list", selected.code, selected.label) }}</h2><p>{{ t("references.readonly_archive_hint") }}</p></div>{% if can_edit %}<button class="primary-btn" type="button" data-dialog-open="reference-add">{{ t("references.add_option") }}</button>{% endif %}</div>
+  <div class="reference-toolbar"><span>{{ t("references.active_option_count", count=values|selectattr('active')|list|length) }}</span><a class="mini-btn" href="{{ url_for('references.references_home', list=selected.code, show='archived' if not archived_view else None) }}">{{ t("references.return_active") if archived_view else t("references.view_archived") }}</a></div>
+  <div class="table-wrap flat"><table class="dense-table reference-table"><thead><tr><th>{{ t("references.name") }}</th><th>{{ t("common.remarks") }}</th><th>{{ t("references.current_employee_count") }}</th><th>{{ t("common.actions") }}</th></tr></thead><tbody>{% for value in values if value.active != archived_view %}<tr><td><strong>{{ value.display_name }}</strong></td><td>{{ value.remarks or '-' }}</td><td><button class="count-link" type="button" data-dialog-open="reference-employees-{{ value.id }}">{{ current_employee_links[value.id]|length }}</button></td><td class="row-actions">{% if can_edit %}<button class="mini-btn" type="button" data-dialog-open="reference-edit-{{ value.id }}">{{ t("common.edit") }}</button><form class="mini-form" method="post" action="{{ url_for('references.archive_value', value_id=value.id) }}"><input type="hidden" name="action" value="{{ 'restore' if archived_view else 'archive' }}"><button class="mini-btn" type="submit">{{ t("references.restore_option") if archived_view else t("references.archive_option") }}</button></form>{% if usage_counts[value.id] == 0 %}<form class="mini-form" method="post" action="{{ url_for('references.delete_value', value_id=value.id) }}" data-confirm="確認永久刪除這個從未使用的選項？"><button class="mini-btn danger-text" type="submit">{{ t("common.delete") }}</button></form>{% endif %}{% endif %}</td></tr>{{ employee_dialog('reference-employees-' ~ value.id, value.display_name ~ ' · ' ~ t("references.current_employee_count"), current_employee_links[value.id], historical_employee_links[value.id]) }}{% else %}<tr><td colspan="4" class="empty-cell">沒有記錄</td></tr>{% endfor %}</tbody></table></div>
+  {% if can_edit %}<dialog class="app-dialog" id="reference-add"><form class="dialog-panel record-editor-form" method="post" action="{{ url_for('references.create_value', list_id=selected.id) }}"><div class="section-head"><h2>{{ t("references.add_option") }}</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div><div class="record-editor-body"><label><span>{{ t("references.name") }}</span><input name="display_name" required></label><label><span>{{ t("common.remarks") }}</span><textarea name="remarks"></textarea></label></div><div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div></form></dialog>{% for value in values %}<dialog class="app-dialog" id="reference-edit-{{ value.id }}"><form class="dialog-panel record-editor-form" method="post" action="{{ url_for('references.update_value', value_id=value.id) }}"><div class="section-head"><h2>{{ t("references.edit_option") }}</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div><div class="record-editor-body"><label><span>{{ t("references.name") }}</span><input name="display_name" value="{{ value.display_name }}" required></label><label><span>{{ t("common.remarks") }}</span><textarea name="remarks">{{ value.remarks or '' }}</textarea></label><p class="form-note wide">{{ t("references.rename_history_hint") }}</p></div><div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div></form></dialog>{% endfor %}{% endif %}
+{% endif %}</section>
 {% endblock %}

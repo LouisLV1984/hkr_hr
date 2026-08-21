@@ -137,7 +137,7 @@
                 <span>{{ t("mpf.export_nav_hint") }}</span>
               </a>
               <a class="context-nav-item {% if endpoint == 'payroll.final_payment' %}active{% endif %}"
-                 href="{{ url_for('payroll.final_payment') }}"
+                 href="{{ url_for('payroll.final_payment', year_month=operating_month) }}"
                  {% if endpoint == 'payroll.final_payment' %}aria-current="page"{% endif %}>
                 <strong>{{ t("final_payment.title") }}</strong>
                 <span>{{ t("final_payment.nav_hint") }}</span>
@@ -175,6 +175,12 @@
                  {% if endpoint == 'admin.audit' %}aria-current="page"{% endif %}>
                 <strong>{{ t("admin.audit") }}</strong>
                 <span>{{ t("nav.admin.audit.subtitle") }}</span>
+              </a>
+              <a class="context-nav-item {% if endpoint == 'admin.system_status' %}active{% endif %}"
+                 href="{{ url_for('admin.system_status') }}"
+                 {% if endpoint == 'admin.system_status' %}aria-current="page"{% endif %}>
+                <strong>{{ t("admin.system_status") }}</strong>
+                <span>{{ t("nav.admin.system_status.subtitle") }}</span>
               </a>
             </section>
           {% endif %}
@@ -223,6 +229,33 @@
       if (!control.hasAttribute("autocomplete")) {
         control.setAttribute("autocomplete", `hkr-disabled-${index}`);
       }
+    });
+    document.querySelectorAll('input[type="month"]:not([hidden])').forEach((input) => {
+      if (input.closest(".month-input-shell")) return;
+      const shell = document.createElement("span");
+      shell.className = "month-input-shell";
+      const display = document.createElement("span");
+      display.className = "month-input-display";
+      display.setAttribute("aria-hidden", "true");
+      const refresh = () => {
+        const [year, month] = String(input.value || "").split("-");
+        display.textContent = year && month
+          ? (document.documentElement.lang === "en" ? `${year}-${month}` : `${year}年${Number(month)}月`)
+          : "-";
+      };
+      input.before(shell);
+      shell.append(display, input);
+      input.addEventListener("click", () => {
+        if (input.disabled || input.readOnly || typeof input.showPicker !== "function") return;
+        try {
+          input.showPicker();
+        } catch (_error) {
+          // Browsers without an active user gesture keep their native control.
+        }
+      });
+      input.addEventListener("input", refresh);
+      input.addEventListener("change", refresh);
+      refresh();
     });
     document.querySelectorAll("[data-money-input]").forEach((input) => {
       const format = () => {
@@ -323,6 +356,7 @@
       button.addEventListener("click", () => openAppDialog(button));
     });
     document.querySelectorAll("[data-dialog-close]").forEach((button) => {
+      if (!button.getAttribute("aria-label")) button.setAttribute("aria-label", "{{ t('common.close') }}");
       button.addEventListener("click", () => button.closest("dialog")?.close());
     });
     document.querySelectorAll("dialog.app-dialog").forEach((dialog) => {

@@ -7,6 +7,7 @@ import zipfile
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import patch
 
 from openpyxl import load_workbook
 from sqlalchemy import inspect, text
@@ -49,6 +50,7 @@ from models import (
     ReferenceValue,
     User,
     WorkProject,
+    WorkCalendarHoliday,
     db,
 )
 from tools.hr_core import (
@@ -60,6 +62,10 @@ from tools.hr_core import (
     ensure_reference_seed,
     reference_by_code,
 )
+from tools.hk_statutory_holidays import (
+    parse_hong_kong_public_holidays,
+    parse_hong_kong_statutory_holidays,
+)
 from tools.final_payment import (
     calculate_benefit,
     calculate_final_payment,
@@ -69,12 +75,23 @@ from tools.payroll_engine import (
     calculate_payroll,
     casual_daily_mpf,
     employee_warnings,
+    forecast_tail,
 )
-from routes.payroll import mpf_preview_rows
+from tools.attendance_policy import (
+    automatic_attendance_rows,
+    is_legacy_inferred_special_day_summary,
+    special_work_day_units,
+)
+from routes.payroll import mpf_preview_rows, result_lines
+from routes.attendance import (
+    validate_attendance_segment_totals,
+    validate_sunday_holiday_entries,
+)
 from tools.completeness import employee_data_items
 from tools.releases import CURRENT_VERSION, NEXT_VERSION, RELEASES
 from tools.schema_migrations import (
     apply_additive_migrations,
+    repair_legacy_inferred_special_day_attendance,
     retire_obsolete_audit_events,
     retire_legacy_tables,
     schema_compatibility_issues,
@@ -323,6 +340,20 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertIn("attendance-detail-page", batch_page)
         self.assertIn("navpanes=0&pagemode=none", batch_page)
         self.assertIn("退出詳情", batch_page)
+        self.assertIn("attendance-detail-context", batch_page)
+        self.assertIn('class="attendance-context-exit"', batch_page)
+        self.assertIn('class="attendance-context-month"', batch_page)
+        self.assertIn('class="attendance-context-actions"', batch_page)
+        self.assertNotIn("workbench-actions-top", batch_page)
+        self.assertIn("保存並下一份", batch_page)
+        self.assertIn('id="attendance-project-dialog"', batch_page)
+        self.assertNotIn('class="attendance-detail-head"', batch_page)
+        self.assertEqual(batch_page.count("退出詳情"), 1)
+        self.assertIn('class="attendance-period-table-head"', batch_page)
+        self.assertNotIn('class="attendance-payroll-impact"', batch_page)
+        self.assertIn("本月考勤", batch_page)
+        self.assertIn("上月尾段核對", batch_page)
+        self.assertNotIn('class="review-section transfer-box"', batch_page)
         self.assertIn('class="attendance-workbench"', batch_page)
         self.assertNotIn('class="workbench-left"', batch_page)
         with self.app.app_context():
@@ -378,10 +409,38 @@ class V1WorkflowTests(unittest.TestCase):
                     ],
                     "previous_21_end_forecast_working_days": ["8"],
                     "previous_21_end_forecast_holiday_days": ["0"],
+                    "remarks": f"考勤核對備註 {index}",
                 },
                 follow_redirects=True,
             )
             self.assertEqual(response.status_code, 200)
+        if len(employees_and_projects) > 1:
+            saved_employee_id = employees_and_projects[0][0]
+            wrong_employee_id = employees_and_projects[1][0]
+            locked_page = self.client.get(
+                f"/attendance?month=2026-08&view=collection"
+                f"&batch_id={batch_id}&item_id={item_ids[0]}"
+                f"&employee_id={wrong_employee_id}"
+            ).get_data(as_text=True)
+            with self.app.app_context():
+                saved_employee = db.session.get(Employee, saved_employee_id)
+                saved_employee_no = saved_employee.employee_no
+            self.assertIn("已保存的考勤歸屬", locked_page)
+            self.assertIn("更正員工／月份", locked_page)
+            self.assertIn("data-cross-project-open", locked_page)
+            self.assertIn("跨項目分配", locked_page)
+            self.assertIn("2026年7月", locked_page)
+            self.assertIn(saved_employee_no, locked_page)
+            self.assertIn(
+                f'name="employee_id" value="{saved_employee_id}" '
+                'data-attendance-employee',
+                locked_page,
+            )
+            self.assertNotIn(
+                f'name="employee_id" value="{wrong_employee_id}" '
+                'data-attendance-employee',
+                locked_page,
+            )
 
     def test_complete_employee_document_attendance_payroll_flow(self):
         monthly_id, monthly_no = self.create_employee(
@@ -471,6 +530,7 @@ class V1WorkflowTests(unittest.TestCase):
                 (management_id, management_project),
             ]
         )
+
         with self.app.app_context():
             self.assertEqual(
                 AttendanceMonthlySummary.query.filter_by(
@@ -546,9 +606,21 @@ class V1WorkflowTests(unittest.TestCase):
                     "ecall": float(
                         result.large_ecall_amount + result.ecall_amount
                     ),
+                    "attendance_remarks": (
+                        result.calculation_json or {}
+                    ).get("attendance_remarks"),
                 }
                 for result in run.employee_results
             }
+            self.assertEqual(
+                expected_payroll[monthly_no]["attendance_remarks"],
+                "考勤核對備註 1",
+            )
+        monthly_attendance_page = self.client.get(
+            f"/employees/{monthly_id}?tab=attendance&lang=zh-Hant"
+        ).get_data(as_text=True)
+        self.assertIn("考勤備註", monthly_attendance_page)
+        self.assertIn("考勤核對備註 1", monthly_attendance_page)
         response = self.client.get(
             f"/payroll/runs/{run_id}/export?payroll_group=all"
         )
@@ -570,10 +642,8 @@ class V1WorkflowTests(unittest.TestCase):
                 self.assertTrue(workbook.calculation.forceFullCalc)
                 sheets.add(workbook.sheetnames[0])
                 sheet = workbook.active
-                self.assertEqual(
-                    sheet["F4"].value.date(),
-                    date(2026, 7, 1),
-                )
+                self.assertEqual(sheet["F4"].value, "2026-07")
+                self.assertEqual(sheet["F4"].number_format, "@")
                 self.assertEqual(
                     sheet["M4"].value if sheet.title == "日工" else sheet["N4"].value,
                     "01/07/2026 - 20/07/2026",
@@ -676,6 +746,14 @@ class V1WorkflowTests(unittest.TestCase):
                             43 if sheet.title == "日工" else 44,
                         ).value,
                     )
+                    if expected["attendance_remarks"]:
+                        self.assertIn(
+                            f"考勤備註：{expected['attendance_remarks']}",
+                            sheet.cell(
+                                row,
+                                43 if sheet.title == "日工" else 44,
+                            ).value,
+                        )
             self.assertEqual(sheets, {"月工", "OFFICE", "日工"})
             self.assertTrue(
                 {monthly_no, daily_no, management_no}.issubset(
@@ -869,6 +947,181 @@ class V1WorkflowTests(unittest.TestCase):
             self.assertIsNone(db.session.get(Employee, delete_id))
             self.assertEqual(Employee.query.count(), 3)
 
+    def test_attendance_rejects_period_day_totals_above_calendar_span(self):
+        employee_id, _ = self.create_employee(
+            "HKR", "site_daily", "考勤校驗測試", "ATTENDANCE VALIDATION"
+        )
+        created = self.client.post(
+            "/attendance/batches",
+            data={
+                "files": [(
+                    io.BytesIO(pdf_bytes("attendance-validation")),
+                    "attendance-validation.pdf",
+                )]
+            },
+            content_type="multipart/form-data",
+            follow_redirects=False,
+        )
+        self.assertEqual(created.status_code, 302)
+        with self.app.app_context():
+            item_id = AttendanceBatchItem.query.one().id
+        response = self.client.post(
+            f"/attendance/items/{item_id}/save",
+            data={
+                "year_month": "2026-07",
+                "employee_id": employee_id,
+                "current_1_20_project_id": [""],
+                "current_1_20_working_days": ["20"],
+                "current_1_20_holiday_days": ["1"],
+            },
+            follow_redirects=True,
+        )
+        self.assertIn("出勤合計不可超過 20 日", response.get_data(as_text=True))
+        with self.app.app_context():
+            self.assertIsNone(db.session.get(AttendanceBatchItem, item_id).summary_id)
+
+    def test_admin_system_status_is_read_only_and_versioned(self):
+        page = self.client.get("/admin/system")
+        self.assertEqual(page.status_code, 200)
+        source = page.get_data(as_text=True)
+        self.assertIn("系統運行狀態", source)
+        self.assertIn(CURRENT_VERSION, source)
+        self.assertIn("此頁不執行備份、還原或資料庫升級", source)
+        self.assertNotIn("立即備份", source)
+        self.assertNotIn("立即還原", source)
+
+    def test_attendance_pdf_month_can_be_corrected_by_repreview(self):
+        employee_id, _ = self.create_employee(
+            "HKR", "site_monthly", "月份更正測試", "MONTH CORRECTION"
+        )
+        project_id = self.complete_employee(
+            employee_id,
+            "site_monthly",
+            "TMC046",
+            "monthly",
+            "30000",
+            "QA-MONTH-001",
+            "60000991",
+        )
+        created = self.client.post(
+            "/attendance/batches",
+            data={
+                "files": [(
+                    io.BytesIO(pdf_bytes("attendance-month-correction")),
+                    "attendance-month-correction.pdf",
+                )]
+            },
+            content_type="multipart/form-data",
+            follow_redirects=False,
+        )
+        self.assertEqual(created.status_code, 302)
+        with self.app.app_context():
+            item = AttendanceBatchItem.query.one()
+            item_id = item.id
+            batch_id = item.batch_id
+            self.assertRegex(item.year_month, r"^\d{4}-\d{2}$")
+
+        form = {
+            "year_month": "2026-07",
+            "employee_id": employee_id,
+            "current_1_20_project_id": [str(project_id)],
+            "current_1_20_working_days": ["10"],
+            "current_1_20_ot_hours": ["0"],
+            "current_1_20_holiday_days": ["0"],
+            "current_1_20_large_ecall_count": ["0"],
+            "current_1_20_ecall_count": ["0"],
+        }
+        saved = self.client.post(
+            f"/attendance/items/{item_id}/save",
+            data=form,
+            follow_redirects=False,
+        )
+        self.assertEqual(saved.status_code, 302)
+        with self.app.app_context():
+            item = db.session.get(AttendanceBatchItem, item_id)
+            summary_id = item.summary_id
+            self.assertEqual(item.year_month, "2026-07")
+            self.assertEqual(item.summary.year_month, "2026-07")
+            self.assertEqual(item.summary.document.effective_month, "2026-07")
+            run = PayrollRun(
+                year_month="2026-07",
+                payroll_group="site_monthly",
+                rule_version="test",
+            )
+            db.session.add(run)
+            db.session.flush()
+            db.session.add(PayrollEmployeeResult(
+                run=run,
+                employee_id=employee_id,
+                currency="HKD",
+            ))
+            db.session.commit()
+
+        overview = self.client.get(
+            f"/attendance?view=collection&batch_id={batch_id}"
+        ).get_data(as_text=True)
+        self.assertIn("重新預覽", overview)
+        self.assertNotIn('name="year_month" value="2026-07"', overview)
+        repreview = self.client.get(
+            f"/attendance?view=collection&batch_id={batch_id}&item_id={item_id}"
+        ).get_data(as_text=True)
+        self.assertIn("已保存的考勤歸屬", repreview)
+        self.assertIn("更正員工／月份", repreview)
+        self.assertIn('name="year_month" value="2026-07"', repreview)
+        self.assertIn("保存更正", repreview)
+        correction_page = self.client.get(
+            f"/attendance?view=collection&batch_id={batch_id}"
+            f"&item_id={item_id}&correct_identity=1"
+        ).get_data(as_text=True)
+        self.assertIn("這份考勤所屬月份", correction_page)
+        self.assertIn("正在更正考勤歸屬", correction_page)
+
+        form["year_month"] = "2026-08"
+        corrected = self.client.post(
+            f"/attendance/summaries/{summary_id}/correct",
+            data=form,
+            follow_redirects=True,
+        )
+        self.assertEqual(corrected.status_code, 200)
+        self.assertIn(
+            "請重新核對及導出 Payroll",
+            corrected.get_data(as_text=True),
+        )
+        with self.app.app_context():
+            item = db.session.get(AttendanceBatchItem, item_id)
+            summary = db.session.get(AttendanceMonthlySummary, summary_id)
+            self.assertEqual(item.year_month, "2026-08")
+            self.assertEqual(summary.year_month, "2026-08")
+            self.assertEqual(summary.document.effective_month, "2026-08")
+            audit = AuditLog.query.filter_by(
+                action="attendance_corrected",
+                entity_id=summary_id,
+            ).order_by(AuditLog.id.desc()).first()
+            self.assertEqual(audit.before_json["year_month"], "2026-07")
+            self.assertEqual(audit.after_json["year_month"], "2026-08")
+            db.session.add(AttendanceMonthlySummary(
+                employee_id=employee_id,
+                year_month="2026-09",
+                status="received",
+            ))
+            db.session.commit()
+
+        form["year_month"] = "2026-09"
+        conflict = self.client.post(
+            f"/attendance/summaries/{summary_id}/correct",
+            data=form,
+            follow_redirects=True,
+        )
+        self.assertIn(
+            "該員工在 2026-09 已有考勤",
+            conflict.get_data(as_text=True),
+        )
+        with self.app.app_context():
+            self.assertEqual(
+                db.session.get(AttendanceMonthlySummary, summary_id).year_month,
+                "2026-08",
+            )
+
     def test_attendance_not_required_uses_default_full_attendance_and_is_reversible(self):
         employee_id, employee_no = self.create_employee(
             "HKR",
@@ -988,6 +1241,7 @@ class V1WorkflowTests(unittest.TestCase):
                     segment.ot_hours == 0
                     and segment.large_ecall_count == 0
                     and segment.ecall_count == 0
+                    and segment.sunday_holiday_days == 0
                     for segment in summary.segments
                 )
             )
@@ -1071,6 +1325,438 @@ class V1WorkflowTests(unittest.TestCase):
                 "本月無需考勤表，按預設全勤及零 OT／E-CALL 計算",
                 payroll_row["warnings"],
             )
+
+    def test_legacy_calendar_sundays_are_not_paid_as_real_extra_work(self):
+        employee_id, _employee_no = self.create_employee(
+            "HKR",
+            "management",
+            "舊版日曆星期日測試",
+            "LEGACY CALENDAR SUNDAY",
+        )
+        project_id = self.complete_employee(
+            employee_id,
+            "management",
+            "TMC046",
+            "monthly",
+            "65000",
+            "QA-LEGACY-SUNDAY",
+            "61110009",
+        )
+        with self.app.app_context():
+            summary = AttendanceMonthlySummary(
+                employee_id=employee_id,
+                year_month="2026-08",
+                status="not_required",
+                no_attendance_reason="舊版免交考勤",
+            )
+            db.session.add(summary)
+            db.session.flush()
+            for period_kind, ordinary_days, sunday_days in (
+                ("current_1_20", "17", "3"),
+                ("current_21_end_forecast", "9", "2"),
+                ("previous_21_end", "10", "1"),
+                ("previous_21_end_forecast", "10", "1"),
+            ):
+                db.session.add(
+                    AttendanceSegment(
+                        summary_id=summary.id,
+                        period_kind=period_kind,
+                        project_id=project_id,
+                        working_days=Decimal(ordinary_days),
+                        sunday_holiday_days=Decimal(sunday_days),
+                    )
+                )
+            db.session.commit()
+            self.assertTrue(is_legacy_inferred_special_day_summary(summary))
+
+            payroll_row = calculate_payroll("2026-08", "management")[0]
+            self.assertFalse(payroll_row["blockers"])
+            self.assertEqual(payroll_row["holiday_amount"], Decimal("0.00"))
+            self.assertEqual(payroll_row["overpay_amount"], Decimal("0.00"))
+            self.assertEqual(payroll_row["underpay_amount"], Decimal("0.00"))
+            self.assertEqual(payroll_row["gross_amount"], Decimal("65000.00"))
+            self.assertTrue(
+                any(
+                    "真正額外工作" in warning
+                    for warning in payroll_row["warnings"]
+                )
+            )
+
+            self.assertEqual(
+                repair_legacy_inferred_special_day_attendance(),
+                1,
+            )
+            db.session.refresh(summary)
+            self.assertTrue(
+                all(
+                    segment.sunday_holiday_days == 0
+                    for segment in summary.segments
+                )
+            )
+            self.assertFalse(is_legacy_inferred_special_day_summary(summary))
+            self.assertEqual(
+                AuditLog.query.filter_by(
+                    employee_id=employee_id,
+                    action="attendance_legacy_special_days_repaired",
+                ).count(),
+                1,
+            )
+            self.assertEqual(
+                repair_legacy_inferred_special_day_attendance(),
+                0,
+            )
+
+            repaired_payroll_row = calculate_payroll(
+                "2026-08",
+                "management",
+            )[0]
+            self.assertEqual(
+                repaired_payroll_row["gross_amount"],
+                Decimal("65000.00"),
+            )
+            self.assertFalse(
+                any(
+                    "真正額外工作" in warning
+                    for warning in repaired_payroll_row["warnings"]
+                )
+            )
+
+            actual_segment = next(
+                segment
+                for segment in summary.segments
+                if segment.period_kind == "current_1_20"
+            )
+            actual_segment.sunday_holiday_days = Decimal("1")
+            db.session.add(
+                AttendanceSpecialDay(
+                    summary_id=summary.id,
+                    segment_id=actual_segment.id,
+                    period_kind="current_1_20",
+                    project_id=project_id,
+                    work_date=date(2026, 8, 2),
+                    day_kind="sunday",
+                    session="full_day",
+                    handling="pay",
+                    days=Decimal("1"),
+                    status="active",
+                )
+            )
+            db.session.commit()
+            self.assertFalse(is_legacy_inferred_special_day_summary(summary))
+            self.assertEqual(
+                repair_legacy_inferred_special_day_attendance(),
+                0,
+            )
+            real_work_payroll_row = calculate_payroll(
+                "2026-08",
+                "management",
+            )[0]
+            self.assertGreater(
+                real_work_payroll_row["holiday_amount"],
+                Decimal("0"),
+            )
+            self.assertGreater(
+                real_work_payroll_row["gross_amount"],
+                Decimal("65000"),
+            )
+
+        profile_page = self.client.get(
+            f"/employees/{employee_id}?lang=zh-Hant"
+        ).get_data(as_text=True)
+        self.assertIn("月薪無需填寫", profile_page)
+        self.assertIn("只記錄真正額外工作", profile_page)
+
+        entry_page = self.client.get(
+            "/attendance?month=2026-08&lang=zh-Hant"
+        ).get_data(as_text=True)
+        self.assertIn("真正發生的額外工作", entry_page)
+        self.assertIn("不是該期間內星期日", entry_page)
+
+    def test_attendance_employee_search_excludes_departed_and_blocks_wheel_changes(self):
+        active_id, active_no = self.create_employee(
+            "HKR",
+            "site_monthly",
+            "黃搜尋",
+            "SEARCH ACTIVE",
+        )
+        departed_id, departed_no = self.create_employee(
+            "HKR",
+            "site_monthly",
+            "黃離職",
+            "SEARCH DEPARTED",
+        )
+        self.complete_employee(
+            active_id,
+            "site_monthly",
+            "TMC046",
+            "monthly",
+            "30000",
+            "QA-SEARCH-ACTIVE",
+            "61110101",
+        )
+        self.complete_employee(
+            departed_id,
+            "site_monthly",
+            "TMC046",
+            "monthly",
+            "30000",
+            "QA-SEARCH-DEPARTED",
+            "61110102",
+        )
+        with self.app.app_context():
+            active = db.session.get(Employee, active_id)
+            active.current_assignment.effective_from = date(2026, 6, 1)
+            departed = db.session.get(Employee, departed_id)
+            departed.current_period.end_date = date(2026, 7, 31)
+            departed.status = "departed"
+            summary = AttendanceMonthlySummary(
+                employee_id=active_id,
+                year_month="2026-08",
+                status="received",
+            )
+            db.session.add(summary)
+            db.session.commit()
+            summary_id = summary.id
+
+        locked_page = self.client.get(
+            f"/attendance?month=2026-08&summary_id={summary_id}&lang=zh-Hant"
+        ).get_data(as_text=True)
+        self.assertNotIn('type="search"', locked_page)
+        self.assertIn("已保存的考勤歸屬", locked_page)
+        page = self.client.get(
+            f"/attendance?month=2026-08&summary_id={summary_id}"
+            "&correct_identity=1&lang=zh-Hant"
+        ).get_data(as_text=True)
+        self.assertIn('type="search"', page)
+        self.assertNotIn("支持員工編號、英文姓名及繁簡體中文混合搜尋", page)
+        self.assertIn("input.showPicker()", page)
+        self.assertIn(active_no, page)
+        self.assertIn("SEARCH ACTIVE", page)
+        self.assertIn("黃搜尋", page)
+        self.assertIn("黄搜寻", page)
+        self.assertNotIn(departed_no, page)
+        self.assertNotIn("SEARCH DEPARTED", page)
+        self.assertIn("input[type='number']", page)
+        self.assertIn("document.activeElement === input", page)
+
+        profile = self.client.get(
+            f"/employees/{active_id}?tab=employment&lang=zh-Hant"
+        ).get_data(as_text=True)
+        current_card = re.search(
+            r'<article class="panel current-state-card">.*?當前任職.*?</article>',
+            profile,
+            re.S,
+        )
+        self.assertIsNotNone(current_card)
+        self.assertIn("入職日期", current_card.group(0))
+        self.assertIn("2026-01-01", current_card.group(0))
+        self.assertNotIn("2026-06-01", current_card.group(0))
+
+    def test_attendance_linked_leave_is_compact_actionable_and_type_specific(self):
+        employee_id, _ = self.create_employee(
+            "HKR",
+            "management",
+            "假期聯動提示",
+            "LEAVE LINK ALERT",
+        )
+        self.complete_employee(
+            employee_id,
+            "management",
+            "TMC046",
+            "monthly",
+            "31000",
+            "QA-LEAVE-LINK",
+            "61110109",
+        )
+        with self.app.app_context():
+            summary = AttendanceMonthlySummary(
+                employee_id=employee_id,
+                year_month="2026-08",
+                status="received",
+            )
+            db.session.add_all(
+                [
+                    summary,
+                    EmployeeAnnualLeaveRecord(
+                    employee_id=employee_id,
+                    leave_date=date(2026, 7, 14),
+                    end_date=date(2026, 7, 21),
+                    entitlement_year=2026,
+                    days=Decimal("6.5"),
+                    leave_type="annual",
+                    status="active",
+                    ),
+                ]
+            )
+            db.session.commit()
+            summary_id = summary.id
+
+        page = self.client.get(
+            f"/attendance?month=2026-08&summary_id={summary_id}"
+            "&lang=zh-Hant"
+        ).get_data(as_text=True)
+        self.assertIn("本次考勤有 1 筆年假", page)
+        self.assertIn("上月尾段", page)
+        self.assertIn("需核對 2026-07-21–2026-07-21", page)
+        self.assertIn("原記錄 2026-07-14–2026-07-21 · 6.5 日", page)
+        self.assertIn("全薪 · 不計實際出勤，由系統另計年假薪酬", page)
+        self.assertIn("請從實際出勤扣除相應 1 日／0.5 日", page)
+        self.assertIn("HR 操作：", page)
+        self.assertIn("前往假期與工傷", page)
+        self.assertNotIn("病假憑證必須補交", page)
+
+        with self.app.app_context():
+            db.session.add(
+                EmployeeAnnualLeaveRecord(
+                    employee_id=employee_id,
+                    leave_date=date(2026, 8, 5),
+                    end_date=date(2026, 8, 5),
+                    entitlement_year=2026,
+                    days=Decimal("1"),
+                    leave_type="sick",
+                    status="active",
+                )
+            )
+            db.session.commit()
+
+        page = self.client.get(
+            f"/attendance?month=2026-08&summary_id={summary_id}"
+            "&lang=zh-Hant"
+        ).get_data(as_text=True)
+        self.assertIn("本次考勤有 1 筆年假、1 筆病假", page)
+        self.assertIn("依病假規則計薪", page)
+        self.assertIn("病假憑證待補", page)
+
+    def test_fixed_allowances_reject_daily_workers_and_show_daily_rate_rule(self):
+        daily_id, _ = self.create_employee(
+            "HKRD",
+            "site_daily",
+            "日工補貼限制",
+            "DAILY ALLOWANCE BLOCK",
+        )
+        monthly_id, _ = self.create_employee(
+            "HKR",
+            "site_monthly",
+            "月工補貼提示",
+            "MONTHLY ALLOWANCE NOTE",
+        )
+        self.complete_employee(
+            daily_id,
+            "site_daily",
+            "TMC046",
+            "daily",
+            "500",
+            "QA-DAILY-ALLOWANCE",
+            "61110103",
+            mpf_mode="casual",
+        )
+        self.complete_employee(
+            monthly_id,
+            "site_monthly",
+            "TMC046",
+            "monthly",
+            "30000",
+            "QA-MONTHLY-ALLOWANCE",
+            "61110104",
+        )
+        response = self.client.post(
+            f"/employees/{daily_id}/allowances",
+            data={
+                "allowance_type": "meal",
+                "effective_from": "2026-08-01",
+                "amount": "60",
+                "currency": "HKD",
+            },
+            follow_redirects=True,
+        )
+        self.assertIn(
+            "固定補貼目前只支持月工及 OFFICE，不支持日工",
+            response.get_data(as_text=True),
+        )
+        with self.app.app_context():
+            self.assertEqual(
+                EmployeeAllowance.query.filter_by(employee_id=daily_id).count(),
+                0,
+            )
+
+        daily_profile = self.client.get(
+            f"/employees/{daily_id}?tab=employment&lang=zh-Hant"
+        ).get_data(as_text=True)
+        self.assertIn("固定補貼目前只支持月工及 OFFICE", daily_profile)
+        self.assertNotIn('data-dialog-open="add-allowance-dialog"', daily_profile)
+        monthly_profile = self.client.get(
+            f"/employees/{monthly_id}?tab=employment&lang=zh-Hant"
+        ).get_data(as_text=True)
+        self.assertIn("每日金額 × 計薪曆日", monthly_profile)
+        self.assertIn('data-dialog-open="add-allowance-dialog"', monthly_profile)
+        self.assertIn("餐補／交通補貼為每日金額", monthly_profile)
+
+    def test_empty_project_lines_never_create_mpf_only_payroll_rows(self):
+        employee_id, _ = self.create_employee(
+            "HKR",
+            "management",
+            "MPF 分行測試",
+            "MPF LINE TEST",
+        )
+        project_id = self.complete_employee(
+            employee_id,
+            "management",
+            "TMC046",
+            "monthly",
+            "60000",
+            "QA-MPF-LINE",
+            "61110105",
+        )
+        with self.app.app_context():
+            summary = AttendanceMonthlySummary(
+                employee_id=employee_id,
+                year_month="2026-08",
+                status="received",
+            )
+            db.session.add(summary)
+            db.session.flush()
+            for period_kind in (
+                "current_1_20",
+                "current_21_end_forecast",
+                "previous_21_end",
+                "previous_21_end_forecast",
+            ):
+                db.session.add(
+                    AttendanceSegment(
+                        summary_id=summary.id,
+                        period_kind=period_kind,
+                        project_id=None,
+                    )
+                )
+            db.session.commit()
+            row = calculate_payroll("2026-08", "management")[0]
+            self.assertEqual(row["employee_mpf"], Decimal("1500.00"))
+            self.assertEqual(len(row["lines"]), 1)
+            self.assertEqual(row["lines"][0]["project"].id, project_id)
+            self.assertEqual(row["lines"][0]["base_amount"], Decimal("60000.00"))
+
+            legacy_result = PayrollEmployeeResult(
+                calculation_json={
+                    "lines": [
+                        {
+                            "project": None,
+                            "working_days": "31",
+                            "holiday_days": "5",
+                            "base_amount": "0",
+                            "gross_amount": "0",
+                        },
+                        {
+                            "project": project_id,
+                            "working_days": "31",
+                            "base_amount": "60000",
+                            "gross_amount": "60000",
+                        },
+                    ]
+                }
+            )
+            exported_lines = result_lines(legacy_result)
+            self.assertEqual(len(exported_lines), 1)
+            self.assertEqual(exported_lines[0]["project"], project_id)
 
     def test_new_employee_can_start_with_long_term_attendance_exemption(self):
         with self.app.app_context():
@@ -1547,6 +2233,25 @@ class V1WorkflowTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         response = self.client.post(
+            f"/references/values/{value_id}/archive",
+            data={"action": "archive"},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        with self.app.app_context():
+            self.assertFalse(db.session.get(ReferenceValue, value_id).active)
+            self.assertIsNotNone(
+                AuditLog.query.filter_by(
+                    action="reference_archived",
+                    entity_id=value_id,
+                ).first()
+            )
+        self.client.post(
+            f"/references/values/{value_id}/archive",
+            data={"action": "restore"},
+            follow_redirects=True,
+        )
+        response = self.client.post(
             f"/references/values/{value_id}/delete",
             follow_redirects=True,
         )
@@ -1572,7 +2277,8 @@ class V1WorkflowTests(unittest.TestCase):
                 "HA Acceptance Project",
             )
         html = response.get_data(as_text=True)
-        self.assertIn('form="project-update-', html)
+        self.assertIn('data-dialog-open="project-edit-', html)
+        self.assertIn('name="contact_phone"', html)
 
         self.client.post("/logout")
         self.login("hr_test", "test-hr-password")
@@ -1656,6 +2362,157 @@ class V1WorkflowTests(unittest.TestCase):
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0].display_name, "其他工作許可")
             self.assertTrue(rows[0].active)
+
+    def test_reference_seed_includes_confirmed_hong_kong_july_holiday(self):
+        with self.app.app_context():
+            hong_kong = reference_by_code("work_region", "HK")
+            holiday = WorkCalendarHoliday.query.filter_by(
+                region_id=hong_kong.id,
+                holiday_date=date(2026, 7, 1),
+            ).one()
+            self.assertTrue(holiday.active)
+            self.assertEqual(
+                holiday.name,
+                "香港特別行政區成立紀念日",
+            )
+
+            holiday.active = False
+            db.session.commit()
+            ensure_reference_seed()
+            self.assertFalse(
+                WorkCalendarHoliday.query.filter_by(
+                    region_id=hong_kong.id,
+                    holiday_date=date(2026, 7, 1),
+                ).one().active
+            )
+
+    def test_work_calendar_crud_and_archive_restore(self):
+        with self.app.app_context():
+            region = ReferenceValue.query.join(ReferenceList).filter(
+                ReferenceList.code == "work_region",
+                ReferenceValue.active.is_(True),
+            ).first()
+            self.assertIsNotNone(region)
+            region_id = region.id
+
+        page = self.client.get(
+            "/references?list=work_calendar&calendar_year=2026"
+        )
+        self.assertEqual(page.status_code, 200)
+        page_text = page.get_data(as_text=True)
+        self.assertIn("工作日曆", page_text)
+        self.assertIn(
+            f"帶入 {date.today().year + 1} 年香港假日日曆",
+            page_text,
+        )
+
+        created = self.client.post(
+            "/references/work-calendar",
+            data={
+                "region_id": region_id,
+                "holiday_date": "2026-12-26",
+                "name": "測試法定假日",
+                "calendar_scope": "statutory",
+                "remarks": "calendar workflow",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(created.status_code, 200)
+        self.assertIn("測試法定假日", created.get_data(as_text=True))
+        with self.app.app_context():
+            item = WorkCalendarHoliday.query.filter_by(
+                region_id=region_id,
+                holiday_date=date(2026, 12, 26),
+            ).one()
+            item_id = item.id
+
+        archived = self.client.post(
+            f"/references/work-calendar/{item_id}/archive",
+            data={"action": "archive"},
+            follow_redirects=True,
+        )
+        self.assertEqual(archived.status_code, 200)
+        with self.app.app_context():
+            self.assertFalse(db.session.get(WorkCalendarHoliday, item_id).active)
+
+        restored = self.client.post(
+            f"/references/work-calendar/{item_id}/archive",
+            data={"action": "restore"},
+            follow_redirects=True,
+        )
+        self.assertEqual(restored.status_code, 200)
+        with self.app.app_context():
+            self.assertTrue(db.session.get(WorkCalendarHoliday, item_id).active)
+
+    def test_hong_kong_statutory_holiday_parser_and_import(self):
+        html = """
+        <html><body><p>2027年的2天法定假日是：</p><table>
+        <tr><td>1.</td><td>1月1日</td><td>1月1日</td></tr>
+        <tr><td>2.</td><td>冬節 或 聖誕節 （由僱主選擇）</td>
+        <td>12月22日 或 12月25日</td></tr>
+        </table></body></html>
+        """
+        parsed = parse_hong_kong_statutory_holidays(
+            html,
+            2027,
+        )
+        self.assertEqual(
+            parsed,
+            [
+                (date(2027, 1, 1), "1月1日"),
+                (date(2027, 12, 25), "聖誕節"),
+            ],
+        )
+        public_html = "<html><body><table>" + "".join(
+            f"<tr><td>公眾假期 {day}</td><td>1月{day}日</td><td>星期一</td></tr>"
+            for day in range(1, 18)
+        ) + "</table></body></html>"
+        public_parsed = parse_hong_kong_public_holidays(public_html, 2027)
+        self.assertEqual(len(public_parsed), 17)
+        imported_public = [
+            (date(2027, 1, 1), "1月1日"),
+            (date(2027, 4, 2), "耶穌受難節"),
+        ]
+        with self.app.app_context():
+            hong_kong = reference_by_code("work_region", "HK")
+            region_id = hong_kong.id
+        with patch(
+            "routes.references.fetch_hong_kong_statutory_holidays",
+            return_value=parsed,
+        ), patch(
+            "routes.references.fetch_hong_kong_public_holidays",
+            return_value=imported_public,
+        ):
+            response = self.client.post(
+                "/references/work-calendar/import-hong-kong",
+                data={
+                    "calendar_year": "2027",
+                },
+                follow_redirects=True,
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("新增 3 個日期", response.get_data(as_text=True))
+        with self.app.app_context():
+            rows = WorkCalendarHoliday.query.filter_by(
+                region_id=region_id,
+            ).filter(
+                db.extract("year", WorkCalendarHoliday.holiday_date) == 2027
+            ).order_by(WorkCalendarHoliday.holiday_date).all()
+            self.assertEqual(len(rows), 3)
+            january_first = next(
+                row for row in rows if row.holiday_date == date(2027, 1, 1)
+            )
+            self.assertTrue(january_first.applies_to_statutory)
+            self.assertTrue(january_first.applies_to_public)
+            good_friday = next(
+                row for row in rows if row.holiday_date == date(2027, 4, 2)
+            )
+            self.assertFalse(good_friday.applies_to_statutory)
+            self.assertTrue(good_friday.applies_to_public)
+            audit = AuditLog.query.filter_by(
+                action="work_calendar_hk_imported"
+            ).one()
+            self.assertEqual(audit.after_json["year"], 2027)
 
     def test_employee_quick_reference_creation_and_return_context(self):
         employee_id, _ = self.create_employee(
@@ -1826,6 +2683,7 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertIn("當前任職</span><h2>項目經理</h2>", html)
         self.assertIn("項目：未分配", html)
         self.assertIn("未分配", html)
+        self.assertIn("5 天工作制", html)
         self.assertIn('data-dialog-open="add-assignment-dialog"', html)
         self.assertIn('id="add-assignment-dialog"', html)
         self.assertRegex(
@@ -1852,12 +2710,23 @@ class V1WorkflowTests(unittest.TestCase):
                 "social_insurance_entity_id": ids["social"],
                 "labour_dispatch_entity_id": ids["dispatch"],
                 "payroll_group": "management",
+                "workweek_days": "5.5",
             },
             follow_redirects=True,
         )
         future_html = future.get_data(as_text=True)
         self.assertIn("將於 2099-01-01 生效；目前任職暫不變", future_html)
         self.assertIn("當前任職</span><h2>項目經理</h2>", future_html)
+        self.assertIn("5.5 天工作制", future_html)
+        with self.app.app_context():
+            future_assignment = EmployeeAssignment.query.filter_by(
+                employee_id=employee_id,
+                effective_from=date(2099, 1, 1),
+            ).one()
+            self.assertEqual(
+                future_assignment.workweek_days,
+                Decimal("5.5"),
+            )
 
     def test_language_switch_and_page_smoke(self):
         routes = (
@@ -1897,7 +2766,7 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertIn('data-attendance-upload-form', attendance_collection)
         self.assertIn("拖放 PDF 到此或點擊選擇", attendance_collection)
         self.assertIn(
-            "可隨時返回過往批次繼續處理",
+            "批次只管理已上傳 PDF",
             attendance_collection,
         )
         payroll = self.client.get(
@@ -1919,9 +2788,9 @@ class V1WorkflowTests(unittest.TestCase):
             "/references?list=education_level&lang=en"
         ).get_data(as_text=True)
         self.assertIn("Education level", english_references)
-        self.assertIn("Available for new records", english_references)
+        self.assertIn("Archive option", english_references)
         self.assertNotIn("學歷", english_references)
-        self.assertIn("Renaming updates existing displays", english_references)
+        self.assertIn("Renaming updates existing displays and history", english_references)
         self.assertNotIn("System codes are hidden", english_references)
         project_references = self.client.get(
             "/references?list=projects&lang=en"
@@ -1934,12 +2803,16 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertIn("Payroll period:", english_payroll)
         self.assertIn("each ordinary E-CALL adds HKD 400", english_payroll)
         self.assertIn("XLSX exports retain calculation formulas", english_payroll)
+        self.assertIn(
+            "Contractually explicit exceptions use monthly salary / calendar days",
+            english_payroll,
+        )
         self.assertNotIn("出糧週期", english_payroll)
         english_attendance = self.client.get(
             "/attendance?view=collection&lang=en"
         ).get_data(as_text=True)
         self.assertIn("Drop PDFs here or click to choose", english_attendance)
-        self.assertIn("Return to any previous batch to continue", english_attendance)
+        self.assertIn("A batch only groups uploaded PDFs", english_attendance)
         simplified = self.client.get(
             "/employees?lang=zh-Hans"
         ).get_data(as_text=True)
@@ -2167,11 +3040,21 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertNotIn("MPF 資料未填寫", departed_page)
 
     def test_user_guide_page_and_release_alignment(self):
-        self.assertEqual(CURRENT_VERSION, "V0.2.8")
-        self.assertEqual(NEXT_VERSION, "V0.2.9")
+        self.assertEqual(CURRENT_VERSION, "V0.3.8")
+        self.assertEqual(NEXT_VERSION, "V0.3.9")
         self.assertEqual(
             [(release["version"], release["date"]) for release in RELEASES],
             [
+                ("V0.3.8", "2026-08-21"),
+                ("V0.3.7", "2026-08-21"),
+                ("V0.3.6", "2026-08-21"),
+                ("V0.3.5", "2026-08-21"),
+                ("V0.3.4", "2026-08-20"),
+                ("V0.3.3", "2026-08-20"),
+                ("V0.3.2", "2026-08-19"),
+                ("V0.3.1", "2026-08-19"),
+                ("V0.3.0", "2026-08-18"),
+                ("V0.2.9", "2026-08-17"),
                 ("V0.2.8", "2026-08-17"),
                 ("V0.2.7", "2026-08-14"),
                 ("V0.2.6", "2026-08-13"),
@@ -2231,6 +3114,9 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertIn("### 10.6 每月 MPF 供款表", source)
         self.assertIn("Member Account No.", source)
         self.assertIn("變更歷史", source)
+        self.assertIn("離職 Payroll", source)
+        self.assertIn("發薪單位", source)
+        self.assertIn("手動例外補貼", source)
 
         response = self.client.get("/guide")
         self.assertEqual(response.status_code, 200)
@@ -2390,6 +3276,11 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertIn("任職狀態變更歷史", status)
         self.assertIn('data-dialog-open="termination-editor-dialog"', status)
         self.assertNotIn('details class="action-panel"', status)
+
+        documents = self.client.get(
+            f"/employees/{employee_id}?tab=documents"
+        ).get_data(as_text=True)
+        self.assertIn('class="dense-table document-library-table"', documents)
 
     def test_identical_document_and_attendance_require_confirmation(self):
         employee_id, _ = self.create_employee(
@@ -2800,6 +3691,7 @@ class V1WorkflowTests(unittest.TestCase):
         login_activity = self.client.get(
             "/admin/audit?view=logins&lang=en"
         ).get_data(as_text=True)
+
         self.assertIn("Login succeeded", login_activity)
         self.assertIn("Login failed", login_activity)
         self.assertIn("Logged out", login_activity)
@@ -2838,6 +3730,85 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertEqual(payroll_template["日工"]["J6"].value, "Daily salary standard\n日薪標準")
         self.assertTrue(str(payroll_template["日工"]["AP7"].value).startswith("="))
         payroll_template.close()
+
+    def test_dashboard_confirmation_reminders_link_to_confirmation_editor(self):
+        due_id, due_no = self.create_employee(
+            "HKR",
+            "management",
+            "即將轉正",
+            "CONFIRMATION DUE",
+        )
+        overdue_id, overdue_no = self.create_employee(
+            "HKR",
+            "management",
+            "逾期轉正",
+            "CONFIRMATION OVERDUE",
+        )
+        future_id, future_no = self.create_employee(
+            "HKR",
+            "management",
+            "未到提醒期",
+            "CONFIRMATION FUTURE",
+        )
+        confirmed_id, confirmed_no = self.create_employee(
+            "HKR",
+            "management",
+            "已經轉正",
+            "ALREADY CONFIRMED",
+        )
+        monthly_id, monthly_no = self.create_employee(
+            "HKR",
+            "site_monthly",
+            "月工試用期",
+            "MONTHLY PROBATION",
+        )
+        today = date.today()
+        with self.app.app_context():
+            periods = {
+                employee_id: EmployeeEmploymentPeriod(
+                    employee_id=employee_id,
+                    start_date=today - timedelta(days=100),
+                )
+                for employee_id in (
+                    due_id,
+                    overdue_id,
+                    future_id,
+                    confirmed_id,
+                    monthly_id,
+                )
+            }
+            periods[due_id].probation_end_date = today + timedelta(days=10)
+            periods[overdue_id].probation_end_date = today - timedelta(days=2)
+            periods[future_id].probation_end_date = today + timedelta(days=31)
+            periods[confirmed_id].probation_end_date = today
+            periods[confirmed_id].confirmation_date = today
+            periods[monthly_id].probation_end_date = today
+            db.session.add_all(periods.values())
+            db.session.commit()
+
+        dashboard = self.client.get(
+            "/dashboard?month=2026-08&panel=confirmation&lang=en"
+        ).get_data(as_text=True)
+        self.assertIn("Confirmation due in 30 days", dashboard)
+        self.assertIn("Employee confirmation reminders (2)", dashboard)
+        self.assertIn(due_no, dashboard)
+        self.assertIn(overdue_no, dashboard)
+        self.assertNotIn(future_no, dashboard)
+        self.assertNotIn(confirmed_no, dashboard)
+        self.assertNotIn(monthly_no, dashboard)
+        self.assertIn("Due in 10 day(s)", dashboard)
+        self.assertIn("Overdue by 2 day(s)", dashboard)
+        self.assertIn(
+            f'/employees/{due_id}?tab=employment_status&amp;focus=probation',
+            dashboard,
+        )
+
+        profile = self.client.get(
+            f"/employees/{due_id}?tab=employment_status&focus=probation&lang=en"
+        ).get_data(as_text=True)
+        self.assertIn('id="probation-editor-dialog"', profile)
+        self.assertIn('employeeDetailParams.get("focus") === "probation"', profile)
+        self.assertIn("probation-editor-dialog", profile)
 
     def test_schema_compatibility_detects_legacy_columns(self):
         legacy_dir = tempfile.TemporaryDirectory()
@@ -2895,6 +3866,10 @@ class V1WorkflowTests(unittest.TestCase):
                 changed,
             )
             self.assertIn(
+                "attendance_batch_items.year_month",
+                changed,
+            )
+            self.assertIn(
                 "attendance_special_days.session",
                 changed,
             )
@@ -2912,6 +3887,7 @@ class V1WorkflowTests(unittest.TestCase):
             }
             self.assertIn("content_sha256", document_columns)
             self.assertIn("content_sha256", batch_item_columns)
+            self.assertIn("year_month", batch_item_columns)
             attendance_columns = {
                 column["name"]
                 for column in inspect(db.engine).get_columns(
@@ -3070,20 +4046,20 @@ class V1WorkflowTests(unittest.TestCase):
             db.session.commit()
             row = calculate_payroll("2026-07", "site_daily")[0]
             self.assertEqual(row["employee"].employee_no, employee_no)
-            self.assertEqual(row["current_actual_total"], Decimal("5000.00"))
+            self.assertEqual(row["current_actual_total"], Decimal("5500.00"))
             self.assertEqual(row["forecast_tail_total"], Decimal("2500.00"))
             self.assertEqual(row["actual_previous_tail"], Decimal("2000.00"))
             self.assertEqual(row["expected_previous_tail"], Decimal("3000.00"))
-            self.assertEqual(row["gross_amount"], Decimal("6500.00"))
+            self.assertEqual(row["gross_amount"], Decimal("7000.00"))
             self.assertEqual(row["overpay_amount"], Decimal("1000.00"))
             self.assertEqual(row["underpay_amount"], Decimal("0.00"))
-            self.assertEqual(row["employee_mpf"], Decimal("325.00"))
-            self.assertEqual(row["employer_mpf"], Decimal("325.00"))
+            self.assertEqual(row["employee_mpf"], Decimal("350.00"))
+            self.assertEqual(row["employer_mpf"], Decimal("350.00"))
 
         dashboard = self.client.get(
             "/dashboard?month=2026-07"
         ).get_data(as_text=True)
-        self.assertIn("HKD 6,175.00", dashboard)
+        self.assertIn("HKD 6,650.00", dashboard)
 
         page = self.client.get(
             "/attendance-payroll"
@@ -3122,7 +4098,7 @@ class V1WorkflowTests(unittest.TestCase):
             result = PayrollEmployeeResult.query.one()
             self.assertEqual(run.year_month, "2026-07")
             self.assertEqual(result.employee_id, employee_id)
-            self.assertEqual(result.gross_amount, Decimal("6500.00"))
+            self.assertEqual(result.gross_amount, Decimal("7000.00"))
 
     def test_mpf_effective_records_preview_and_exports(self):
         with self.app.app_context():
@@ -4109,12 +5085,12 @@ class V1WorkflowTests(unittest.TestCase):
             self.assertEqual(sick_row["sick_leave_days"], Decimal("3.0"))
             self.assertEqual(sick_row["sick_leave_amount"], Decimal("2600.00"))
             self.assertEqual(
-                sick_row["traffic_meal_allowance_amount"], Decimal("310.00")
+                sick_row["traffic_meal_allowance_amount"], Decimal("8680.00")
             )
             self.assertEqual(
                 sick_row["special_allowance_amount"], Decimal("620.00")
             )
-            self.assertEqual(sick_row["gross_amount"], Decimal("32780.00"))
+            self.assertEqual(sick_row["gross_amount"], Decimal("41150.00"))
             self.assertEqual(
                 sick_row["attendance_other_allowance_amount"], Decimal("250.00")
             )
@@ -4131,7 +5107,7 @@ class V1WorkflowTests(unittest.TestCase):
                 for row in calculate_payroll("2026-07", "site_monthly")
                 if row["employee"].id == sick_employee_id
             )
-            self.assertEqual(sick_row["gross_amount"], Decimal("31780.00"))
+            self.assertEqual(sick_row["gross_amount"], Decimal("40150.00"))
             self.assertEqual(sick_row["lines"][0]["holiday_days"], Decimal("0.00"))
 
             db.session.add(
@@ -4149,7 +5125,7 @@ class V1WorkflowTests(unittest.TestCase):
                 for row in calculate_payroll("2026-07", "site_monthly")
                 if row["employee"].id == sick_employee_id
             )
-            self.assertEqual(sick_row["gross_amount"], Decimal("32780.00"))
+            self.assertEqual(sick_row["gross_amount"], Decimal("41150.00"))
             self.assertEqual(
                 sick_row["lines"][0]["forecast_holiday_days"],
                 Decimal("1.00"),
@@ -4231,7 +5207,7 @@ class V1WorkflowTests(unittest.TestCase):
         ).get_data(as_text=True)
         self.assertIn("工資更正與一次性調整", payroll_page)
         self.assertIn("替班津貼請在考勤錄入的實際項目行填寫", payroll_page)
-        self.assertIn("離職當月的工資只由離職結算", payroll_page)
+        self.assertIn("離職當月的工資只由離職 Payroll", payroll_page)
 
     def test_attendance_special_dates_generate_and_void_comp_leave(self):
         employee_id, _ = self.create_employee(
@@ -4247,6 +5223,20 @@ class V1WorkflowTests(unittest.TestCase):
             "62225000",
             mpf_mode="casual",
         )
+        with self.app.app_context():
+            employee = db.session.get(Employee, employee_id)
+            db.session.add_all(
+                [
+                    WorkCalendarHoliday(
+                        region_id=employee.current_assignment.region_id,
+                        holiday_date=holiday_date,
+                        name=f"補休測試法定假日 {holiday_date:%m-%d}",
+                        active=True,
+                    )
+                    for holiday_date in (date(2026, 7, 5), date(2026, 7, 12))
+                ]
+            )
+            db.session.commit()
         response = self.client.post(
             "/attendance/batches",
             data={
@@ -4268,20 +5258,39 @@ class V1WorkflowTests(unittest.TestCase):
             f"/attendance?month=2026-07&view=collection&item_id={item_id}&employee_id={employee_id}"
         ).get_data(as_text=True)
         self.assertIn("Payroll 類別", entry_page)
-        self.assertIn("日工：一般工作日按日薪", entry_page)
+        self.assertIn("填寫方式：非法定假日按真正實際出勤日數填寫", entry_page)
         self.assertIn("請選擇員工", entry_page)
-        self.assertIn("文件名不作身份依據", entry_page)
-        self.assertIn("星期日／法定節假日實際出勤日數", entry_page)
-        self.assertIn("星期日／法定節假日預估出勤日數", entry_page)
+        self.assertNotIn("文件名不作身份依據", entry_page)
+        context_start = entry_page.index(
+            '<section class="period-context-bar attendance-period-context'
+        )
+        context_end = entry_page.index("</section>", context_start)
+        self.assertIn(
+            'class="attendance-calendar-check"',
+            entry_page[context_start:context_end],
+        )
+        self.assertNotIn(
+            '<section class="attendance-calendar-check"',
+            entry_page,
+        )
+        self.assertIn("非法定假日實際出勤日數（含星期日）", entry_page)
+        self.assertIn("法定假日實際工作日數", entry_page)
+        self.assertIn("法定假日預估工作日數", entry_page)
         self.assertIn('data-special-work-picker', entry_page)
         self.assertNotIn('data-special-work-session', entry_page)
         self.assertNotIn('class="icon-btn remove-segment"', entry_page)
         self.assertNotIn("休息日實際工作日期", entry_page)
-        self.assertNotIn("法定假日實際工作日期", entry_page)
+        self.assertIn("指定法定假日實際工作日期", entry_page)
         self.assertNotIn("特殊日統一處理方式", entry_page)
+        self.assertIn('class="attendance-period-table-head"', entry_page)
+        self.assertIn('class="review-section attendance-period-row actual-period-row"', entry_page)
+        self.assertIn("待按 PDF 核對的系統基準", entry_page)
+        self.assertIn("目前未錄入額外考勤項目", entry_page)
+        self.assertIn("ⓘ 計算規則", entry_page)
+        self.assertNotIn("本次 Payroll 核對", entry_page)
         self.assertRegex(
             entry_page,
-            r'name="previous_21_end_forecast_working_days" value="0"',
+            r'name="previous_21_end_forecast_working_days" value="8(?:\.0+)?"',
         )
         self.assertRegex(
             entry_page,
@@ -4417,6 +5426,75 @@ class V1WorkflowTests(unittest.TestCase):
             employee = db.session.get(Employee, employee_id)
             employee.current_period.start_date = date(2020, 1, 1)
             employee.current_period.contract_annual_leave_days = Decimal("10")
+            assignment = employee.current_assignment
+            payroll_entity_id = assignment.payroll_entity_id
+            payroll_entity_code = assignment.payroll_entity.code
+            summary = AttendanceMonthlySummary(
+                employee_id=employee_id,
+                year_month="2026-08",
+                status="received",
+                special_day_handling="pay",
+            )
+            db.session.add(summary)
+            db.session.flush()
+            db.session.add(
+                AttendanceSegment(
+                    summary=summary,
+                    period_kind="current_1_20",
+                    working_days=Decimal("14"),
+                    ot_hours=Decimal("2"),
+                    other_allowance_amount=Decimal("250"),
+                )
+            )
+            injury = EmployeeWorkInjuryPeriod(
+                employee_id=employee_id,
+                accident_date=date(2026, 7, 1),
+                payroll_start_date=date(2026, 7, 1),
+                payroll_end_date=date(2026, 7, 31),
+                confirmed_monthly_earnings=Decimal("30000"),
+                incapacity_monthly_earnings=Decimal("0"),
+                currency="HKD",
+                status="active",
+            )
+            db.session.add(injury)
+            db.session.flush()
+            db.session.add_all(
+                [
+                    EmployeeAllowance(
+                        employee_id=employee_id,
+                        label="交通補貼",
+                        allowance_type="transport",
+                        currency="HKD",
+                        amount=Decimal("60"),
+                        effective_from=date(2026, 8, 1),
+                        status="active",
+                    ),
+                    EmployeeAllowance(
+                        employee_id=employee_id,
+                        label="特殊津貼",
+                        allowance_type="special",
+                        currency="HKD",
+                        amount=Decimal("310"),
+                        effective_from=date(2026, 8, 1),
+                        status="active",
+                    ),
+                    PayrollAdjustment(
+                        employee_id=employee_id,
+                        year_month="2026-08",
+                        label="離職月補發",
+                        amount=Decimal("300"),
+                        status="active",
+                    ),
+                    EmployeeWorkInjuryMonthlyExpense(
+                        employee_id=employee_id,
+                        work_injury_period_id=injury.id,
+                        year_month="2026-08",
+                        amount=Decimal("400"),
+                        currency="HKD",
+                        status="active",
+                    ),
+                ]
+            )
             db.session.commit()
         response = self.client.post(
             f"/employees/{employee_id}/terminate",
@@ -4439,6 +5517,7 @@ class V1WorkflowTests(unittest.TestCase):
             data={
                 "year_month": "2026-08",
                 "payroll_group": "management",
+                "payroll_entity_id": str(payroll_entity_id),
                 "actual_working_days": "14",
                 "actual_ot_hours": "2",
                 "actual_holiday_days": "0",
@@ -4469,7 +5548,10 @@ class V1WorkflowTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         page = response.get_data(as_text=True)
-        self.assertIn("離職結算資料已保存", page)
+        self.assertIn("離職 Payroll 資料已保存", page)
+        self.assertIn("當前離職 Payroll 月份", page)
+        self.assertIn("交通／餐補（自動）", page)
+        self.assertIn("工傷醫療實銷（不計 MPF）", page)
         self.assertIn(employee_no, page)
         self.assertIn("2025-05-01", page)
         self.assertIn("勞工處規則摘要", page)
@@ -4478,6 +5560,7 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertIn("前 12 個月工資合計 ÷ 365", page)
         self.assertIn("離職當月以 Final Payment 作唯一工資來源", page)
         with self.app.app_context():
+            db.session.expire_all()
             period = db.session.get(EmployeeEmploymentPeriod, period_id)
             result = calculate_final_payment(period)
             expected_base_amount = result["base_amount"]
@@ -4485,6 +5568,28 @@ class V1WorkflowTests(unittest.TestCase):
             expected_holiday_amount = result["holiday_amount"]
             expected_net_amount = result["net_amount"]
             self.assertFalse(result["blockers"])
+            self.assertEqual(
+                result["traffic_meal_allowance_amount"], Decimal("1200.00")
+            )
+            self.assertEqual(
+                result["special_allowance_amount"], Decimal("200.00")
+            )
+            self.assertEqual(
+                result["manual_allowance_amount"], Decimal("1000.00")
+            )
+            self.assertEqual(
+                result["attendance_other_allowance_amount"], Decimal("250.00")
+            )
+            self.assertEqual(
+                result["month_adjustment_amount"], Decimal("300.00")
+            )
+            self.assertEqual(
+                result["manual_other_payment"], Decimal("500.00")
+            )
+            self.assertEqual(
+                result["work_injury_medical_reimbursement_amount"],
+                Decimal("400.00"),
+            )
             self.assertEqual(result["leave_wage_total"], Decimal("360000.00"))
             self.assertEqual(result["leave_rate"], Decimal("986.3014"))
             leave_summary = annual_leave_summary(result["employee"], 2026)
@@ -4551,6 +5656,7 @@ class V1WorkflowTests(unittest.TestCase):
             data={
                 "year_month": "2026-08",
                 "payroll_group": "management",
+                "payroll_entity_id": str(payroll_entity_id),
             },
         )
         self.assertEqual(response.status_code, 200)
@@ -4567,6 +5673,8 @@ class V1WorkflowTests(unittest.TestCase):
         merged_ranges = {str(item) for item in sheet.merged_cells.ranges}
         self.assertTrue({"A1:Z1", "A2:Z2", "A3:Z3"}.issubset(merged_ranges))
         self.assertEqual(sheet["D8"].value, employee_no)
+        self.assertIsNone(sheet["D9"].value)
+        self.assertLess(Decimal(str(sheet["W8"].value)), Decimal("0"))
         self.assertEqual(sheet["J8"].value, "=ROUND(H8*I8,2)")
         self.assertEqual(sheet["M8"].value, "=ROUND(K8*L8,2)")
         self.assertTrue(str(sheet["V8"].value).startswith("=ROUND("))
@@ -4602,7 +5710,12 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertEqual(exported_net, expected_net_amount)
         notes = workbook["計算說明"]
         self.assertIn("勞工處規則摘要", notes["A1"].value)
-        self.assertIn("最後 30 個正常工作日", notes["B13"].value)
+        self.assertTrue(
+            any(
+                "最後 30 個正常工作日" in str(cell.value or "")
+                for cell in notes["B"]
+            )
+        )
         self.assertEqual(
             notes["C5"].hyperlink.target,
             "https://www.labour.gov.hk/tc/faq/cap57l_whole.htm",
@@ -4613,6 +5726,7 @@ class V1WorkflowTests(unittest.TestCase):
             data={
                 "year_month": "2026-08",
                 "payroll_group": "all",
+                "payroll_entity_id": str(payroll_entity_id),
             },
         )
         self.assertEqual(response.status_code, 200)
@@ -4621,15 +5735,15 @@ class V1WorkflowTests(unittest.TestCase):
             self.assertEqual(
                 set(archive.namelist()),
                 {
-                    "HKR_Final_Payment_2026-08_site_daily.xlsx",
-                    "HKR_Final_Payment_2026-08_site_monthly.xlsx",
-                    "HKR_Final_Payment_2026-08_management.xlsx",
+                    f"HKR_Final_Payment_2026-08_{payroll_entity_code}_site_daily.xlsx",
+                    f"HKR_Final_Payment_2026-08_{payroll_entity_code}_site_monthly.xlsx",
+                    f"HKR_Final_Payment_2026-08_{payroll_entity_code}_management.xlsx",
                 },
             )
             daily_workbook = load_workbook(
                 io.BytesIO(
                     archive.read(
-                        "HKR_Final_Payment_2026-08_site_daily.xlsx"
+                        f"HKR_Final_Payment_2026-08_{payroll_entity_code}_site_daily.xlsx"
                     )
                 ),
                 data_only=False,
@@ -4907,6 +6021,467 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertEqual(Decimal(str(sheet["AF7"].value)), Decimal("0"))
         self.assertEqual(Decimal(str(sheet["AG7"].value)), Decimal("0"))
         self.assertTrue(str(sheet["M7"].value).startswith("=ROUND"))
+
+    def test_attendance_prorated_monthly_salary_and_work_calendar_forecast(self):
+        employee_id, _ = self.create_employee(
+            "HKR",
+            "site_monthly",
+            "例外月薪測試",
+            "ATTENDANCE PRORATED",
+        )
+        project_id = self.complete_employee(
+            employee_id,
+            "site_monthly",
+            "TMC046",
+            "monthly",
+            "31000",
+            "QA-PRORATED-001",
+            "62220001",
+        )
+        with self.app.app_context():
+            employee = db.session.get(Employee, employee_id)
+            employee.current_salary.monthly_pay_method = "attendance_days"
+            employee.allowances.append(
+                EmployeeAllowance(
+                    label="Daily meal",
+                    allowance_type="meal",
+                    currency="HKD",
+                    amount=Decimal("50"),
+                    effective_from=date(2026, 1, 1),
+                    status="active",
+                )
+            )
+            summary = AttendanceMonthlySummary(
+                employee_id=employee_id,
+                year_month="2026-07",
+                status="received",
+            )
+            for kind, days in (
+                ("current_1_20", Decimal("10")),
+                ("current_21_end_forecast", Decimal("0")),
+                ("previous_21_end", Decimal("0")),
+                ("previous_21_end_forecast", Decimal("0")),
+            ):
+                summary.segments.append(
+                    AttendanceSegment(
+                        period_kind=kind,
+                        project_id=project_id,
+                        working_days=days,
+                        sunday_holiday_days=Decimal("0"),
+                        ot_hours=Decimal("0"),
+                    )
+                )
+            db.session.add(summary)
+            db.session.commit()
+
+            row = calculate_payroll("2026-07", "site_monthly")[0]
+            self.assertEqual(row["base_amount"], Decimal("10000.00"))
+            self.assertEqual(
+                row["traffic_meal_allowance_amount"],
+                Decimal("500.00"),
+            )
+            self.assertEqual(row["holiday_amount"], Decimal("0.00"))
+
+            region_id = employee.current_assignment.region_id
+            db.session.add(
+                WorkCalendarHoliday(
+                    region_id=region_id,
+                    holiday_date=date(2026, 7, 24),
+                    name="Test statutory holiday",
+                    applies_to_statutory=True,
+                    applies_to_public=True,
+                    active=True,
+                )
+            )
+            employee.current_salary.monthly_pay_method = "full_month"
+            db.session.commit()
+            monthly_rows = automatic_attendance_rows(
+                employee,
+                date(2026, 7, 21),
+                date(2026, 7, 31),
+            )
+            self.assertEqual(
+                sum(Decimal(str(item["working_days"])) for item in monthly_rows),
+                Decimal("9"),
+            )
+            employee.current_assignment.payroll_group = "management"
+            employee.current_assignment.workweek_days = Decimal("5")
+            employee.payroll_group = "management"
+            db.session.commit()
+            management_rows = automatic_attendance_rows(
+                employee,
+                date(2026, 7, 21),
+                date(2026, 7, 31),
+            )
+            self.assertEqual(
+                sum(Decimal(str(item["working_days"])) for item in management_rows),
+                Decimal("8"),
+            )
+            holiday = WorkCalendarHoliday.query.filter_by(
+                region_id=region_id,
+                holiday_date=date(2026, 7, 24),
+            ).one()
+            holiday.applies_to_public = False
+            db.session.commit()
+            statutory_only_management_rows = automatic_attendance_rows(
+                employee,
+                date(2026, 7, 21),
+                date(2026, 7, 31),
+            )
+            self.assertEqual(
+                sum(
+                    Decimal(str(item["working_days"]))
+                    for item in statutory_only_management_rows
+                ),
+                Decimal("9"),
+            )
+            holiday.applies_to_public = True
+            employee.current_salary.monthly_pay_method = "attendance_days"
+            db.session.commit()
+            self.assertEqual(
+                automatic_attendance_rows(
+                    employee,
+                    date(2026, 7, 21),
+                    date(2026, 7, 31),
+                ),
+                [],
+            )
+
+    def test_daily_statutory_holiday_pay_and_workweek_units(self):
+        daily_id, _ = self.create_employee(
+            "HKR",
+            "site_daily",
+            "日工法定假日測試",
+            "DAILY STATUTORY HOLIDAY",
+        )
+        project_id = self.complete_employee(
+            daily_id,
+            "site_daily",
+            "TMC046",
+            "daily",
+            "1000",
+            "Y1234567",
+            "61110001",
+        )
+        with self.app.app_context():
+            employee = db.session.get(Employee, daily_id)
+            region_id = employee.current_assignment.region_id
+            sunday_rows = automatic_attendance_rows(
+                employee,
+                date(2026, 7, 5),
+                date(2026, 7, 5),
+            )
+            self.assertEqual(
+                sum(Decimal(str(item["working_days"])) for item in sunday_rows),
+                Decimal("0"),
+            )
+            self.assertIsNone(
+                special_work_day_units(employee, date(2026, 7, 5))
+            )
+            self.assertEqual(
+                special_work_day_units(employee, date(2026, 7, 1)),
+                Decimal("1"),
+            )
+            employee.annual_leave_records.append(
+                EmployeeAnnualLeaveRecord(
+                    leave_date=date(2026, 8, 15),
+                    end_date=date(2026, 8, 15),
+                    entitlement_year=2026,
+                    days=Decimal("1"),
+                    leave_type="annual",
+                    status="active",
+                )
+            )
+            august_summary = AttendanceMonthlySummary(
+                employee_id=daily_id,
+                year_month="2026-08",
+                status="received",
+            )
+            for kind in (
+                "current_1_20",
+                "current_21_end_forecast",
+                "previous_21_end",
+                "previous_21_end_forecast",
+            ):
+                august_summary.segments.append(
+                    AttendanceSegment(
+                        period_kind=kind,
+                        project_id=project_id,
+                        working_days=Decimal("0"),
+                        sunday_holiday_days=Decimal("0"),
+                        ot_hours=Decimal("0"),
+                    )
+                )
+            db.session.add(august_summary)
+            db.session.commit()
+            august_prefill = automatic_attendance_rows(
+                employee,
+                date(2026, 8, 15),
+                date(2026, 8, 15),
+            )
+            self.assertEqual(
+                sum(Decimal(str(item["working_days"])) for item in august_prefill),
+                Decimal("0"),
+            )
+            august_payroll = calculate_payroll("2026-08", "site_daily")[0]
+            self.assertEqual(august_payroll["annual_leave_days"], Decimal("1.00"))
+            self.assertEqual(august_payroll["base_amount"], Decimal("1000.00"))
+            with self.app.test_request_context(
+                method="POST",
+                data={
+                    "employee_id": str(daily_id),
+                    "current_1_20_project_id": [str(project_id)],
+                    "current_1_20_working_days": ["1"],
+                    "current_1_20_holiday_days": ["1"],
+                    "current_1_20_special_work_entries": [json.dumps([
+                        {"date": "2026-07-05"},
+                    ])],
+                },
+            ):
+                self.assertIn(
+                    "日工的星期日工作應計入一般實際出勤日數",
+                    validate_sunday_holiday_entries("2026-07"),
+                )
+            summary = AttendanceMonthlySummary(
+                employee_id=daily_id,
+                year_month="2026-07",
+                status="received",
+                special_day_handling="pay",
+            )
+            actual = AttendanceSegment(
+                summary=summary,
+                period_kind="current_1_20",
+                project_id=project_id,
+                working_days=Decimal("10"),
+                sunday_holiday_days=Decimal("0"),
+                ot_hours=Decimal("0"),
+            )
+            summary.segments.extend(
+                [
+                    actual,
+                    AttendanceSegment(
+                        period_kind="current_21_end_forecast",
+                        project_id=project_id,
+                        working_days=Decimal("8"),
+                        sunday_holiday_days=Decimal("0"),
+                        ot_hours=Decimal("0"),
+                    ),
+                    AttendanceSegment(
+                        period_kind="previous_21_end",
+                        project_id=project_id,
+                        working_days=Decimal("8"),
+                        sunday_holiday_days=Decimal("0"),
+                        ot_hours=Decimal("0"),
+                    ),
+                    AttendanceSegment(
+                        period_kind="previous_21_end_forecast",
+                        project_id=project_id,
+                        working_days=Decimal("8"),
+                        sunday_holiday_days=Decimal("0"),
+                        ot_hours=Decimal("0"),
+                    ),
+                ]
+            )
+            db.session.add(summary)
+            db.session.commit()
+
+            fallback_lines = {}
+            fallback_amount = forecast_tail(
+                employee,
+                date(2026, 7, 1),
+                date(2026, 7, 2),
+                fallback_lines,
+            )
+            self.assertEqual(fallback_amount, Decimal("1000"))
+            self.assertEqual(
+                sum(
+                    Decimal(str(line["forecast_working_days"]))
+                    for line in fallback_lines.values()
+                ),
+                Decimal("1"),
+            )
+
+            holiday_only = calculate_payroll("2026-07", "site_daily")[0]
+            self.assertEqual(holiday_only["holiday_amount"], Decimal("1000.00"))
+            self.assertEqual(
+                holiday_only["statutory_holiday_paid_days"],
+                Decimal("1.00"),
+            )
+
+            actual.sunday_holiday_days = Decimal("1")
+            actual.summary.special_days.append(
+                AttendanceSpecialDay(
+                    segment=actual,
+                    period_kind="current_1_20",
+                    project_id=project_id,
+                    work_date=date(2026, 7, 1),
+                    day_kind="sunday_statutory_holiday",
+                    session="full_day",
+                    handling="pay",
+                    days=Decimal("1"),
+                    status="active",
+                )
+            )
+            db.session.commit()
+            worked_and_paid = calculate_payroll("2026-07", "site_daily")[0]
+            self.assertEqual(
+                worked_and_paid["holiday_amount"],
+                Decimal("2000.00"),
+            )
+
+            actual.summary.special_days[0].handling = "comp_leave"
+            db.session.commit()
+            worked_for_comp = calculate_payroll("2026-07", "site_daily")[0]
+            self.assertEqual(
+                worked_for_comp["holiday_amount"],
+                Decimal("1000.00"),
+            )
+
+            db.session.add_all(
+                [
+                    WorkCalendarHoliday(
+                        region_id=region_id,
+                        holiday_date=holiday_date,
+                        name=f"五月法定假日 {holiday_date:%m-%d}",
+                        active=True,
+                    )
+                    for holiday_date in (date(2026, 5, 1), date(2026, 5, 25))
+                ]
+            )
+            may_summary = AttendanceMonthlySummary(
+                employee_id=daily_id,
+                year_month="2026-05",
+                status="received",
+                special_day_handling="pay",
+            )
+            may_actual = AttendanceSegment(
+                summary=may_summary,
+                period_kind="current_1_20",
+                project_id=project_id,
+                working_days=Decimal("16"),
+                sunday_holiday_days=Decimal("1"),
+            )
+            may_summary.segments.extend(
+                [
+                    may_actual,
+                    AttendanceSegment(
+                        period_kind="current_21_end_forecast",
+                        project_id=project_id,
+                        working_days=Decimal("10"),
+                        sunday_holiday_days=Decimal("1"),
+                    ),
+                    AttendanceSegment(
+                        period_kind="previous_21_end",
+                        project_id=project_id,
+                        working_days=Decimal("0"),
+                        sunday_holiday_days=Decimal("0"),
+                    ),
+                    AttendanceSegment(
+                        period_kind="previous_21_end_forecast",
+                        project_id=project_id,
+                        working_days=Decimal("0"),
+                        sunday_holiday_days=Decimal("0"),
+                    ),
+                ]
+            )
+            may_summary.special_days.append(
+                AttendanceSpecialDay(
+                    segment=may_actual,
+                    period_kind="current_1_20",
+                    project_id=project_id,
+                    work_date=date(2026, 5, 1),
+                    day_kind="statutory_holiday",
+                    session="full_day",
+                    handling="pay",
+                    days=Decimal("1"),
+                    status="active",
+                )
+            )
+            db.session.add(may_summary)
+            db.session.commit()
+            may_payroll = calculate_payroll("2026-05", "site_daily")[0]
+            self.assertEqual(
+                sum(line["working_days"] for line in may_payroll["lines"]),
+                Decimal("26.00"),
+            )
+            self.assertEqual(
+                sum(line["holiday_days"] for line in may_payroll["lines"]),
+                Decimal("4.00"),
+            )
+            self.assertEqual(
+                may_payroll["statutory_holiday_paid_days"], Decimal("2.00")
+            )
+            self.assertEqual(may_payroll["base_amount"], Decimal("26000.00"))
+            self.assertEqual(may_payroll["holiday_amount"], Decimal("4000.00"))
+            self.assertEqual(may_payroll["gross_amount"], Decimal("30000.00"))
+
+        management_id, _ = self.create_employee(
+            "HKR",
+            "management",
+            "五點五天測試",
+            "FIVE HALF WORKWEEK",
+        )
+        management_project_id = self.complete_employee(
+            management_id,
+            "management",
+            "TMC046",
+            "monthly",
+            "31000",
+            "Y7654321",
+            "61110002",
+        )
+        with self.app.app_context():
+            employee = db.session.get(Employee, management_id)
+            employee.current_assignment.workweek_days = Decimal("5.5")
+            db.session.add(
+                WorkCalendarHoliday(
+                    region_id=employee.current_assignment.region_id,
+                    holiday_date=date(2026, 7, 24),
+                    name="工作日曆測試假日",
+                    applies_to_statutory=False,
+                    applies_to_public=True,
+                    active=True,
+                )
+            )
+            db.session.commit()
+            rows = automatic_attendance_rows(
+                employee,
+                date(2026, 7, 21),
+                date(2026, 7, 31),
+            )
+            self.assertEqual(
+                sum(Decimal(str(item["working_days"])) for item in rows),
+                Decimal("8.5"),
+            )
+            self.assertEqual(
+                special_work_day_units(employee, date(2026, 7, 25)),
+                Decimal("0.5"),
+            )
+            self.assertEqual(
+                special_work_day_units(employee, date(2026, 7, 26)),
+                Decimal("1"),
+            )
+            self.assertIsNone(
+                special_work_day_units(employee, date(2026, 7, 27))
+            )
+            with self.app.test_request_context(
+                method="POST",
+                data={
+                    "employee_id": str(management_id),
+                    "current_1_20_project_id": [str(management_project_id)],
+                    "current_1_20_working_days": ["0"],
+                    "current_1_20_holiday_days": ["0.5"],
+                    "current_1_20_special_work_entries": [json.dumps([
+                        {"date": "2026-07-18"},
+                    ])],
+                },
+            ):
+                self.assertIsNone(
+                    validate_attendance_segment_totals("2026-07")
+                )
+                self.assertIsNone(
+                    validate_sunday_holiday_entries("2026-07")
+                )
 
 
 if __name__ == "__main__":

@@ -18,9 +18,8 @@
 </section>
 {% endblock %}
 {% block content %}
-<section class="period-context-bar payroll-period-context" aria-label="{{ t('payroll.current_payroll_month') }}">
-  <div><span>{{ t("payroll.current_payroll_month") }}</span><strong>{{ month_t(year_month) }}</strong></div>
-  <small>{{ t("payroll.period_context_hint") }}</small>
+<section class="period-context-bar payroll-period-context payroll-centered-context" aria-label="{{ t('payroll.current_payroll_month') }}">
+  <div class="payroll-context-month"><span>{{ t("payroll.current_payroll_month") }}</span><strong>{{ month_t(year_month) }}</strong></div>
 </section>
 <section class="page-head"><div><h1>{{ t("payroll.title") }}</h1><p>{{ t("payroll.subtitle") }}</p></div></section>
 <section class="payroll-main">
@@ -35,8 +34,9 @@
 
   <article class="panel payroll-project-summary"><div class="section-head"><div><h2>{{ t("exports.project_summary") }}</h2><p>{{ t("payroll.project_summary_hint") }}</p></div></div><div class="table-wrap flat"><table class="dense-table"><thead><tr><th>{{ t("common.project") }}</th><th>{{ t("common.headcount") }}</th><th>{{ t("common.base_pay") }}</th><th>OT</th><th>E-CALL</th><th>{{ t("common.allowance") }}</th><th>{{ t("payroll.gross") }}</th></tr></thead><tbody>{% for item in project_summary %}<tr><td>{{ project_t(item.project, t("common.unassigned")) }}</td><td>{{ item.headcount }}</td><td>{{ fmt_money(item.base) }}</td><td>{{ fmt_money(item.ot) }}</td><td>{{ fmt_money(item.ecall) }}</td><td>{{ fmt_money(item.allowance) }}</td><td>{{ fmt_money(item.total) }}</td></tr>{% else %}<tr><td colspan="7" class="empty-cell">{{ t("common.no_results") }}</td></tr>{% endfor %}</tbody></table></div></article>
 
-  <details class="panel rule-panel" open>
-    <summary>{{ t("payroll.rules") }} · {{ rule_version }}</summary>
+  <article class="payroll-rule-summary"><strong>{{ t("payroll.rule_summary_title") }}</strong><span>{{ t("payroll.rule_summary") }}</span><small>{{ rule_version }}</small></article>
+  <details class="panel rule-panel">
+    <summary>{{ t("payroll.show_full_rules") }} · {{ rule_version }}</summary>
     <div class="section-head"><div><h2>{{ t("payroll.rules") }}</h2><p>{{ rule_version }}</p></div></div>
     <ol>{% for note in formula_notes %}<li>{% if note in ["payroll.rule.period", "payroll.rule.reconciliation"] %}{{ t(note, current_actual=attendance_period_t(year_month, "current_1_20"), current_forecast=attendance_period_t(year_month, "current_21_end_forecast"), previous_actual=attendance_period_t(year_month, "previous_21_end"), previous_forecast=attendance_period_t(year_month, "previous_21_end_forecast")) }}{% else %}{{ t(note) }}{% endif %}</li>{% endfor %}</ol>
     <details class="mpf-tier-table"><summary>{{ t("payroll.daily_mpf_table") }}</summary><table class="dense-table"><thead><tr><th>{{ t("payroll.daily_income") }}</th><th>{{ t("payroll.employee_daily_mpf") }}</th><th>{{ t("payroll.employer_daily_mpf") }}</th></tr></thead><tbody>{% for income, employee_mpf, employer_mpf in [("< 280", "0", "10"),("280–<350", "15", "15"),("350–<450", "20", "20"),("450–<550", "25", "25"),("550–<650", "30", "30"),("650–<750", "35", "35"),("750–<850", "40", "40"),("850–<950", "45", "45"),("≥ 950", "50", "50")] %}<tr><td>HKD {{ income }}</td><td>HKD {{ employee_mpf }}</td><td>HKD {{ employer_mpf }}</td></tr>{% endfor %}</tbody></table></details>
