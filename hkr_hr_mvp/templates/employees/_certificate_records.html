@@ -1,0 +1,25 @@
+        {% for item in certificate_records if item.status == 'active' %}
+          <article class="credential-record {{ 'is-voided' if item.status != 'active' else '' }}" id="credential-certificate-{{ item.id }}" data-record-context>
+            <div class="credential-record-main"><div><strong>{{ item.certificate_type.display_name }}</strong><span>{{ item.certificate_no or "-" }} · {{ t("employee.long_term") if item.is_long_term else fmt_date(item.expiry_date) }}</span></div>{% set state = credential_state(item) %}<span class="flag {{ state.tone }}">{{ t('profile.credential_' ~ state.code) }}</span></div>
+            <div class="row-actions">
+              {% if item.document and item.document.status == "active" %}<a class="mini-btn" target="_blank" href="{{ url_for('documents.open_document', document_id=item.document.id) }}">{{ t("common.open") }}</a>{% elif item.status == "active" %}<span class="flag warn">{{ t("common.pending") }}</span>{% endif %}
+              {% if item.status == "active" %}
+                <dialog class="app-dialog record-editor-dialog" id="certificate-editor-{{ item.id }}">
+                  <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.update_certificate', certificate_id=item.id) }}" enctype="multipart/form-data">
+                    <div class="section-head record-editor-head"><div><h2>{{ t("common.correct") }} · {{ t("employee.certificate_records") }}</h2><p>{{ item.certificate_no or item.certificate_type.display_name }}</p></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
+                    <div class="record-editor-body">
+                    <label>{{ quick_reference_label(t("employee.certificate_type"), "certificate_type", "certificate_type_id") }}<select name="certificate_type_id" required>{% for ref in refs.certificate_type %}<option value="{{ ref.id }}" {% if item.certificate_type_id == ref.id %}selected{% endif %}>{{ ref.display_name }}</option>{% endfor %}</select></label>
+                    <label><span>{{ t("employee.certificate_no") }}</span><input name="certificate_no" value="{{ item.certificate_no or '' }}"></label>
+                    <label><span>{{ t("employee.valid_from") }}</span><input type="date" name="valid_from" value="{{ item.valid_from.isoformat() if item.valid_from else '' }}"></label>
+                    <label><span>{{ t("employee.expiry_date") }}</span><input type="date" name="expiry_date" value="{{ item.expiry_date.isoformat() if item.expiry_date else '' }}"></label>
+                    <label class="check-line"><input type="checkbox" name="is_long_term" {% if item.is_long_term %}checked{% endif %}><span>{{ t("employee.long_term") }}</span></label>
+                    <label><span>{{ t("employee.replace_evidence_optional") }}</span><input type="file" name="evidence"></label>
+                    <label><span>{{ t("common.remarks") }}</span><textarea name="remarks">{{ item.remarks or "" }}</textarea></label>
+                    </div>
+                    <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
+                  </form>
+                </dialog>
+              {% endif %}
+            </div>
+          </article>
+        {% endfor %}

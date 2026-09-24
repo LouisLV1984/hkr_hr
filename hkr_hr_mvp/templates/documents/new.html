@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}{{ t("documents.upload_title") }} - HKR HR{% endblock %}
+{% block title %}{{ t("documents.upload_file") }} - HKR HR{% endblock %}
 {% block content %}
 <section class="page-head">
-  <div><h1>{{ t("documents.upload_title") }}</h1><p>{{ employee.employee_no }} · {{ employee.display_name }}</p></div>
-  <a class="ghost-btn" href="{{ url_for('employees.view_employee', employee_id=employee.id) }}">{{ t("common.back") }}</a>
+  <div><h1>{{ t("documents.upload_file") }}</h1><p>{{ employee.employee_no }} · {{ employee.display_name }}</p></div>
+  <a class="ghost-btn" href="{{ url_for('employees.view_employee', employee_id=employee.id, tab='documents') }}">{{ t("common.back") }}</a>
 </section>
 <section class="document-upload-shell">
   <article class="panel">
@@ -22,33 +22,62 @@
           <button class="primary-btn" type="submit" name="action" value="replace">{{ t("documents.duplicate_replace") }}</button>
         </form>
       </div>
+    {% elif not selected_category %}
+      <form class="stack-form" method="get">
+        <div>
+          <h2>{{ t("documents.select_upload_type") }}</h2>
+          <p class="form-note">{{ t("documents.select_upload_type_hint") }}</p>
+        </div>
+        <label>
+          <span>{{ t("documents.category") }}</span>
+          <select name="upload_type" required>
+            <option value="">{{ t("common.select") }}</option>
+            <optgroup label="{{ t('documents.upload_direct_group') }}">
+              {% for code, label in categories.items() %}
+                <option value="{{ code }}">{{ option_t("document_category", code, label) }}</option>
+              {% endfor %}
+            </optgroup>
+            <optgroup label="{{ t('documents.upload_specialist_group') }}">
+              {% for code, label_key, tab in specialist_choices %}
+                <option value="{{ code }}">{{ t(label_key) }}</option>
+              {% endfor %}
+            </optgroup>
+          </select>
+        </label>
+        <p class="inline-note">{{ t("documents.specialist_route_hint") }}</p>
+        <button class="primary-btn" type="submit">{{ t("documents.continue") }}</button>
+      </form>
     {% else %}
       <form class="stack-form" method="post" enctype="multipart/form-data">
-        <label><span>{{ t("documents.category") }}</span><select name="category" required>{% for code, label in categories.items() %}<option value="{{ code }}">{{ option_t("document_category", code, label) }}</option>{% endfor %}</select></label>
+        <input type="hidden" name="category" value="{{ selected_category }}">
+        <label><span>{{ t("documents.category") }}</span><input value="{{ option_t('document_category', selected_category, categories[selected_category]) }}" disabled></label>
+        {% if selected_category == "other" %}
+          <label><span>{{ t("documents.general_type") }} *</span><select name="general_document_type_id" required><option value="">{{ t("common.select") }}</option>{% for item in general_document_types %}<option value="{{ item.id }}" {% if selected_general_type_id == item.id %}selected{% endif %}>{{ item.display_name }}</option>{% endfor %}</select><small>{{ t("documents.general_type_hint") }}</small></label>
+        {% endif %}
         <label><span>{{ t("documents.file") }}</span><input type="file" name="file" accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx" required></label>
         <label><span>{{ t("documents.document_date") }}</span><input type="date" name="document_date"></label>
         <label><span>{{ t("common.details") }}</span><input name="title"></label>
-        <label class="check-line"><input type="checkbox" name="replace_existing" id="replace-existing"><span>{{ t("common.replace") }}</span></label>
-        <label id="replacement-reason" hidden><span>{{ t("documents.replacement_reason") }}</span><select name="replacement_reason">{% for reason in replacement_reasons %}<option value="{{ reason }}">{{ option_t("replacement_reason", reason, reason) }}</option>{% endfor %}</select></label>
+        <label><span>{{ t('profile.replace_target') }}</span><select name="replace_document_id" id="replace-existing"><option value="">{{ t('profile.new_document') }}</option>{% for old in employee.documents if old.status == 'active' and old.category == selected_category %}<option value="{{ old.id }}">{{ old.original_filename }} · {{ fmt_date(old.document_date) }}</option>{% endfor %}</select><small>{{ t('profile.replace_hint') }}</small></label>
+        <label id="replacement-reason" hidden><span>{{ t("documents.replacement_reason") }}</span><input name="replacement_reason"></label>
         <label><span>{{ t("common.remarks") }}</span><textarea name="remarks"></textarea></label>
-        <p class="form-note">{{ t("documents.preview_hint") }}</p>
-        <button class="primary-btn" type="submit">{{ t("common.upload") }}</button>
+        <p class="form-note">{{ t("profile.upload_hint") }}</p>
+        <div class="button-row"><a class="ghost-btn" href="{{ url_for('documents.new_document', employee_id=employee.id) }}">{{ t("common.back") }}</a><button class="primary-btn" type="submit">{{ t("common.upload") }}</button></div>
       </form>
     {% endif %}
   </article>
   <aside class="panel">
     <h2>{{ t("employee.documents") }}</h2>
     <p>{{ t("documents.archive_hint") }}</p>
-    <ul class="compact-list">{% for document in employee.documents[:12] %}<li><strong>{{ document.title or option_t("document_category", document.category, categories.get(document.category, document.category)) }}</strong><span>{{ document.original_filename }} · {{ option_t("document_status", document.status, document.status) }}</span></li>{% else %}<li><span>{{ t("common.not_set") }}</span></li>{% endfor %}</ul>
+    <ul class="compact-list">{% for document in employee.documents[:12] %}<li><strong>{{ document.general_document_type.display_name if document.general_document_type else (document.title or option_t("document_category", document.category, document.category)) }}</strong><span>{{ document.original_filename }} · {{ option_t("document_status", document.status, document.status) }}</span></li>{% else %}<li><span>{{ t("common.not_set") }}</span></li>{% endfor %}</ul>
   </aside>
 </section>
 {% endblock %}
 {% block scripts %}
-{% if not duplicate_pending %}
+{% if selected_category and not duplicate_pending %}
 <script>
 const replace = document.getElementById("replace-existing");
 const reason = document.getElementById("replacement-reason");
-replace.addEventListener("change", () => { reason.hidden = !replace.checked; });
+replace.addEventListener("change", () => { reason.hidden = !replace.value; reason.querySelector("input").required = !!replace.value; });
 </script>
 {% endif %}
 {% endblock %}

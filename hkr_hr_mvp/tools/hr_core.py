@@ -65,6 +65,7 @@ REFERENCE_LISTS = {
     "phone_region": "電話區號",
     "currency": "幣種",
     "education_level": "學歷",
+    "general_document_type": "一般附件類型",
 }
 
 EMPLOYEE_TYPES = [
@@ -80,6 +81,13 @@ EMPLOYEE_TYPES = [
 ]
 
 DEFAULT_REFERENCE_VALUES = {
+    "general_document_type": [
+        ("GENERAL_OTHER", "其他一般文件"),
+        ("RECOMMENDATION", "推薦信"),
+        ("TRAINING_RECORD", "培訓記錄"),
+        ("EMPLOYEE_DECLARATION", "員工聲明"),
+        ("CORRESPONDENCE", "往來文件"),
+    ],
     "employer": [
         ("HK_RIVER", "香港瑞沃工程有限公司"),
         ("MACAU_RIVER", "香港瑞沃（澳門）工程有限公司"),
@@ -231,6 +239,7 @@ DEFAULT_MPF_SCHEMES = [
 ]
 
 DOCUMENT_CATEGORIES = {
+    "salary_record": "薪酬紀錄憑證",
     "three_treasures": "三寶",
     "staff_record": "Staff Record",
     "bank_proof": "銀行賬戶文件",
@@ -949,7 +958,6 @@ def annual_leave_allocated_days(balance):
         for item in balance.allocations
         if item.record and item.record.status == "active"
     ]
-    allocated_record_ids = {item.record_id for item in allocations}
     allocated = sum(
         (Decimal(str(item.days)) for item in allocations),
         Decimal("0"),
@@ -957,17 +965,48 @@ def annual_leave_allocated_days(balance):
     legacy_records = EmployeeAnnualLeaveRecord.query.filter_by(
         employee_id=balance.employee_id,
         entitlement_year=balance.year,
+        leave_type="annual",
         status="active",
     ).all()
     fallback = sum(
         (
-            Decimal(str(item.days))
+            max(
+                Decimal("0"),
+                Decimal(str(item.days))
+                - sum(
+                    (
+                        Decimal(str(allocation.days))
+                        for allocation in item.allocations
+                    ),
+                    Decimal("0"),
+                )
+                - sum(
+                    (
+                        Decimal(str(allocation.days))
+                        for allocation in item.comp_leave_allocations
+                    ),
+                    Decimal("0"),
+                ),
+            )
             for item in legacy_records
-            if item.id not in allocated_record_ids
         ),
         Decimal("0"),
     )
     return allocated + fallback
+
+
+def annual_leave_taken_days(employee, year):
+    """Return annual leave recorded against a selected entitlement year."""
+    records = EmployeeAnnualLeaveRecord.query.filter_by(
+        employee_id=employee.id,
+        entitlement_year=year,
+        leave_type="annual",
+        status="active",
+    ).all()
+    return sum(
+        (Decimal(str(item.days or 0)) for item in records),
+        Decimal("0"),
+    )
 
 
 def annual_leave_bucket(employee, balance, as_of=None, prorate_current=False):
@@ -1246,6 +1285,8 @@ def annual_leave_summary(employee, year=None):
         as_of=as_of,
         prorate_current=bool(termination_date),
     )
+    current["bucket_used"] = current["used"]
+    current["used"] = annual_leave_taken_days(employee, year)
     current["termination_prorated"] = bool(termination_date)
     current["termination_date"] = termination_date
     legacy_balance = EmployeeAnnualLeaveBalance.query.filter_by(
@@ -1275,14 +1316,17 @@ def annual_leave_days_between(
     start_session="am",
     end_session="pm",
 ):
-    if not start_date or not end_date or end_date < start_date:
+    if (not start_date or not end_date or end_date < start_date
+            or start_session not in {"am", "pm"}
+            or end_session not in {"am", "pm"}
+            or (start_date == end_date and start_session == "pm" and end_session == "am")):
         return None
     days = Decimal((end_date - start_date).days + 1)
     if start_session == "pm":
         days -= Decimal("0.5")
     if end_session == "am":
         days -= Decimal("0.5")
-    return max(Decimal("0.5"), days)
+    return days
 
 
 def average_wage_prefill(employee, end_date=None):

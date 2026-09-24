@@ -27,9 +27,10 @@ runtime assets, routes, data and services are never shared.
 1. Create one minimal employee profile and permanent employee number.
 2. Complete personal details, effective-dated assignment and salary on that
    profile.
-3. Upload 三寶, Staff Record, bank proof, CV, signed contract and other
-   attachments to that employee. Preview the original and enter any facts
-   manually. V1 does not use OCR.
+3. Use the employee's single document gateway for 三寶, Staff Record, CV,
+   signed contracts and general attachments. Bank and other structured
+   evidence is uploaded in its owning profile module. Preview the original and
+   enter any facts manually. V1 does not use OCR.
 4. Generate an editable SITE or OFFICE contract package from current profile
    data.
 5. Upload attendance PDFs in a batch. For each PDF, select the employee and
@@ -148,3 +149,17 @@ $files = @('app.py','config.py','models.py') + (Get-ChildItem routes,tools,scrip
 .\.venv\Scripts\python.exe -m py_compile $files
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
+
+Employee-editor browser regression uses an isolated synthetic fixture, not the
+configured PostgreSQL runtime. Start it in one terminal, then run the browser
+checks in another (Node must resolve `playwright`, and Chrome must be installed):
+
+```powershell
+.\.venv\Scripts\python.exe tests\profile_workspace_preview.py
+# In another terminal, from the app root:
+node tests\profile_workspace_browser.cjs
+```
+
+The fixture listens only on `127.0.0.1:8766`. Stop it with Ctrl+C after testing;
+temporary records and files are cleaned up. Screenshots under `tmp` stay outside
+Git and deployment. Never point this test at a live employee database.

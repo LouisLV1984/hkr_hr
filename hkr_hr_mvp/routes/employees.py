@@ -12,6 +12,8 @@ from flask import (
 )
 from flask_login import current_user, login_required
 from sqlalchemy import or_
+from tools.absence_integrity import conflicting_absence
+from tools.profile_integrity import credential_form_validation, credential_state, identity_conflict
 
 from models import (
     AuditLog,
@@ -104,6 +106,8 @@ employees_bp = Blueprint("employees", __name__)
 def document_management_tab(document):
     """Return the employee module that owns changes to a linked document."""
     document_id = document.id
+    if document.category == 'salary_record':
+        return 'attendance'
     if EmployeeBankAccount.query.filter_by(
         evidence_document_id=document_id
     ).first():
@@ -145,17 +149,14 @@ def document_management_tab(document):
     ):
         return "employment"
     return {
-        "three_treasures": "credentials",
         "identity": "credentials",
         "visa": "credentials",
         "qualification": "credentials",
         "bank_proof": "personal",
-        "staff_record": "personal",
         "name_change_evidence": "personal",
         "attendance_pdf": "attendance",
         "change_evidence": "employment",
         "contract_draft": "employment",
-        "signed_contract": "employment",
         "probation_confirmation": "employment_status",
         "termination_letter": "employment_status",
     }.get(document.category)
@@ -168,26 +169,6 @@ def form_int(name):
         return None
 
 
-def identity_conflict(identity_type, identity_number, exclude_id=None):
-    normalized = normalize_identity_number(identity_number)
-    if not normalized:
-        return None
-    query = EmployeeIdentity.query.filter_by(
-        identity_type=identity_type,
-        status="active",
-    )
-    if exclude_id:
-        query = query.filter(EmployeeIdentity.id != exclude_id)
-    return next(
-        (
-            item
-            for item in query.all()
-            if normalize_identity_number(item.identity_number) == normalized
-        ),
-        None,
-    )
-
-
 def employee_redirect(employee_id, tab="overview"):
     return redirect(
         url_for(
@@ -196,6 +177,30 @@ def employee_redirect(employee_id, tab="overview"):
             tab=tab,
         )
     )
+
+
+@employees_bp.route("/annual-leave/<int:record_id>/evidence", methods=["POST"])
+@login_required
+def supplement_leave_evidence(record_id):
+    record = db.get_or_404(EmployeeAnnualLeaveRecord, record_id)
+    if record.status != "active":
+        abort(400)
+    uploaded = request.files.get("evidence")
+    if not uploaded or not uploaded.filename:
+        flash("profile.select_evidence", "error")
+        return employee_redirect(record.employee_id, "leave")
+    before = {"evidence_document_id": record.evidence_document_id}
+    document = replace_record_evidence(record.employee, record.evidence_document,
+                                       uploaded, "change_evidence", "假期憑證")
+    if not document:
+        return employee_redirect(record.employee_id, "leave")
+    record.evidence_document_id = document.id
+    write_audit("leave_evidence_added", "EmployeeAnnualLeaveRecord", record.id,
+                employee_id=record.employee_id, detail="補交假期憑證（不改動假期日期及日數）",
+                before=before, after={"evidence_document_id": document.id})
+    db.session.commit()
+    flash("profile.evidence_saved", "success")
+    return employee_redirect(record.employee_id, "leave")
 
 
 def bank_account_snapshot(account):
@@ -272,15 +277,8 @@ def replace_record_evidence(
     document = save_evidence(employee, uploaded, category, title)
     if not document or not current_document:
         return document
-    linked_rows = sum(
-        model.query.filter_by(document_id=current_document.id).count()
-        for model in (
-            EmployeeIdentity,
-            EmployeeCertificate,
-            EmployeeVisa,
-            EmployeeQualification,
-        )
-    )
+    from tools.profile_integrity import document_reference_count
+    linked_rows = document_reference_count(current_document)
     if linked_rows <= 1 and current_document.status == "active":
         current_document.status = "replaced"
         current_document.replaced_by_document_id = document.id
@@ -437,6 +435,7 @@ AUDIT_FIELD_LABELS = {
     "is_long_term": "audit.field.is_long_term",
     "is_primary": "audit.field.is_primary",
     "probation_end_date": "audit.field.probation_end_date",
+    "contract_annual_leave_days": "contract.annual_leave",
     "confirmation_date": "audit.field.confirmation_date",
     "status": "audit.field.status",
     "termination_reason": "audit.field.termination_reason",
@@ -527,7 +526,7 @@ def build_change_history(employee):
             continue
         audits_by_record.setdefault((log.entity_type, log.entity_id), []).append(
             {
-                "date": log.created_at,
+                "date": audit_entry(log)["date"],
                 "title": log.action,
                 "detail": log.detail or "",
                 "changes": audit_change_rows(log),
@@ -563,8 +562,9 @@ def build_change_history(employee):
 
 
 def audit_entry(log):
+    from tools.datetime_utils import hong_kong_datetime
     return {
-        "date": log.created_at,
+        "date": hong_kong_datetime(log.created_at),
         "title": log.action,
         "detail": log.detail or "",
         "changes": audit_change_rows(log),
@@ -908,6 +908,7 @@ def new_employee():
 @employees_bp.route("/employees/<int:employee_id>")
 @login_required
 def view_employee(employee_id):
+    from tools.leave_review import review_rows
     employee = db.get_or_404(Employee, employee_id)
     refs = reference_map()
     attendance_rows = AttendanceMonthlySummary.query.filter_by(
@@ -933,6 +934,8 @@ def view_employee(employee_id):
     }
     return render_template(
         "employees/detail.html",
+        credential_state=credential_state,
+        leave_review_count=len(review_rows(employee.id)[0]),
         employee=employee,
         today=date.today(),
         refs=refs,
@@ -1424,6 +1427,9 @@ def add_salary(employee_id):
 def replace_linked_evidence(old_document, new_document, reason):
     if not old_document or old_document.id == new_document.id:
         return
+    from tools.profile_integrity import document_reference_count
+    if old_document.status != "active" or document_reference_count(old_document) > 1:
+        return
     old_document.status = "replaced"
     old_document.replaced_by_document_id = new_document.id
     old_document.replacement_reason = reason
@@ -1705,6 +1711,9 @@ def requested_mpf_values():
     selection = request.form.get("mpf_selection")
     if not effective_from:
         raise ValueError("MPF 記錄必須填寫生效日期。")
+    exempt = request.form.get("mpf_exempt") == "on"
+    if not selection and exempt:
+        return effective_from, None, None, "exempt"
     if not str(selection or "").isdigit():
         raise ValueError("請選擇 MPF 計劃。")
     scheme = db.session.get(MpfScheme, int(selection))
@@ -1713,8 +1722,6 @@ def requested_mpf_values():
     member_account_no = (
         request.form.get("member_account_no", "").strip() or None
     )
-    if not member_account_no:
-        raise ValueError("請填寫 Member Account No.")
     contribution_mode = (
         "exempt"
         if request.form.get("mpf_exempt") == "on"
@@ -1842,6 +1849,7 @@ def withdraw_mpf_enrollment(enrollment_id):
 
 @employees_bp.route("/employees/<int:employee_id>/identities", methods=["POST"])
 @login_required
+@credential_form_validation("identity")
 def add_identity(employee_id):
     employee = db.get_or_404(Employee, employee_id)
     identity_type = request.form.get("identity_type")
@@ -1893,6 +1901,7 @@ def add_identity(employee_id):
 
 @employees_bp.route("/identities/<int:identity_id>/update", methods=["POST"])
 @login_required
+@credential_form_validation("identity")
 def update_identity(identity_id):
     identity = db.get_or_404(EmployeeIdentity, identity_id)
     if identity.status != "active":
@@ -2031,6 +2040,7 @@ def replace_identity(identity_id):
 
 @employees_bp.route("/employees/<int:employee_id>/certificates", methods=["POST"])
 @login_required
+@credential_form_validation("certificate")
 def add_certificate(employee_id):
     employee = db.get_or_404(Employee, employee_id)
     certificate_type_id = form_int("certificate_type_id")
@@ -2071,6 +2081,7 @@ def add_certificate(employee_id):
     methods=["POST"],
 )
 @login_required
+@credential_form_validation("certificate")
 def update_certificate(certificate_id):
     certificate = db.get_or_404(EmployeeCertificate, certificate_id)
     if certificate.status != "active":
@@ -2158,6 +2169,7 @@ def void_certificate(certificate_id):
 
 @employees_bp.route("/employees/<int:employee_id>/visas", methods=["POST"])
 @login_required
+@credential_form_validation("visa")
 def add_visa(employee_id):
     employee = db.get_or_404(Employee, employee_id)
     visa_category_id = form_int("visa_category_id")
@@ -2195,6 +2207,7 @@ def add_visa(employee_id):
 
 @employees_bp.route("/visas/<int:visa_id>/update", methods=["POST"])
 @login_required
+@credential_form_validation("visa")
 def update_visa(visa_id):
     visa = db.get_or_404(EmployeeVisa, visa_id)
     if visa.status != "active":
@@ -2273,6 +2286,7 @@ def void_visa(visa_id):
     methods=["POST"],
 )
 @login_required
+@credential_form_validation("qualification")
 def add_qualification(employee_id):
     employee = db.get_or_404(Employee, employee_id)
     category = request.form.get("category", "skill").strip()
@@ -2318,6 +2332,7 @@ def add_qualification(employee_id):
     methods=["POST"],
 )
 @login_required
+@credential_form_validation("qualification")
 def update_qualification(qualification_id):
     qualification = db.get_or_404(EmployeeQualification, qualification_id)
     if qualification.status != "active":
@@ -2438,6 +2453,7 @@ def update_probation(employee_id):
 @employees_bp.route("/employees/<int:employee_id>/annual-leave", methods=["POST"])
 @login_required
 def add_annual_leave(employee_id):
+    from tools.attendance_policy import leave_day_units
     employee = db.get_or_404(Employee, employee_id)
     leave_type = request.form.get("leave_type", "annual").strip()
     if leave_type not in {"annual", "sick", "unpaid"}:
@@ -2448,16 +2464,20 @@ def add_annual_leave(employee_id):
     end_date = parse_date(request.form.get("end_date")) or leave_date
     start_session = request.form.get("start_session") or "am"
     end_session = request.form.get("end_session") or "pm"
-    calculated_days = annual_leave_days_between(
-        leave_date,
-        end_date,
-        start_session,
-        end_session,
-    )
+    try:
+        units = leave_day_units(employee, leave_date, end_date, start_session, end_session)
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return annual_leave_redirect(employee.id, request.form.get("entitlement_year", type=int))
+    calculated_days = sum(units.values(), parse_decimal("0"))
+    if not calculated_days:
+        flash("leave.zero_days", "error")
+        return annual_leave_redirect(employee.id, leave_date.year)
     manual_days = parse_decimal(request.form.get("days"))
-    days = manual_days if manual_days is not None else calculated_days
+    days = calculated_days
     if (
-        not leave_date
+        (manual_days is not None and manual_days != calculated_days)
+        or not leave_date
         or not calculated_days
         or not days
         or days < parse_decimal("0.5")
@@ -2468,12 +2488,11 @@ def add_annual_leave(employee_id):
             employee.id,
             request.form.get("entitlement_year", type=int),
         )
-    evidence = save_evidence(
-        employee,
-        request.files.get("evidence"),
-        "change_evidence",
-        {"annual": "年假憑證", "sick": "病假憑證", "unpaid": "無薪假憑證"}[leave_type],
-    )
+    if conflicting_absence(employee, leave_date, end_date, start_session, end_session):
+        flash("leave.overlap", "error")
+        return annual_leave_redirect(employee.id, leave_date.year)
+    evidence = save_evidence(employee, request.files.get("evidence"), "change_evidence",
+                             {"annual": "年假憑證", "sick": "病假憑證", "unpaid": "無薪假憑證"}[leave_type])
     record = EmployeeAnnualLeaveRecord(
         employee=employee,
         leave_date=leave_date,
@@ -2483,6 +2502,7 @@ def add_annual_leave(employee_id):
         entitlement_year=request.form.get("entitlement_year", type=int)
         or leave_date.year,
         days=days,
+        leave_units_json={day.isoformat(): str(value) for day, value in units.items()},
         leave_type=leave_type,
         evidence_document=evidence,
         status="active",
@@ -2502,6 +2522,7 @@ def add_annual_leave(employee_id):
     write_audit(
         "leave_added",
         "EmployeeAnnualLeaveRecord",
+        record.id,
         employee_id=employee.id,
         detail=(
             f"{leave_type}: {leave_date:%Y-%m-%d} 至 {end_date:%Y-%m-%d} "
@@ -2519,6 +2540,7 @@ def add_annual_leave(employee_id):
 )
 @login_required
 def update_annual_leave(record_id):
+    from tools.attendance_policy import leave_day_units
     record = db.get_or_404(EmployeeAnnualLeaveRecord, record_id)
     employee_id = record.employee_id
     before = {
@@ -2530,6 +2552,7 @@ def update_annual_leave(record_id):
         "start_session": record.start_session,
         "end_session": record.end_session,
         "days": str(record.days),
+        "leave_units_json": record.leave_units_json,
         "entitlement_year": record.entitlement_year,
         "status": record.status,
     }
@@ -2540,16 +2563,20 @@ def update_annual_leave(record_id):
     end_date = parse_date(request.form.get("end_date")) or start_date
     start_session = request.form.get("start_session") or "am"
     end_session = request.form.get("end_session") or "pm"
-    calculated = annual_leave_days_between(
-        start_date,
-        end_date,
-        start_session,
-        end_session,
-    )
+    try:
+        units = leave_day_units(record.employee, start_date, end_date, start_session, end_session)
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return annual_leave_redirect(employee_id, request.form.get("entitlement_year", type=int))
+    calculated = sum(units.values(), parse_decimal("0"))
+    if not calculated:
+        flash("leave.zero_days", "error")
+        return annual_leave_redirect(employee_id, start_date.year)
     manual = parse_decimal(request.form.get("days"))
-    days = manual if manual is not None else calculated
+    days = calculated
     if (
-        not calculated
+        (manual is not None and manual != calculated)
+        or not calculated
         or not days
         or days < parse_decimal("0.5")
         or days % parse_decimal("0.5")
@@ -2559,11 +2586,16 @@ def update_annual_leave(record_id):
             record.employee_id,
             request.form.get("entitlement_year", type=int),
         )
+    if conflicting_absence(record.employee, start_date, end_date, start_session, end_session,
+                           exclude=("leave", record.id)):
+        flash("leave.overlap", "error")
+        return annual_leave_redirect(employee_id, start_date.year)
     record.leave_date = start_date
     record.end_date = end_date
     record.start_session = start_session
     record.end_session = end_session
     record.days = days
+    record.leave_units_json = {day.isoformat(): str(value) for day, value in units.items()}
     record.leave_type = leave_type
     record.entitlement_year = (
         request.form.get("entitlement_year", type=int) or start_date.year
@@ -2603,6 +2635,7 @@ def update_annual_leave(record_id):
             "start_session": record.start_session,
             "end_session": record.end_session,
             "days": str(record.days),
+            "leave_units_json": record.leave_units_json,
             "entitlement_year": record.entitlement_year,
             "status": record.status,
         },
@@ -2855,6 +2888,9 @@ def add_work_injury(employee_id):
     ):
         flash("請核對工傷日期及計薪基數。", "error")
         return redirect(url_for("leave.leave_home", view="injury", employee_id=employee.id))
+    if conflicting_absence(employee, payroll_start, payroll_end):
+        flash("leave.overlap", "error")
+        return redirect(url_for("leave.leave_home", view="injury", employee_id=employee.id))
     evidence = save_evidence(
         employee,
         request.files.get("evidence"),
@@ -2913,6 +2949,9 @@ def correct_work_injury(period_id):
         or pay_mode not in {"four_fifths", "full_pay"}
     ):
         flash("請核對工傷日期及計薪基數。", "error")
+        return redirect(url_for("leave.leave_home", view="injury", employee_id=row.employee_id))
+    if conflicting_absence(row.employee, payroll_start, payroll_end, exclude=("injury", row.id)):
+        flash("leave.overlap", "error")
         return redirect(url_for("leave.leave_home", view="injury", employee_id=row.employee_id))
     before = {
         "payroll_start_date": row.payroll_start_date.isoformat(),

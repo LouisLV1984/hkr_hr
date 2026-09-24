@@ -2308,6 +2308,7 @@ ZH_HANT.update(
         "references.group_organization": "組織與工作地點",
         "references.group_employment": "任職與員工資料",
         "references.group_finance_contact": "財務與聯絡資料",
+        "references.group_documents": "文件與附件",
         "references.available_for_new": "可供新資料選用",
         "references.delete_in_use_hint": "此項仍有歷史或員工資料引用；如不再使用，請關閉「可供新資料選用」。",
         "references.delete_confirm": "此選項目前沒有資料引用。確定永久刪除？",
@@ -2371,6 +2372,7 @@ ZH_HANS.update(
         "references.group_organization": "组织与工作地点",
         "references.group_employment": "任职与员工资料",
         "references.group_finance_contact": "财务与联络资料",
+        "references.group_documents": "文件与附件",
         "references.available_for_new": "可供新资料选用",
         "references.delete_in_use_hint": "此项仍有历史或员工资料引用；如不再使用，请关闭“可供新资料选用”。",
         "references.delete_confirm": "此选项目前没有资料引用。确定永久删除？",
@@ -2434,6 +2436,7 @@ EN.update(
         "references.group_organization": "Organization & locations",
         "references.group_employment": "Employment & employee data",
         "references.group_finance_contact": "Finance & contact data",
+        "references.group_documents": "Documents & attachments",
         "references.available_for_new": "Available for new records",
         "references.delete_in_use_hint": "This item is referenced by employee or historical records. Turn off availability instead.",
         "references.delete_confirm": "This option is not referenced. Permanently delete it?",
@@ -2854,9 +2857,11 @@ ZH_HANT.update(
         "security.csrf_failed": "頁面驗證已失效，請返回上一頁並重新提交。",
         "security.login_limited": "登入嘗試過多，請於 {minutes} 分鐘後再試。",
         "upload.file_required": "請選擇需要上傳的文件。",
-        "upload.unsupported_type": "不支援這種文件格式，請選擇 PDF、圖片、DOCX 或 XLSX。",
+        "upload.unsupported_type": "不支援所選附件格式。僅支援 PDF（.pdf）、JPG／JPEG（.jpg／.jpeg）、PNG（.png）、Word（.docx）、Excel（.xlsx）。請用原軟件轉換或另存為支援格式，不能只更改副檔名。",
+        "upload.pdf_only": "此考勤上傳入口只支援 PDF（.pdf），不接受圖片或其他文件。請先轉換為 PDF，不能只更改副檔名。",
         "upload.empty_file": "所選文件沒有內容，請重新選擇。",
-        "upload.invalid_file": "文件內容損壞或與副檔名不符，請確認文件能正常開啟後再試。",
+        "upload.image_too_large": "圖片超過 4,000 萬像素，無法安全處理。請縮小圖片尺寸後再上傳；不要只更改副檔名。",
+        "upload.invalid_file": "附件未通過格式驗證，可能是內容與副檔名不符，或檔案結構不完整；不一定代表文件無法開啟。支援 PDF（.pdf）、JPG／JPEG（.jpg／.jpeg）、PNG（.png）、Word（.docx）、Excel（.xlsx）。請用原軟件重新另存後上傳，不要只改副檔名；如仍失敗，請將原始文件交管理員核查。",
         "error.400.title": "無法處理此項操作",
         "error.400.message": "提交內容無效或頁面已過期，請返回上一頁再試。",
         "error.403.title": "沒有權限",
@@ -2864,7 +2869,7 @@ ZH_HANT.update(
         "error.404.title": "找不到資料",
         "error.404.message": "這項資料可能已被移動、作廢或刪除。",
         "error.413.title": "文件太大",
-        "error.413.message": "上傳內容超過 32 MB，請壓縮文件或分開上傳。",
+        "error.413.message": "本次上傳請求超過 32 MB 上限（包括所有附件及表單內容）。請壓縮附件或減少本次上傳的文件。",
         "error.500.title": "系統暫時無法完成操作",
         "error.500.message": "資料沒有成功保存。請稍後再試；若問題持續，請通知系統管理員。",
         "error.back": "返回上一頁",
@@ -3017,9 +3022,11 @@ ZH_HANS.update(
         "security.csrf_failed": "页面验证已失效，请返回上一页并重新提交。",
         "security.login_limited": "登录尝试过多，请于 {minutes} 分钟后再试。",
         "upload.file_required": "请选择需要上传的文件。",
-        "upload.unsupported_type": "不支持这种文件格式，请选择 PDF、图片、DOCX 或 XLSX。",
+        "upload.unsupported_type": "不支持所选附件格式。仅支持 PDF（.pdf）、JPG／JPEG（.jpg／.jpeg）、PNG（.png）、Word（.docx）、Excel（.xlsx）。请用原软件转换或另存为支持格式，不能只更改扩展名。",
+        "upload.pdf_only": "此考勤上传入口只支持 PDF（.pdf），不接受图片或其他文件。请先转换为 PDF，不能只更改扩展名。",
         "upload.empty_file": "所选文件没有内容，请重新选择。",
-        "upload.invalid_file": "文件内容损坏或与扩展名不符，请确认文件能正常打开后再试。",
+        "upload.image_too_large": "图片超过 4,000 万像素，无法安全处理。请缩小图片尺寸后再上传；不要只更改扩展名。",
+        "upload.invalid_file": "附件未通过格式验证，可能是内容与扩展名不符，或文件结构不完整；不一定代表文件无法打开。支持 PDF（.pdf）、JPG／JPEG（.jpg／.jpeg）、PNG（.png）、Word（.docx）、Excel（.xlsx）。请用原软件重新另存后上传，不要只改扩展名；如仍失败，请将原始文件交管理员核查。",
         "error.400.title": "无法处理此项操作",
         "error.400.message": "提交内容无效或页面已过期，请返回上一页再试。",
         "error.403.title": "没有权限",
@@ -3027,7 +3034,7 @@ ZH_HANS.update(
         "error.404.title": "找不到资料",
         "error.404.message": "这项资料可能已被移动、作废或删除。",
         "error.413.title": "文件太大",
-        "error.413.message": "上传内容超过 32 MB，请压缩文件或分开上传。",
+        "error.413.message": "本次上传请求超过 32 MB 上限（包括所有附件及表单内容）。请压缩附件或减少本次上传的文件。",
         "error.500.title": "系统暂时无法完成操作",
         "error.500.message": "资料没有成功保存。请稍后再试；若问题持续，请通知系统管理员。",
         "error.back": "返回上一页",
@@ -3180,9 +3187,11 @@ EN.update(
         "security.csrf_failed": "Page verification has expired. Go back and submit again.",
         "security.login_limited": "Too many login attempts. Try again in {minutes} minutes.",
         "upload.file_required": "Select a file to upload.",
-        "upload.unsupported_type": "This file type is not supported. Use PDF, image, DOCX or XLSX.",
+        "upload.unsupported_type": "Unsupported attachment format. Supported: PDF (.pdf), JPG/JPEG (.jpg/.jpeg), PNG (.png), Word (.docx), Excel (.xlsx). Convert or Save As in the original application; renaming the extension does not convert a file.",
+        "upload.pdf_only": "This attendance upload accepts PDF (.pdf) only, not images or other files. Convert the file to PDF; do not just rename its extension.",
         "upload.empty_file": "The selected file is empty. Select another file.",
-        "upload.invalid_file": "The file is damaged or does not match its extension. Confirm it opens normally and try again.",
+        "upload.image_too_large": "The image exceeds 40 million pixels and cannot be processed safely. Resize the image before uploading; do not just rename its extension.",
+        "upload.invalid_file": "The attachment failed format validation: its content may not match the extension, or its structure may be incomplete. This does not necessarily mean it cannot open. Supported: PDF (.pdf), JPG/JPEG (.jpg/.jpeg), PNG (.png), Word (.docx), Excel (.xlsx). Save a new copy in the original application, without just renaming the extension. If it still fails, give the original file to an administrator for investigation.",
         "error.400.title": "This action could not be processed",
         "error.400.message": "The submitted content is invalid or the page has expired. Go back and try again.",
         "error.403.title": "Access denied",
@@ -3190,7 +3199,7 @@ EN.update(
         "error.404.title": "Record not found",
         "error.404.message": "This record may have been moved, voided or deleted.",
         "error.413.title": "File too large",
-        "error.413.message": "The upload exceeds 32 MB. Compress the file or upload it separately.",
+        "error.413.message": "This upload request exceeds 32 MB, including all attachments and form data. Compress attachments or send fewer files in this request.",
         "error.500.title": "The system could not complete the action",
         "error.500.message": "Your data was not saved. Try again later and contact the administrator if the issue continues.",
         "error.back": "Go back",
@@ -3247,6 +3256,8 @@ ZH_HANT.update(
         "employee.no_change_history": "尚未建立任職、薪酬或 MPF 記錄。",
         "mpf.schemes": "MPF 計劃",
         "mpf.scheme_name": "MPF 計劃名稱",
+        "mpf.member_account_optional": "Member Account No.（可不填）",
+        "mpf.member_account_hint": "可先留空，日後從變更歷史更正補填；不影響系統計算及 MPF 表匯出。",
         "mpf.employer_account_no": "僱主帳戶號碼",
         "mpf.payroll_group_no": "MPF 工資組別編號",
         "mpf.calculation_mode": "供款計算方式",
@@ -3300,6 +3311,8 @@ ZH_HANS.update(
         "employee.no_change_history": "尚未建立任职、薪酬或 MPF 记录。",
         "mpf.schemes": "MPF 计划",
         "mpf.scheme_name": "MPF 计划名称",
+        "mpf.member_account_optional": "Member Account No.（可不填）",
+        "mpf.member_account_hint": "可先留空，日后从变更历史更正补填；不影响系统计算及 MPF 表导出。",
         "mpf.employer_account_no": "雇主账户号码",
         "mpf.payroll_group_no": "MPF 工资组别编号",
         "mpf.calculation_mode": "供款计算方式",
@@ -3353,6 +3366,8 @@ EN.update(
         "employee.no_change_history": "No assignment, salary or MPF records yet.",
         "mpf.schemes": "MPF schemes",
         "mpf.scheme_name": "MPF scheme name",
+        "mpf.member_account_optional": "Member Account No. (optional)",
+        "mpf.member_account_hint": "Leave blank and add later through Change history. This does not block calculation or MPF report export in this system.",
         "mpf.employer_account_no": "Employer account number",
         "mpf.payroll_group_no": "MPF payroll group ID",
         "mpf.calculation_mode": "Contribution calculation",
@@ -3490,6 +3505,7 @@ EN.update(
 )
 
 ZH_HANT.update({
+    "common.select": "請選擇",
     "nav.references": "資料選項",
     "references.title": "資料選項",
     "references.quick_add_title": "新增資料選項",
@@ -3526,6 +3542,7 @@ ZH_HANT.update({
 })
 
 ZH_HANS.update({
+    "common.select": "请选择",
     "nav.references": "资料选项", "references.title": "资料选项", "references.quick_add_title": "新增资料选项", "common.date": "日期", "audit.action.reference_created": "新增资料选项", "audit.action.reference_updated": "更新资料选项", "audit.action.reference_deleted": "删除资料选项", "audit.entity.reference_value": "资料选项",
     "attendance.rule_site_daily": "日工：一般工作日按日薪 × 实际出勤日数；星期日／法定节假日选择出薪时按日薪 1 倍，选择补休时不另付当日工资并增加同等补休。", "attendance.rule_site_monthly": "月工：合约月薪按当月日历日计薪，普通工作日无需输入出勤日数；平日下班后 OT 按时薪 1.5 倍；星期日／法定节假日选择出薪时另加日薪率 1 倍，选择补休时不另付。", "attendance.rule_management": "OFFICE：合约月薪按当月日历日计薪，普通工作日无需输入出勤日数；平日下班后 OT 按时薪 1.5 倍；星期日／法定节假日选择出薪时另加日薪率 1 倍，选择补休时不另付。",
     "attendance.payroll_category": "Payroll 类别",
@@ -3535,6 +3552,7 @@ ZH_HANS.update({
 })
 
 EN.update({
+    "common.select": "Select",
     "nav.references": "Data Options", "references.title": "Data Options", "references.quick_add_title": "Add data option",
     "attendance.rule_site_daily": "Daily: ordinary work pays daily rate × actual days worked. Sunday/statutory-holiday work pays 1× daily rate under Payroll, or adds equal Comp Leave with no extra pay.", "attendance.rule_site_monthly": "Monthly: contract salary is calendar-day based, so ordinary attendance days are not entered. Weekday after-hours OT pays 1.5× hourly rate. Sunday/statutory-holiday work adds 1× daily rate under Payroll or Comp Leave with no extra pay.", "attendance.rule_management": "OFFICE: contract salary is calendar-day based, so ordinary attendance days are not entered. Weekday after-hours OT pays 1.5× hourly rate. Sunday/statutory-holiday work adds 1× daily rate under Payroll or Comp Leave with no extra pay.",
     "attendance.payroll_category": "Payroll category",
@@ -3657,6 +3675,15 @@ ZH_HANT.update({
     "documents.center_hint": "集中查看、預覽、下載及打包全部文件；專項資料請返回所屬模組更正。",
     "documents.domain_management_hint": "銀行、證件、任職薪酬、假期／工傷及考勤文件由相應專項模組管理；此處不直接改動其狀態。",
     "documents.upload_general": "上傳一般附件",
+    "documents.upload_file": "上傳文件",
+    "documents.select_upload_type": "先選擇文件類型",
+    "documents.select_upload_type_hint": "系統會按類型顯示核對表單，或帶到負責管理該資料的專項模組。",
+    "documents.continue": "繼續",
+    "documents.general_type": "一般附件類型",
+    "documents.general_type_hint": "一般附件類型可在「資料選項」新增、改名或封存；系統文件類型維持固定。",
+    "documents.specialist_route_hint": "這類文件必須連同對應業務記錄保存，系統會帶你前往正確模組。",
+    "documents.upload_direct_group": "可直接上傳及核對",
+    "documents.upload_specialist_group": "由專項模組建立",
     "documents.manage_in_module": "前往專項管理",
     "documents.generated_contracts": "已生成合約",
 })
@@ -3685,6 +3712,15 @@ ZH_HANS.update({
     "documents.center_hint": "集中查看、预览、下载及打包全部文件；专项资料请返回所属模块更正。",
     "documents.domain_management_hint": "银行、证件、任职薪酬、假期／工伤及考勤文件由相应专项模块管理；此处不直接改动其状态。",
     "documents.upload_general": "上传一般附件",
+    "documents.upload_file": "上传文件",
+    "documents.select_upload_type": "先选择文件类型",
+    "documents.select_upload_type_hint": "系统会按类型显示核对表单，或带到负责管理该资料的专项模块。",
+    "documents.continue": "继续",
+    "documents.general_type": "一般附件类型",
+    "documents.general_type_hint": "一般附件类型可在“资料选项”新增、改名或封存；系统文件类型保持固定。",
+    "documents.specialist_route_hint": "这类文件必须连同对应业务记录保存，系统会带你前往正确模块。",
+    "documents.upload_direct_group": "可直接上传及核对",
+    "documents.upload_specialist_group": "由专项模块建立",
     "documents.manage_in_module": "前往专项管理",
     "documents.generated_contracts": "已生成合同",
 })
@@ -3713,6 +3749,15 @@ EN.update({
     "documents.center_hint": "View, preview, download and bundle every file here. Correct structured records in their owning module.",
     "documents.domain_management_hint": "Bank, credential, employment/pay, leave/work-injury and attendance files are managed by their owning modules rather than changed here.",
     "documents.upload_general": "Upload general attachment",
+    "documents.upload_file": "Upload document",
+    "documents.select_upload_type": "Select a document type first",
+    "documents.select_upload_type_hint": "The system opens the matching review form or routes you to the module that owns the record.",
+    "documents.continue": "Continue",
+    "documents.general_type": "General attachment type",
+    "documents.general_type_hint": "General attachment types can be added, renamed or archived in Reference Data. System document types remain fixed.",
+    "documents.specialist_route_hint": "This file must be saved with its business record, so the system routes you to the owning module.",
+    "documents.upload_direct_group": "Upload and review here",
+    "documents.upload_specialist_group": "Create in owning module",
     "documents.manage_in_module": "Manage in module",
     "documents.generated_contracts": "Generated contracts",
 })
@@ -4271,9 +4316,11 @@ EN.update({
 
 ZH_HANT.update({
     "attendance.ot_hint": "只填正常下班後的額外工時。",
+    "attendance.prefill_daily_actual": "預填暫按星期日不上班，不代表星期日不能計出勤。請對照 PDF：星期日有上班便加回「非法定假日實際出勤日數」；法定假日工作另填專欄。已登記假期／工傷不計入預填出勤。",
+    "attendance.prefill_daily_forecast": "預填暫按星期日不上班；若已確定星期日會上班，請加回預估出勤日數。法定假日工作另填專欄；已登記假期／工傷不計入預填，OT 及 E-CALL 維持 0。",
     "attendance.other_allowance": "替班其他津貼（HKD）",
     "attendance.other_allowance_hint": "只填替班產生的額外津貼；匯入 Other Payment／其他付款。",
-    "attendance.daily_working_days_hint": "只填真正上班日；星期日真正上班才加入。假期／工傷日不計出勤，由系統另計薪資。",
+    "attendance.daily_working_days_hint": "填實際上班的非法定假日日數，包含真正上班的星期日；星期日未上班不計薪。假期／工傷日不計出勤。",
     "attendance.attendance_prorated_actual_hint": "只填真正工作的計薪曆日；星期六、星期日及法定假日直接計入，不另加薪。",
     "attendance.daily_statutory_work_hint": "只填真正工作的法定假日；先填日數，再逐日選擇日期。",
     "attendance.daily_statutory_forecast_hint": "只填已確定的法定假日工作；預估段不設 OT 或 E-CALL。",
@@ -4283,7 +4330,7 @@ ZH_HANT.update({
     "attendance.workweek_five_forecast_hint": "按星期一至五及工作日曆預填，可按已知安排修正。",
     "attendance.workweek_five_half_forecast_hint": "按星期一至五及星期六上午 0.5 日預填，可按安排修正。",
     "attendance.workweek_six_forecast_hint": "按星期一至六及工作日曆預填，可按已知安排修正。",
-    "attendance.daily_forecast_working_hint": "按星期一至六預填，排除星期日、法定假日及已登記假期／工傷。",
+    "attendance.daily_forecast_working_hint": "預填不假設星期日上班；已確定星期日會上班便加回本欄。法定假日工作另填，假期／工傷日不計出勤。",
     "attendance.daily_large_ecall_hint": "1 次＝1 日薪；同一次工作勿與實際出勤重複。",
     "attendance.daily_ordinary_ecall_hint": "每次固定 HKD 400；可記錄另一場獨立召回。",
     "attendance.large_ecall_hint": "每次按本項目及期間適用的 1 日薪率。",
@@ -4293,9 +4340,11 @@ ZH_HANT.update({
 })
 ZH_HANS.update({
     "attendance.ot_hint": "只填正常下班后的额外工时。",
+    "attendance.prefill_daily_actual": "预填暂按星期日不上班，不代表星期日不能计出勤。请对照 PDF：星期日有上班便加回「非法定假日实际出勤日数」；法定假日工作另填专栏。已登记假期／工伤不计入预填出勤。",
+    "attendance.prefill_daily_forecast": "预填暂按星期日不上班；若已确定星期日会上班，请加回预计出勤日数。法定假日工作另填专栏；已登记假期／工伤不计入预填，OT 及 E-CALL 维持 0。",
     "attendance.other_allowance": "替班其他津贴（HKD）",
     "attendance.other_allowance_hint": "只填替班产生的额外津贴；汇入 Other Payment／其他付款。",
-    "attendance.daily_working_days_hint": "只填真正上班日；星期日真正上班才加入。假期／工伤日不计出勤，由系统另计薪资。",
+    "attendance.daily_working_days_hint": "填实际上班的非法定假日日数，包含真正上班的星期日；星期日未上班不计薪。假期／工伤日不计出勤。",
     "attendance.attendance_prorated_actual_hint": "只填真正工作的计薪日历日；星期六、星期日及法定假日直接计入，不另加薪。",
     "attendance.daily_statutory_work_hint": "只填真正工作的法定假日；先填日数，再逐日选择日期。",
     "attendance.daily_statutory_forecast_hint": "只填已确定的法定假日工作；预计段不设 OT 或 E-CALL。",
@@ -4305,7 +4354,7 @@ ZH_HANS.update({
     "attendance.workweek_five_forecast_hint": "按星期一至五及工作日历预填，可按已知安排修正。",
     "attendance.workweek_five_half_forecast_hint": "按星期一至五及星期六上午 0.5 日预填，可按安排修正。",
     "attendance.workweek_six_forecast_hint": "按星期一至六及工作日历预填，可按已知安排修正。",
-    "attendance.daily_forecast_working_hint": "按星期一至六预填，排除星期日、法定假日及已登记假期／工伤。",
+    "attendance.daily_forecast_working_hint": "预填不假设星期日上班；已确定星期日会上班便加回本栏。法定假日工作另填，假期／工伤日不计出勤。",
     "attendance.daily_large_ecall_hint": "1 次＝1 日薪；同一次工作勿与实际出勤重复。",
     "attendance.daily_ordinary_ecall_hint": "每次固定 HKD 400；可记录另一场独立召回。",
     "attendance.large_ecall_hint": "每次按本项目及期间适用的 1 日薪率。",
@@ -4315,9 +4364,11 @@ ZH_HANS.update({
 })
 EN.update({
     "attendance.ot_hint": "Enter only extra hours after the normal shift.",
+    "attendance.prefill_daily_actual": "Prefill assumes Sundays off; Sunday work is still payable. Check the PDF and add worked Sundays to non-statutory-holiday attendance. Enter statutory-holiday work separately. Recorded leave/work injury is excluded from prefill.",
+    "attendance.prefill_daily_forecast": "Prefill assumes Sundays off; add confirmed Sunday work to forecast attendance. Enter statutory-holiday work separately. Recorded leave/work injury is excluded; OT and E-CALL stay zero.",
     "attendance.other_allowance": "Substitute-shift other allowance (HKD)",
     "attendance.other_allowance_hint": "Enter only extra substitute-shift allowance; exports to Other Payment.",
-    "attendance.daily_working_days_hint": "Enter days actually worked; add Sunday only when worked. Leave and work injury are paid separately.",
+    "attendance.daily_working_days_hint": "Enter non-statutory-holiday days actually worked, including worked Sundays. Unworked Sundays are unpaid. Exclude leave and work-injury days.",
     "attendance.attendance_prorated_actual_hint": "Enter actual paid attendance days; Saturday, Sunday and holidays are included with no extra day pay.",
     "attendance.daily_statutory_work_hint": "Enter statutory holidays actually worked, then select each date.",
     "attendance.daily_statutory_forecast_hint": "Enter confirmed statutory-holiday work only; forecast has no OT or E-CALL.",
@@ -4327,7 +4378,7 @@ EN.update({
     "attendance.workweek_five_forecast_hint": "Prefilled from Monday-Friday and the Work Calendar; adjust known arrangements.",
     "attendance.workweek_five_half_forecast_hint": "Prefilled from Monday-Friday plus 0.5 Saturday; adjust known arrangements.",
     "attendance.workweek_six_forecast_hint": "Prefilled from Monday-Saturday and the Work Calendar; adjust known arrangements.",
-    "attendance.daily_forecast_working_hint": "Prefilled Monday-Saturday, excluding Sundays, statutory holidays and recorded leave/work injury.",
+    "attendance.daily_forecast_working_hint": "Prefill assumes Sundays off; add confirmed Sunday work here. Enter statutory-holiday work separately and exclude leave/work injury.",
     "attendance.daily_large_ecall_hint": "1 occurrence = 1 daily rate; do not duplicate the same attendance event.",
     "attendance.daily_ordinary_ecall_hint": "HKD 400 each; may record a separate independent call-out.",
     "attendance.large_ecall_hint": "Each occurrence uses the applicable daily rate for this project and period.",
@@ -4576,6 +4627,294 @@ EN.update({
     "payroll.rule.special_day": "Saturday time outside the workweek, Sundays, and genuine work on Site statutory holidays or Management/Head Office general holidays use one monthly treatment: Payroll at 1x or equal Comp Leave without work pay.",
     "payroll.rule.monthly_pay_methods": "Monthly and OFFICE use full-month salary by default. Contractually explicit exceptions use monthly salary / calendar days x actual paid attendance days. Genuine work on Saturdays, Sundays or dates in the employee's applicable holiday calendar is included directly without separate holiday-work pay.",
 })
+
+ZH_HANT.update({
+    "leave.derived_days_rule": "日數按起訖日期及上午／下午自動計算，與計薪使用同一口徑；中間不請假的日期請分開登記。",
+    "leave.inconsistent_days": "假期日數與日期／時段不一致，請到假期與工傷更正後再出糧。",
+    "leave.overlap": "此日期／時段與既有有效假期或工傷重疊，請在假期與工傷核對或更正原記錄。",
+    "leave.attendance_recheck": "假期／工傷於考勤保存後有變更，請對照 PDF 重新核對出勤並保存；系統不會自動扣減已錄入出勤。",
+    "leave.review_source": "查看假期與工傷",
+    "leave.comp_reconcile_insufficient": "補休變更後不足以支付已登記年假；本次變更未保存，請先核對相關假期或可用年假額度。",
+    "attendance.tail_pending_review": "上月尾段待按 PDF 核對；系統預填不代表實際考勤已確認。",
+    "payroll.project_other": "其他款項／補差",
+    "payroll.project_other_hint": "包括假日工作、病假／工傷、替班及其他調整，並包含相應補差或扣減；與其他可見分項合計為總額。",
+})
+ZH_HANS.update({
+    "leave.derived_days_rule": "日数按起止日期及上午／下午自动计算，与计薪使用同一口径；中间不请假的日期请分开登记。",
+    "leave.inconsistent_days": "假期日数与日期／时段不一致，请到假期与工伤更正后再出薪。",
+    "leave.overlap": "此日期／时段与已有有效假期或工伤重叠，请在假期与工伤核对或更正原记录。",
+    "leave.attendance_recheck": "假期／工伤在考勤保存后有变更，请对照 PDF 重新核对出勤并保存；系统不会自动扣减已录入出勤。",
+    "leave.review_source": "查看假期与工伤",
+    "leave.comp_reconcile_insufficient": "补休变更后不足以支付已登记年假；本次变更未保存，请先核对相关假期或可用年假额度。",
+    "attendance.tail_pending_review": "上月尾段待按 PDF 核对；系统预填不代表实际考勤已确认。",
+    "payroll.project_other": "其他款项／补差",
+    "payroll.project_other_hint": "包括假日工作、病假／工伤、替班及其他调整，并包含相应补差或扣减；与其他可见分项合计为总额。",
+})
+EN.update({
+    "leave.derived_days_rule": "Days are calculated from dates and AM/PM, using the same basis as Payroll. Enter separate requests for non-contiguous leave.",
+    "leave.inconsistent_days": "Leave days disagree with dates/sessions. Correct Leave & Work Injury before exporting Payroll.",
+    "leave.overlap": "These dates/sessions overlap active leave or work injury. Review or correct the existing record in Leave & Work Injury.",
+    "leave.attendance_recheck": "Leave/work injury changed after attendance was saved. Recheck attendance against the PDF and save; entered attendance is not automatically reduced.",
+    "leave.review_source": "Review Leave & Work Injury",
+    "leave.comp_reconcile_insufficient": "Changed compensation leave cannot cover leave already taken. Nothing was saved; review the leave records or available annual-leave entitlement first.",
+    "attendance.tail_pending_review": "Check the previous month-end against the PDF. Prefill is not confirmed actual attendance.",
+    "payroll.project_other": "Other pay / reconciliation",
+    "payroll.project_other_hint": "Holiday work, sick/injury pay, substitute-shift and other adjustments, including reconciliation and deductions; all visible components add to the total.",
+})
+
+ZH_HANT["leave.derived_days_label"] = "請假日數（自動計算）"
+ZH_HANT["payroll.rule.absence_rate"] = "XLSX 病假／工傷的計薪率＝兩者實際薪酬合計 ÷ 合計日數；包含首日全薪及4/5等不同計薪比例，不可直接換成普通日薪率。"
+ZH_HANS["leave.derived_days_label"] = "请假日数（自动计算）"
+ZH_HANS["payroll.rule.absence_rate"] = "XLSX 病假／工伤的计薪率＝两者实际薪酬合计 ÷ 合计日数；包含首日全薪及4/5等不同计薪比例，不可直接换成普通日薪率。"
+EN["leave.derived_days_label"] = "Leave days (calculated)"
+EN["payroll.rule.absence_rate"] = "The XLSX sick/injury rate is combined actual pay divided by combined days. It includes full-pay and four-fifths portions; do not replace it with the ordinary daily rate."
+
+ZH_HANT.update({
+    "profile.invalid_date": "請輸入有效日期。",
+    "profile.date_order": "結束／到期日不能早於起始日期。",
+    "profile.expiry_conflict": "到期日與永久有效只能選一項。",
+    "profile.invalid_credential_type": "請選擇此專項的正確證件類型。",
+    "profile.expiry_required": "請填寫到期日，或確認為永久有效。",
+    "profile.identity_required": "請同時填寫身份證件類型及號碼。",
+    "profile.identity_duplicate": "此證件已屬於另一名員工，請先核對原記錄。",
+    "profile.invalid_entitlement": "年假應享須為0至366日，以0.5日為單位。",
+    "profile.employment_overlap": "入職日期與其他任職期間重疊，請核對歷史。",
+    "profile.select_evidence": "請選擇要補交的憑證。",
+    "profile.evidence_saved": "憑證已保存，假期日期及日數沒有改動。",
+    "profile.supplement_evidence": "補交憑證",
+    "profile.evidence_only": "只補交這筆原有假期的憑證，不會新增請假或更改日期、日數。",
+    "profile.replace_select": "請明確選擇要替換的舊文件。",
+    "profile.replace_duplicate_target": "新文件與另一份現有文件相同，請先核對替換對象。",
+    "profile.replace_target": "處理方式／要替換的文件",
+    "profile.new_document": "新增一份文件（保留原件）",
+    "profile.replace_hint": "只替換所選的一份；保留舊文件及歷史，不影響同類其他文件。",
+    "profile.upload_hint": "上傳後會開啟原件預覽與資料核對；現在只需選擇文件及必要資訊。",
+    "profile.apply_contract_terms": "按此合約更新年假／試用期資料",
+    "profile.contract_preserve": "預設只保存文件。勾選後才更新填寫的年假／試用期欄位；留空不清除原值，變動記入歷史。",
+    "profile.record_active": "有效記錄",
+    "profile.record_voided": "已撤回",
+    "profile.probation_unknown": "轉正資料待核實",
+    "profile.work_credentials": "工作資格／安全證件",
+    "profile.education_credentials": "學歷與專業資歷",
+    "profile.category_hint": "平安卡、工人註冊證及作業許可錄在這裡；學位及一般技能證書錄入「學歷與專業資歷」。",
+    "profile.file_hint": "支援 PDF、JPG、PNG、DOCX、XLSX；整次上傳上限32 MB。未標必填的憑證可後補。",
+    "profile.select_file": "選擇文件",
+    "profile.no_file": "未選擇文件",
+    "profile.credential_voided": "已作廢",
+    "profile.credential_future": "尚未生效",
+    "profile.credential_permanent": "永久有效",
+    "profile.credential_unknown": "有效期待補",
+    "profile.credential_expired": "已到期",
+    "profile.credential_expiring": "60日內到期",
+    "profile.credential_valid": "有效",
+})
+from opencc import OpenCC as _ProfileOpenCC
+_profile_simplified = _ProfileOpenCC("t2s")
+ZH_HANS.update({key: _profile_simplified.convert(value) for key, value in ZH_HANT.items() if key.startswith("profile.")})
+EN.update({
+    "profile.invalid_date": "Enter a valid date.",
+    "profile.date_order": "End / expiry cannot precede the start.",
+    "profile.expiry_conflict": "Choose an expiry date or permanent validity, not both.",
+    "profile.invalid_credential_type": "Choose a valid credential type for this section.",
+    "profile.expiry_required": "Enter an expiry date or confirm permanent validity.",
+    "profile.identity_required": "Enter both identity type and number.",
+    "profile.identity_duplicate": "This identity belongs to another employee. Review the original record.",
+    "profile.invalid_entitlement": "Entitlement must be 0–366 days in half-day units.",
+    "profile.employment_overlap": "Start date overlaps another employment period.",
+    "profile.select_evidence": "Select the supporting file.",
+    "profile.evidence_saved": "Evidence saved; leave dates and days are unchanged.",
+    "profile.supplement_evidence": "Add evidence",
+    "profile.evidence_only": "Attach evidence to existing leave only; dates and days will not change.",
+    "profile.replace_select": "Select the specific file to replace.",
+    "profile.replace_duplicate_target": "Content matches a different file. Check the replacement target.",
+    "profile.replace_target": "Action / file to replace",
+    "profile.new_document": "Add a file (keep existing files)",
+    "profile.replace_hint": "Replace only the selected file; retain history and all other files.",
+    "profile.upload_hint": "Upload opens source preview and data review. Select the file and metadata first.",
+    "profile.apply_contract_terms": "Apply contract leave / probation terms",
+    "profile.contract_preserve": "Save the file only by default. Opt in to apply entered terms; blanks preserve existing values. Changes are audited.",
+    "profile.record_active": "Active record",
+    "profile.record_voided": "Withdrawn",
+    "profile.probation_unknown": "Confirmation details need verification",
+    "profile.work_credentials": "Work / safety credentials",
+    "profile.education_credentials": "Education / professional qualifications",
+    "profile.category_hint": "Safety cards, worker registration and operating permits go here; degrees and general skills belong in Education / professional qualifications.",
+    "profile.file_hint": "PDF, JPG, PNG, DOCX and XLSX; maximum request size 32 MB. Optional evidence can be added later.",
+    "profile.select_file": "Choose file",
+    "profile.no_file": "No file selected",
+    "profile.credential_voided": "Voided",
+    "profile.credential_future": "Not yet effective",
+    "profile.credential_permanent": "Permanent",
+    "profile.credential_unknown": "Validity needs verification",
+    "profile.credential_expired": "Expired",
+    "profile.credential_expiring": "Expires within 60 days",
+    "profile.credential_valid": "Valid",
+})
+ZH_HANT["employee.credential_change_history_hint"] = "上方保留未作廢證件並標示有效期；下方保留新增、更正、作廢及憑證歷史。"
+ZH_HANS["employee.credential_change_history_hint"] = "上方保留未作废证件并标示有效期；下方保留新增、更正、作废及凭证历史。"
+EN["employee.credential_change_history_hint"] = "Cards show non-voided records with their validity; history preserves additions, corrections, voids and evidence."
+ZH_HANT["dashboard.expiry"] = "已到期／60日內到期（證件筆數）"
+ZH_HANS["dashboard.expiry"] = "已到期／60日内到期（证件笔数）"
+EN["dashboard.expiry"] = "Expired / expires within 60 days (records)"
+
+SYSTEM_MESSAGE_TRANSLATION_KEYS.update({"document_source_updated": "audit.action.document_source_updated", "leave_evidence_added": "audit.action.leave_evidence_added"})
+ZH_HANT.update({"audit.action.document_source_updated": "文件核對更新資料", "audit.action.leave_evidence_added": "補交假期憑證"})
+ZH_HANS.update({"audit.action.document_source_updated": "文件核对更新资料", "audit.action.leave_evidence_added": "补交假期凭证"})
+EN.update({"audit.action.document_source_updated": "Updated from document review", "audit.action.leave_evidence_added": "Added leave evidence"})
+
+ZH_HANT.update({
+    "workspace.discard": "尚有未保存修改。離開將捨棄這些內容，是否繼續？",
+    "workspace.saving": "正在保存，請等候結果，勿重複提交。",
+    "workspace.other_changes": "其他表單尚有未保存修改。本次只保存目前表單，其他修改將捨棄，是否繼續？",
+    "workspace.session_expired": "登入已逾時。填寫內容及所選附件仍留在本頁；請在另一分頁重新登入，再返回保存。",
+    "workspace.uncertain": "未能確認保存結果。內容及所選附件仍保留；請先在另一分頁查看變更歷史，確認未保存後再重試，避免重複新增。",
+    "workspace.failed": "保存未完成，填寫內容及所選附件已保留。請核對必填欄位及錯誤提示。",
+    "workspace.effective_period": "生效日期起",
+    "workspace.impact_prefix": "變更影響：",
+    "workspace.leave_impact": "入職／離職日期或年假額度會影響在職日數、年假及相關薪酬；請核對日期涉及月份及其後結果。",
+    "workspace.probation_impact": "試用期／轉正日期會影響病假首日全薪資格及提醒；請核對相關月份。",
+    "workspace.pay_impact": "薪酬生效日期、工作制或月薪計薪方式會影響相關月份的計薪及考勤預填。",
+    "workspace.history_impact": "此處不自動重寫已保存考勤或已匯出的 Payroll；歷史月份如受影響，須重新核對後匯出。",
+    "workspace.correct": "更正：修正這筆資料的錯誤，保留前後變更歷史；不是新增一次任職、加薪或續證。",
+    "workspace.replace": "替換附件：原文件保留為歷史，新文件接替其引用；不等於新增證件或更改薪酬。",
+    "workspace.evidence": "補交憑證：只補充此筆資料的附件，不新增業務記錄或改動原日期、金額及日數。",
+    "workspace.void": "作廢／撤回：整筆記錄不再適用，歷史仍保留；只填錯部分欄位請用更正。",
+    "workspace.add": "新增：記錄一次真正的新任職、薪酬變動或新證件，按生效日期保留歷史；原記錄填錯請用更正。",
+    "workspace.renew": "取得續期新證請新增一筆；只是原證到期日填錯，請更正原記錄。",
+    "workspace.all_documents": "全部文件",
+    "workspace.file_details": "文件詳情",
+    "workspace.document_date": "文件日期",
+    "workspace.no_documents": "此類別暫無文件。",
+})
+ZH_HANS.update({key: _profile_simplified.convert(value) for key, value in ZH_HANT.items() if key.startswith("workspace.")})
+EN.update({
+    "workspace.discard": "You have unsaved changes. Discard them and continue?",
+    "workspace.saving": "Saving. Wait for the result; do not submit again.",
+    "workspace.other_changes": "Other forms have unsaved changes. Save only this form and discard the others?",
+    "workspace.session_expired": "Your session expired. Fields and selected files remain here. Sign in in another tab, then return to save.",
+    "workspace.uncertain": "The save outcome is unknown. Fields and files remain here. Check change history in another tab before retrying to avoid duplicates.",
+    "workspace.failed": "Save did not complete. Fields and files are retained. Check required fields and validation errors.",
+    "workspace.effective_period": "From the effective date",
+    "workspace.impact_prefix": "Change impact: ",
+    "workspace.leave_impact": "Employment dates or leave entitlement affect service days, leave and related pay. Review these months and subsequent results.",
+    "workspace.probation_impact": "Probation / confirmation dates affect first-day sick-pay eligibility and reminders. Review the relevant months.",
+    "workspace.pay_impact": "Pay effective dates, workweek and monthly-pay method affect relevant payroll and attendance prefills.",
+    "workspace.history_impact": "Saved attendance and exported Payroll are not rewritten here. Recheck affected historical months before exporting again.",
+    "workspace.correct": "Correct an error in this record, retaining change history. This is not a new assignment, pay change or renewal.",
+    "workspace.replace": "Replace the attachment and its references, keeping the old file in history. This does not create a credential or change pay.",
+    "workspace.evidence": "Add evidence to this record only, without creating a business record or changing dates, amounts or days.",
+    "workspace.void": "Void / withdraw the entire invalid record, keeping history. Use correction for an incorrect field.",
+    "workspace.add": "Add a genuine assignment, pay change or credential with its effective date. Use correction for errors in existing records.",
+    "workspace.renew": "Add a new record for a renewed credential. Correct the original record only if its expiry date was entered wrongly.",
+    "workspace.all_documents": "All files", "workspace.file_details": "File details",
+    "workspace.document_date": "Document date", "workspace.no_documents": "No files in this category.",
+})
+
+ZH_HANT["upload.invalid_pdf"] = "附件未通過 PDF 格式驗證：內容可能與副檔名不符，或檔案結構不完整。此考勤入口只支援 PDF（.pdf）；請用原軟件重新匯出 PDF，不要只改副檔名。如仍失敗，請將原始文件交管理員核查。"
+ZH_HANS["upload.invalid_pdf"] = "附件未通过 PDF 格式验证：内容可能与扩展名不符，或文件结构不完整。此考勤入口只支持 PDF（.pdf）；请用原软件重新导出 PDF，不要只改扩展名。如仍失败，请将原始文件交管理员核查。"
+EN["upload.invalid_pdf"] = "The file failed PDF format validation: its content may not match the extension, or its structure may be incomplete. This attendance upload accepts PDF (.pdf) only. Export a new PDF rather than renaming the extension. If it still fails, give the original file to an administrator."
+
+ZH_HANT.update({
+    "leave.derived_days_rule": "公司請假計日：年假、病假及無薪假，5／5.5 天制排除星期六、日；6 天制星期六計 1 日、星期日不計，並排除員工適用的假日。按請假日期當時的任職及本地工作日曆計算，上午／下午各 0.5 日。",
+    "leave.attendance_schedule_note": "請假與考勤口徑不同：5／5.5 天制請假不計六、日；6 天制星期六計假期。考勤仍按合約工作制，5.5 天制星期六計 0.5 天、6 天制計 1 天；休息日不因跨越請假期間而扣假或重複扣薪。",
+    "leave.invalid_range": "請核對請假起止日期及上午／下午；請假期間不可超過 10 年。",
+    "leave.missing_schedule": "請假日期缺少有效任職、Payroll 組別或工作地區，請先到任職與薪酬補齊，系統不會猜測工作制。",
+    "leave.zero_days": "所選日期全部為休息日或適用假日，計假 0 日，無需登記；舊記錄請核對後撤回。",
+    "leave.excluded_dates": "不計假日期：",
+    "leave.preview_failed": "暫時未能取得日數，請重新登入或稍後再試；保存時仍由伺服器核算。",
+    "leave.legacy_basis": "舊記錄保留原計算口徑；使用「更正」保存後才套用新計日規則。請先核對工作制及相關 Payroll。",
+    "leave.review_title": "假期日數差異核對",
+    "leave.review_scope": "全部年度及在職／離職員工：共 {total} 筆有效假期，{affected} 筆有差異或需補資料。已撤回記錄不計。",
+    "leave.review_rule": "只讀試算，不修改假期或 Payroll。先核對任職與薪酬中的歷史工作制，再從變更歷史更正原記錄，不要重複新增。快照表示曾生成 Payroll，不代表已付款；相關月份需由 HR 核對，已出糧金額不得直接覆蓋。更正會更新年假扣帳及後續計算，原快照保留。",
+    "leave.review_employee": "員工", "leave.review_dates": "類別／假期日期", "leave.review_old": "原日數",
+    "leave.review_new": "新規則試算", "leave.review_delta": "差額（新－原）",
+    "leave.review_snapshots": "已有 Payroll 快照月份", "leave.review_open": "前往更正",
+    "leave.review_none": "未發現日數或逐日分配差異。",
+})
+ZH_HANS.update({
+    "leave.derived_days_rule": "公司请假计日：年假、病假及无薪假，5／5.5 天制排除星期六、日；6 天制星期六计 1 日、星期日不计，并排除员工适用的假日。按请假日期当时的任职及本地工作日历计算，上午／下午各 0.5 日。",
+    "leave.attendance_schedule_note": "请假与考勤口径不同：5／5.5 天制请假不计六、日；6 天制星期六计假期。考勤仍按合同工作制，5.5 天制星期六计 0.5 天、6 天制计 1 天；休息日不因跨越请假期间而扣假或重复扣薪。",
+    "leave.invalid_range": "请核对请假起止日期及上午／下午；请假期间不可超过 10 年。",
+    "leave.missing_schedule": "请假日期缺少有效任职、Payroll 组别或工作地区，请先到任职与薪酬补齐，系统不会猜测工作制。",
+    "leave.zero_days": "所选日期全部为休息日或适用假日，计假 0 日，无需登记；旧记录请核对后撤回。",
+    "leave.excluded_dates": "不计假日期：", "leave.preview_failed": "暂时未能取得日数，请重新登录或稍后再试；保存时仍由服务器核算。",
+    "leave.legacy_basis": "旧记录保留原计算口径；使用「更正」保存后才套用新计日规则。请先核对工作制及相关 Payroll。",
+    "leave.review_title": "假期日数差异核对", "leave.review_scope": "全部年度及在职／离职员工：共 {total} 笔有效假期，{affected} 笔有差异或需补资料。已撤回记录不计。",
+    "leave.review_rule": "只读试算，不修改假期或 Payroll。先核对任职与薪酬中的历史工作制，再从变更历史更正原记录，不要重复新增。快照表示曾生成 Payroll，不代表已付款；相关月份需由 HR 核对，已出粮金额不得直接覆盖。更正会更新年假扣账及后续计算，原快照保留。",
+    "leave.review_employee": "员工", "leave.review_dates": "类别／假期日期", "leave.review_old": "原日数", "leave.review_new": "新规则试算", "leave.review_delta": "差额（新－原）", "leave.review_snapshots": "已有 Payroll 快照月份", "leave.review_open": "前往更正", "leave.review_none": "未发现日数或逐日分配差异。",
+})
+EN.update({
+    "leave.derived_days_rule": "Company leave counting for annual, sick and unpaid leave: 5/5.5-day schedules exclude Saturday and Sunday; 6-day schedules count Saturday as 1 day and exclude Sunday. Applicable holidays are excluded. Use the effective assignment and saved local calendar; AM/PM each count 0.5 day.",
+    "leave.attendance_schedule_note": "Leave and attendance differ: 5/5.5-day leave excludes weekends; 6-day leave counts Saturday. Contractual attendance still counts Saturday as 0.5 day for 5.5-day schedules or 1 day for 6-day schedules. Rest dates within leave must not consume leave or trigger duplicate deductions.",
+    "leave.invalid_range": "Check leave dates and AM/PM sessions. The range cannot exceed 10 years.",
+    "leave.missing_schedule": "An effective assignment, Payroll group or work region is missing for these dates. Complete Employment & Salary first; the system will not guess.",
+    "leave.zero_days": "All selected dates are rest days or applicable holidays: 0 leave days. No new request is needed; review and withdraw an incorrect old record.",
+    "leave.excluded_dates": "Excluded dates: ", "leave.preview_failed": "Day preview unavailable. Sign in again or retry. The server will still validate on save.",
+    "leave.legacy_basis": "Legacy counting is retained until this record is explicitly corrected and saved. Check the effective schedule and relevant Payroll first.",
+    "leave.review_title": "Leave-day difference review", "leave.review_scope": "All years and active/departed employees: {total} active leave records; {affected} differences or missing-data cases. Withdrawn records are excluded.",
+    "leave.review_rule": "Read-only estimate; no leave or Payroll changes. Check effective historical schedules before correcting the original record, not adding duplicates. A Payroll snapshot does not prove payment. HR must reconcile affected months without overwriting paid wages. Corrections update leave allocations and future calculations; existing snapshots remain.",
+    "leave.review_employee": "Employee", "leave.review_dates": "Type / leave dates", "leave.review_old": "Saved days", "leave.review_new": "New-rule estimate", "leave.review_delta": "Difference (new - saved)", "leave.review_snapshots": "Payroll snapshot months", "leave.review_open": "Review / correct", "leave.review_none": "No day-count or date-allocation differences found.",
+})
+
+ZH_HANT['leave.context_workweek'] = '合約 {week} 天工作制；請假按 {leave_week} 天計日'
+ZH_HANS['leave.context_workweek'] = '合同 {week} 天工作制；请假按 {leave_week} 天计日'
+EN['leave.context_workweek'] = 'Contract: {week}-day week; leave: {leave_week}-day week'
+
+ZH_HANT.update({
+    "leave.review_rule": "先核對歷史任職工作制，再勾選假期並確認更新。只更新所選記錄的日數及扣帳，不改日期、憑證、備註或考勤數字。目前核對階段會同步重算該員工自假期月份起已有的 Payroll（含後續補差）；保留舊快照及前後審計，不代表已付款。已下載 Excel 請重新匯出。",
+    "leave.review_assignment_hint": "此員工有 {count} 筆假期與目前工作制／日曆的計日結果不同或缺資料；核對後可一次更新。",
+    "leave.review_employee_scope": "此員工全部年度：共 {total} 筆有效假期，{affected} 筆有差異或需補資料。已撤回記錄不計。",
+    "leave.review_all": "查看全部員工", "leave.review_select_all": "全選可更新記錄",
+    "leave.review_snapshots": "將重算的已有 Payroll 月份", "leave.review_final": "離職 Payroll：",
+    "leave.review_apply": "確認更新所選假期及 Payroll",
+    "leave.review_confirm": "已核對所選假期及工作制，同意更新相關 Payroll 結果。離職年假補薪日數同步調整結餘差額，保留原有人手調整；其他離職輸入不改。",
+    "leave.review_zero_hint": "0 日或缺資料記錄不能批量更新：0 日請前往原記錄核對並撤回；缺資料請先補齊。所有所選項目同時成功才會保存，失敗不會部分更新。",
+    "leave.review_invalid": "請勾選記錄及確認選項；若頁面已過期，請刷新後再試。",
+    "leave.review_stale": "記錄或計日依據已改動，請刷新清單重新核對，未覆蓋任何更改。",
+    "leave.review_final_negative": "離職 Payroll 的手動年假補薪日數調整後會小於 0，請先核對離職輸入。",
+    "leave.review_failed": "本次未保存任何更新。原因：",
+    "leave.review_done": "已更新 {leaves} 筆假期、重新計算 {payroll} 個員工月份及 {final} 筆離職 Payroll。舊快照保留；Excel 請重新匯出。",
+})
+ZH_HANS.update({
+    "leave.review_rule": "先核对历史任职工作制，再勾选假期并确认更新。只更新所选记录的日数及扣账，不改日期、凭证、备注或考勤数字。目前核对阶段会同步重算该员工自假期月份起已有的 Payroll（含后续补差）；保留旧快照及前后审计，不代表已付款。已下载 Excel 请重新导出。",
+    "leave.review_assignment_hint": "此员工有 {count} 笔假期与目前工作制／日历的计日结果不同或缺资料；核对后可一次更新。",
+    "leave.review_employee_scope": "此员工全部年度：共 {total} 笔有效假期，{affected} 笔有差异或需补资料。已撤回记录不计。",
+    "leave.review_all": "查看全部员工", "leave.review_select_all": "全选可更新记录",
+    "leave.review_snapshots": "将重算的已有 Payroll 月份", "leave.review_final": "离职 Payroll：",
+    "leave.review_apply": "确认更新所选假期及 Payroll",
+    "leave.review_confirm": "已核对所选假期及工作制，同意更新相关 Payroll 结果。离职年假补薪日数同步调整结余差额，保留原有人手调整；其他离职输入不改。",
+    "leave.review_zero_hint": "0 日或缺资料记录不能批量更新：0 日请前往原记录核对并撤回；缺资料请先补齐。所有所选项目同时成功才会保存，失败不会部分更新。",
+    "leave.review_invalid": "请勾选记录及确认选项；若页面已过期，请刷新后再试。",
+    "leave.review_stale": "记录或计日依据已改动，请刷新清单重新核对，未覆盖任何更改。",
+    "leave.review_final_negative": "离职 Payroll 的手动年假补薪日数调整后会小于 0，请先核对离职输入。",
+    "leave.review_failed": "本次未保存任何更新。原因：",
+    "leave.review_done": "已更新 {leaves} 笔假期、重新计算 {payroll} 个员工月份及 {final} 笔离职 Payroll。旧快照保留；Excel 请重新导出。",
+})
+EN.update({
+    "leave.review_rule": "Check historical schedules, select leave and confirm. Update selected day counts and allocations only; keep dates, evidence, remarks and attendance inputs. During reconciliation, recalculate that employee's saved Payroll months from the leave month onward, including later adjustments. Retain old snapshots and before/after audit; a calculation does not mean payment. Re-export downloaded Excel files.",
+    "leave.review_assignment_hint": "{count} leave records differ from the current effective schedule/calendar or need missing data. Review and update them together.",
+    "leave.review_employee_scope": "This employee, all years: {total} active leave records; {affected} differences or missing-data cases. Withdrawn records are excluded.",
+    "leave.review_all": "All employees", "leave.review_select_all": "Select all eligible records",
+    "leave.review_snapshots": "Saved Payroll months to recalculate", "leave.review_final": "Final Payment:",
+    "leave.review_apply": "Confirm selected leave and Payroll updates",
+    "leave.review_confirm": "I have checked the selected leave and schedules and approve recalculation. Final Payment leave-pay days follow the balance difference, retaining existing manual adjustments; other final-payment inputs remain unchanged.",
+    "leave.review_zero_hint": "Zero-day or incomplete records cannot be batch updated. Review and withdraw zero-day records or complete missing data first. All selected updates succeed together, or none are saved.",
+    "leave.review_invalid": "Select records and acknowledge the update. Refresh expired pages before retrying.",
+    "leave.review_stale": "Records or calculation inputs changed. Refresh and review again; nothing was overwritten.",
+    "leave.review_final_negative": "Adjusted manual Final Payment leave-pay days would be negative. Review the final-payment inputs first.",
+    "leave.review_failed": "No updates were saved. Reason:",
+    "leave.review_done": "Updated {leaves} leave records, recalculated {payroll} employee-months and {final} Final Payments. Old snapshots retained; re-export Excel files.",
+})
+
+from tools.salary_record_messages import HANT as _salary_hant, EN as _salary_en
+ZH_HANT.update({'salary_record.'+key: value for key,value in _salary_hant.items()})
+ZH_HANS.update({'salary_record.'+key: _profile_simplified.convert(value) for key,value in _salary_hant.items()})
+EN.update({'salary_record.'+key: value for key,value in _salary_en.items()})
+
+from tools.allocation_messages import HANT as _allocation_hant, EN as _allocation_en
+ZH_HANT.update(_allocation_hant)
+ZH_HANS.update({key: _profile_simplified.convert(value) for key,value in _allocation_hant.items()})
+EN.update(_allocation_en)
 
 TRANSLATIONS = {
     "zh-Hant": ZH_HANT,

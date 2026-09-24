@@ -1,4 +1,5 @@
 import hmac
+import io
 import secrets
 import threading
 import time
@@ -8,6 +9,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from flask import abort, request, session
+from PIL import Image, UnidentifiedImageError
 
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
@@ -127,24 +129,49 @@ def _validate_office_zip(uploaded_file, required_member):
         stream.seek(position)
 
 
+def _validate_image(uploaded_file, image_format):
+    """Decode without rewriting evidence; tolerate metadata after JPEG EOI.
+
+    Work on a private buffer so Pillow cannot close/advance the upload stream.
+    Do not enable LOAD_TRUNCATED_IMAGES or disable decompression-bomb limits.
+    """
+    stream = uploaded_file.stream
+    position = stream.tell()
+    try:
+        stream.seek(0)
+        content = stream.read()
+        with Image.open(io.BytesIO(content), formats=[image_format]) as image:
+            # Explicit bound, without changing process-wide Pillow settings in
+            # the threaded server. The normal Pillow hard limit also remains.
+            if image.width * image.height > 40_000_000:
+                raise UploadValidationError("upload.image_too_large")
+            image.verify()
+        with Image.open(io.BytesIO(content), formats=[image_format]) as image:
+            image.load()
+    except Image.DecompressionBombError as exc:
+        raise UploadValidationError("upload.image_too_large") from exc
+    except (UnidentifiedImageError, OSError, SyntaxError, ValueError) as exc:
+        if isinstance(exc, UploadValidationError):
+            raise
+        raise UploadValidationError("upload.invalid_file") from exc
+    finally:
+        stream.seek(position)
+
+
 def validate_uploaded_file(uploaded_file, allowed_extensions=None):
     if not uploaded_file or not uploaded_file.filename:
         raise UploadValidationError("upload.file_required")
     allowed = set(allowed_extensions or ALLOWED_UPLOAD_EXTENSIONS)
     suffix = Path(uploaded_file.filename).suffix.lower()
     if suffix not in allowed:
-        raise UploadValidationError("upload.unsupported_type")
+        raise UploadValidationError("upload.pdf_only" if allowed == {".pdf"} else "upload.unsupported_type")
     head, tail, size = _read_head_and_tail(uploaded_file)
     if size <= 0:
         raise UploadValidationError("upload.empty_file")
     if suffix == ".pdf" and (not head.startswith(b"%PDF-") or b"%%EOF" not in tail):
-        raise UploadValidationError("upload.invalid_file")
-    if suffix == ".png" and not head.startswith(b"\x89PNG\r\n\x1a\n"):
-        raise UploadValidationError("upload.invalid_file")
-    if suffix in {".jpg", ".jpeg"} and not (
-        head.startswith(b"\xff\xd8\xff") and tail.rstrip().endswith(b"\xff\xd9")
-    ):
-        raise UploadValidationError("upload.invalid_file")
+        raise UploadValidationError("upload.invalid_pdf" if allowed == {".pdf"} else "upload.invalid_file")
+    if suffix in {".jpg", ".jpeg", ".png"}:
+        _validate_image(uploaded_file, "PNG" if suffix == ".png" else "JPEG")
     if suffix == ".docx":
         _validate_office_zip(uploaded_file, "word/document.xml")
     if suffix == ".xlsx":

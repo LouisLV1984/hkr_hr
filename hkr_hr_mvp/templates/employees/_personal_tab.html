@@ -2,7 +2,7 @@
   <article class="panel current-state-card">
     <div class="section-head">
       <div><span class="eyebrow">{{ t("employee.current_basic_profile") }}</span><h2>{{ employee.display_name }}</h2></div>
-      <div class="button-row"><button class="mini-btn" type="button" data-dialog-open="edit-personal-dialog">{{ t("employee.edit_personal") }}</button><button class="mini-btn" type="button" data-dialog-open="edit-name-dialog">{{ t("employee.correct_name") }}</button></div>
+      <div class="button-row"><a class="mini-btn" href="{{ url_for('documents.new_document', employee_id=employee.id, upload_type='staff_record') }}">{{ option_t("document_category", "staff_record", "Staff Record") }}</a><button class="mini-btn" type="button" data-dialog-open="edit-personal-dialog">{{ t("employee.edit_personal") }}</button><button class="mini-btn" type="button" data-dialog-open="edit-name-dialog">{{ t("employee.correct_name") }}</button></div>
     </div>
     <dl class="detail-grid">
       <div><dt>{{ t("employees.chinese_name") }}</dt><dd>{{ employee.chinese_name or "-" }}</dd></div>

@@ -77,7 +77,7 @@
           <tbody>
             {% for alert in expiry_alerts %}
               <tr class="expiry-row {{ alert.severity }}">
-                <td><a href="{{ url_for('employees.view_employee', employee_id=alert.employee.id) }}">{{ alert.employee.employee_no }} · {{ alert.employee.display_name }}</a></td>
+                <td><a href="{{ url_for('employees.view_employee', employee_id=alert.employee.id, tab='credentials', _anchor=alert.anchor) }}">{{ alert.employee.employee_no }} · {{ alert.employee.display_name }}</a></td>
                 <td>{{ option_t("identity_type", alert.label, alert.label) }}</td>
                 <td>{{ fmt_date(alert.date) }}</td>
                 <td><span class="flag expiry-status {{ alert.severity }}">{% if alert.severity == 'expired' %}已到期 {{ -alert.days_remaining }} 日{% elif alert.severity == 'urgent' %}{{ alert.days_remaining }} 日內到期{% else %}{{ alert.days_remaining }} 日後到期{% endif %}</span></td>

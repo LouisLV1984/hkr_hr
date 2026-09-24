@@ -760,9 +760,18 @@ def export_employees():
                 [
                     employee.employee_no,
                     employee.display_name,
-                    DOCUMENT_CATEGORIES.get(
-                        document.category,
-                        document.category,
+                    (
+                        document.general_document_type.display_name
+                        if document.general_document_type
+                        else (
+                            document.title
+                            if document.category == "change_evidence"
+                            and document.title
+                            else DOCUMENT_CATEGORIES.get(
+                                document.category,
+                                document.category,
+                            )
+                        )
                     ),
                     document.title,
                     DOCUMENT_STATUS_LABELS.get(

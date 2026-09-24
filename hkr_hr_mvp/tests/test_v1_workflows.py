@@ -29,6 +29,7 @@ from models import (
     EmployeeAllowance,
     EmployeeBankAccount,
     EmployeeCertificate,
+    EmployeeCompLeaveAllocation,
     EmployeeCompLeaveCredit,
     EmployeeDocument,
     EmployeeEmploymentPeriod,
@@ -61,6 +62,8 @@ from tools.hr_core import (
     employee_type_by_code,
     ensure_reference_seed,
     reference_by_code,
+    store_employee_file,
+    uploaded_file_sha256,
 )
 from tools.hk_statutory_holidays import (
     parse_hong_kong_public_holidays,
@@ -297,6 +300,38 @@ class V1WorkflowTests(unittest.TestCase):
         return ids["project"]
 
     def upload_document(self, employee_id, category, filename):
+        if category not in {
+            "three_treasures",
+            "staff_record",
+            "signed_contract",
+            "cv",
+            "other",
+        }:
+            with self.app.app_context():
+                employee = db.session.get(Employee, employee_id)
+                uploaded = FileStorage(
+                    stream=io.BytesIO(pdf_bytes(filename)),
+                    filename=filename,
+                    content_type="application/pdf",
+                )
+                digest = uploaded_file_sha256(uploaded)
+                path = store_employee_file(employee, uploaded, category)
+                document = EmployeeDocument(
+                    employee=employee,
+                    category=category,
+                    title=filename,
+                    original_filename=filename,
+                    stored_path=str(path),
+                    mime_type="application/pdf",
+                    file_ext=".pdf",
+                    file_size=path.stat().st_size,
+                    content_sha256=digest,
+                    status="active",
+                    document_date=date(2026, 7, 1),
+                )
+                db.session.add(document)
+                db.session.commit()
+                return document.id
         response = self.client.post(
             f"/employees/{employee_id}/documents/new",
             data={
@@ -1521,13 +1556,13 @@ class V1WorkflowTests(unittest.TestCase):
         locked_page = self.client.get(
             f"/attendance?month=2026-08&summary_id={summary_id}&lang=zh-Hant"
         ).get_data(as_text=True)
-        self.assertNotIn('type="search"', locked_page)
+        self.assertNotRegex(locked_page, r'<input[^>]+type="search"')
         self.assertIn("已保存的考勤歸屬", locked_page)
         page = self.client.get(
             f"/attendance?month=2026-08&summary_id={summary_id}"
             "&correct_identity=1&lang=zh-Hant"
         ).get_data(as_text=True)
-        self.assertIn('type="search"', page)
+        self.assertRegex(page, r'<input[^>]+type="search"')
         self.assertNotIn("支持員工編號、英文姓名及繁簡體中文混合搜尋", page)
         self.assertIn("input.showPicker()", page)
         self.assertIn(active_no, page)
@@ -2107,7 +2142,9 @@ class V1WorkflowTests(unittest.TestCase):
         with self.app.app_context():
             leave = EmployeeAnnualLeaveRecord.query.one()
             leave_id = leave.id
-            self.assertEqual(leave.days, Decimal("1.0"))
+            # Employee-aware leave excludes Sunday; Saturday PM on a 6-day
+            # contract is half a day. The date-only helper above is unchanged.
+            self.assertEqual(leave.days, Decimal("0.5"))
             self.assertEqual(leave.status, "active")
 
         response = self.client.post(
@@ -3039,12 +3076,50 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertNotIn("MPF 資料已填寫", departed_page)
         self.assertNotIn("MPF 資料未填寫", departed_page)
 
+    def test_search_fields_disable_browser_history_without_breaking_password_manager_tokens(self):
+        base_source = (APP_ROOT / "templates" / "base.html").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("hkr-disabled-", base_source)
+        self.assertIn('input[type="search"], [data-no-browser-history]', base_source)
+
+        for relative_path in [
+            "templates/attendance/index.html",
+            "templates/employees/list.html",
+            "templates/leave/index.html",
+            "templates/payroll/index.html",
+        ]:
+            source = (APP_ROOT / relative_path).read_text(encoding="utf-8")
+            search_controls = re.findall(r'<input type="search"[^>]*>', source)
+            self.assertTrue(search_controls, relative_path)
+            for control in search_controls:
+                self.assertIn('autocomplete="off"', control, relative_path)
+                self.assertIn('autocapitalize="off"', control, relative_path)
+                self.assertIn('spellcheck="false"', control, relative_path)
+
+        login_source = (APP_ROOT / "templates" / "auth" / "login.html").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('autocomplete="username"', login_source)
+        self.assertIn('autocomplete="current-password"', login_source)
+
     def test_user_guide_page_and_release_alignment(self):
-        self.assertEqual(CURRENT_VERSION, "V0.3.8")
-        self.assertEqual(NEXT_VERSION, "V0.3.9")
+        self.assertEqual(CURRENT_VERSION, "V0.5.6")
+        self.assertEqual(NEXT_VERSION, "V0.5.7")
         self.assertEqual(
             [(release["version"], release["date"]) for release in RELEASES],
             [
+                ("V0.5.6", "2026-09-16"),
+                ("V0.5.5", "2026-09-10"),
+                ("V0.5.4", "2026-09-09"),
+                ("V0.5.3", "2026-09-09"),
+                ("V0.5.2", "2026-09-09"),
+                ("V0.5.1", "2026-09-09"),
+                ("V0.5.0", "2026-09-07"),
+                ("V0.4.0", "2026-09-07"),
+                ("V0.3.11", "2026-09-06"),
+                ("V0.3.10", "2026-09-01"),
+                ("V0.3.9", "2026-08-28"),
                 ("V0.3.8", "2026-08-21"),
                 ("V0.3.7", "2026-08-21"),
                 ("V0.3.6", "2026-08-21"),
@@ -3104,7 +3179,8 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertNotIn("適用對象：", source)
         self.assertIn("2026年8月1–20日（實際）", source)
         self.assertIn("2026年7月21–31日（原預估）", source)
-        self.assertIn("上傳一般附件", source)
+        self.assertIn("上傳文件", source)
+        self.assertIn("一般附件類型", source)
         self.assertIn("前往專項管理", source)
         self.assertIn("最小單位為 0.5 日", source)
         self.assertIn("撤回離職資料", source)
@@ -3862,6 +3938,10 @@ class V1WorkflowTests(unittest.TestCase):
                 changed,
             )
             self.assertIn(
+                "employee_documents.general_document_type_id",
+                changed,
+            )
+            self.assertIn(
                 "attendance_batch_items.content_sha256",
                 changed,
             )
@@ -3886,6 +3966,7 @@ class V1WorkflowTests(unittest.TestCase):
                 )
             }
             self.assertIn("content_sha256", document_columns)
+            self.assertIn("general_document_type_id", document_columns)
             self.assertIn("content_sha256", batch_item_columns)
             self.assertIn("year_month", batch_item_columns)
             attendance_columns = {
@@ -4968,6 +5049,201 @@ class V1WorkflowTests(unittest.TestCase):
             self.assertEqual(by_year[2025]["remaining"], Decimal("8.0"))
             self.assertEqual(by_year[2025]["expiry_date"], date(2026, 12, 31))
 
+    def test_annual_leave_record_is_not_counted_against_two_buckets(self):
+        employee_id, _ = self.create_employee(
+            "ASMTP",
+            "management",
+            "年假跨帳戶測試",
+            "LEAVE CROSS BUCKET TEST",
+        )
+        self.complete_employee(
+            employee_id,
+            "management",
+            "TMC046",
+            "monthly",
+            "30000",
+            "LEAVE1002",
+            "65550002",
+        )
+        with self.app.app_context():
+            employee = db.session.get(Employee, employee_id)
+            employee.current_period.start_date = date(2020, 1, 1)
+            employee.current_period.contract_annual_leave_days = Decimal("14")
+            legacy_balance = EmployeeAnnualLeaveBalance(
+                employee_id=employee_id,
+                year=2023,
+                entitled_days_override=Decimal("50.5"),
+            )
+            current_balance = EmployeeAnnualLeaveBalance(
+                employee_id=employee_id,
+                year=2026,
+                entitled_days_override=Decimal("14"),
+                expiry_date=date(2027, 3, 31),
+            )
+            db.session.add_all([legacy_balance, current_balance])
+            db.session.flush()
+
+            fallback_record = EmployeeAnnualLeaveRecord(
+                employee_id=employee_id,
+                leave_date=date(2026, 7, 1),
+                end_date=date(2026, 7, 7),
+                entitlement_year=2026,
+                days=Decimal("7"),
+                leave_type="annual",
+                status="active",
+            )
+            legacy_record = EmployeeAnnualLeaveRecord(
+                employee_id=employee_id,
+                leave_date=date(2026, 8, 31),
+                end_date=date(2026, 8, 31),
+                start_session="am",
+                end_session="am",
+                entitlement_year=2026,
+                days=Decimal("0.5"),
+                leave_type="annual",
+                status="active",
+            )
+            comp_record = EmployeeAnnualLeaveRecord(
+                employee_id=employee_id,
+                leave_date=date(2026, 9, 1),
+                end_date=date(2026, 9, 1),
+                entitlement_year=2026,
+                days=Decimal("1"),
+                leave_type="annual",
+                status="active",
+            )
+            sick_record = EmployeeAnnualLeaveRecord(
+                employee_id=employee_id,
+                leave_date=date(2026, 9, 2),
+                end_date=date(2026, 9, 3),
+                entitlement_year=2026,
+                days=Decimal("2"),
+                leave_type="sick",
+                status="active",
+            )
+            credit = EmployeeCompLeaveCredit(
+                employee_id=employee_id,
+                source_date=date(2026, 6, 1),
+                source_kind="rest_day",
+                days=Decimal("1"),
+                status="active",
+            )
+            db.session.add_all(
+                [
+                    fallback_record,
+                    legacy_record,
+                    comp_record,
+                    sick_record,
+                    credit,
+                ]
+            )
+            db.session.flush()
+            fixed_utc = datetime(2026, 9, 1, 6, 30)
+            legacy_record.created_at = fixed_utc
+            legacy_record.updated_at = fixed_utc
+            db.session.add_all(
+                [
+                    EmployeeAnnualLeaveAllocation(
+                        record_id=legacy_record.id,
+                        balance_id=legacy_balance.id,
+                        days=Decimal("0.5"),
+                    ),
+                    EmployeeCompLeaveAllocation(
+                        leave_record_id=comp_record.id,
+                        credit_id=credit.id,
+                        days=Decimal("1"),
+                    ),
+                ]
+            )
+            db.session.commit()
+
+            buckets = annual_leave_buckets(
+                employee,
+                as_of=date(2026, 9, 1),
+            )
+            by_year = {item["year"]: item for item in buckets}
+            self.assertEqual(by_year[2023]["used"], Decimal("0.5"))
+            self.assertEqual(by_year[2023]["remaining"], Decimal("50.0"))
+            self.assertEqual(by_year[2026]["used"], Decimal("7.0"))
+            self.assertEqual(by_year[2026]["remaining"], Decimal("7.0"))
+
+            summary = annual_leave_summary(employee, 2026)
+            self.assertEqual(summary["used"], Decimal("8.5"))
+            self.assertEqual(summary["bucket_used"], Decimal("7.0"))
+            self.assertEqual(summary["remaining"], Decimal("7.0"))
+
+        page = self.client.get(
+            f"/annual-leave?year=2026&employee_id={employee_id}"
+        ).get_data(as_text=True)
+        self.assertIn("本年實際已放", page)
+        self.assertIn("所有帳戶合計", page)
+        self.assertIn("本年度帳戶剩餘", page)
+        self.assertIn("已確認總額", page)
+        self.assertIn("目前剩餘＝已確認總額－已扣除", page)
+        self.assertIn("假期變更歷史", page)
+        self.assertIn("變更時間（香港）", page)
+        self.assertIn("2026-09-01 14:30", page)
+        self.assertIn("假期日期：2026-08-31", page)
+        self.assertNotIn("2026-08-31 至 2026-08-31", page)
+        self.assertIn("假期日期：2026-09-02 上午 – 2026-09-03 下午", page)
+        self.assertIn("補休只可由考勤錄入產生", page)
+        self.assertIn("扣自：2023及以前 0.5 日", page)
+        self.assertIn("扣自：補休 1.0 日", page)
+
+        response = self.client.post(
+            f"/annual-leave/{employee_id}/balance",
+            data={
+                "year": "2026",
+                "scope": "current",
+                "entitled_days": "15",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        with self.app.app_context():
+            self.assertEqual(
+                EmployeeAnnualLeaveBalance.query.filter_by(
+                    employee_id=employee_id,
+                    year=2026,
+                ).one().entitled_days_override,
+                Decimal("15.0"),
+            )
+            self.assertEqual(
+                EmployeeAnnualLeaveBalance.query.filter_by(
+                    employee_id=employee_id,
+                    year=2023,
+                ).one().entitled_days_override,
+                Decimal("50.5"),
+            )
+
+        response = self.client.post(
+            f"/annual-leave/{employee_id}/balance",
+            data={
+                "year": "2026",
+                "scope": "legacy",
+                "legacy_days": "51",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("年假額度調整", page)
+        with self.app.app_context():
+            self.assertEqual(
+                EmployeeAnnualLeaveBalance.query.filter_by(
+                    employee_id=employee_id,
+                    year=2026,
+                ).one().entitled_days_override,
+                Decimal("15.0"),
+            )
+            self.assertEqual(
+                EmployeeAnnualLeaveBalance.query.filter_by(
+                    employee_id=employee_id,
+                    year=2023,
+                ).one().entitled_days_override,
+                Decimal("51.0"),
+            )
+
     def test_leave_work_injury_allowance_and_special_day_payroll_rules(self):
         sick_employee_id, _ = self.create_employee(
             "ASMTP",
@@ -5764,12 +6040,66 @@ class V1WorkflowTests(unittest.TestCase):
             "61119991",
         )
         general_upload = self.client.get(
-            f"/employees/{employee_id}/documents/new?scope=general"
+            f"/employees/{employee_id}/documents/new"
         ).get_data(as_text=True)
+        self.assertIn('value="staff_record"', general_upload)
+        self.assertIn('value="three_treasures"', general_upload)
         self.assertIn('value="cv"', general_upload)
         self.assertIn('value="other"', general_upload)
-        self.assertNotIn('value="bank_proof"', general_upload)
-        self.assertNotIn('value="signed_contract"', general_upload)
+        self.assertIn('value="signed_contract"', general_upload)
+        self.assertIn('value="bank_record"', general_upload)
+        specialist = self.client.get(
+            f"/employees/{employee_id}/documents/new?upload_type=bank_record",
+            follow_redirects=False,
+        )
+        self.assertEqual(specialist.status_code, 302)
+        self.assertIn("tab=personal", specialist.headers["Location"])
+        other_upload = self.client.get(
+            f"/employees/{employee_id}/documents/new?upload_type=other"
+        ).get_data(as_text=True)
+        self.assertIn('name="general_document_type_id"', other_upload)
+        with self.app.app_context():
+            general_type = ReferenceValue.query.join(ReferenceList).filter(
+                ReferenceList.code == "general_document_type",
+                ReferenceValue.code == "GENERAL_OTHER",
+            ).one()
+            general_type_id = general_type.id
+        response = self.client.post(
+            f"/employees/{employee_id}/documents/new",
+            data={
+                "category": "other",
+                "general_document_type_id": str(general_type_id),
+                "title": "一般測試附件",
+                "file": (
+                    io.BytesIO(pdf_bytes("general attachment")),
+                    "general-attachment.pdf",
+                ),
+            },
+            content_type="multipart/form-data",
+            follow_redirects=False,
+        )
+        self.assertEqual(response.status_code, 302)
+        with self.app.app_context():
+            general_document = EmployeeDocument.query.filter_by(
+                employee_id=employee_id,
+                category="other",
+            ).one()
+            self.assertEqual(
+                general_document.general_document_type_id,
+                general_type_id,
+            )
+        response = self.client.post(
+            f"/employees/{employee_id}/documents/new",
+            data={
+                "category": "change_evidence",
+                "file": (
+                    io.BytesIO(pdf_bytes("orphan evidence")),
+                    "orphan-evidence.pdf",
+                ),
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 400)
         response = self.client.post(
             f"/employees/{employee_id}/work-injuries",
             data={
@@ -5869,6 +6199,103 @@ class V1WorkflowTests(unittest.TestCase):
                     entity_type="EmployeeBankAccount",
                     entity_id=bank_id,
                 ).count() >= 3
+            )
+
+    def test_staff_record_updates_profile_and_effective_bank_history(self):
+        employee_id, _ = self.create_employee(
+            "HKR", "site_monthly", "職員表測試", "STAFF RECORD TEST"
+        )
+        document_id = self.upload_document(
+            employee_id,
+            "staff_record",
+            "staff-record-profile.pdf",
+        )
+        review_page = self.client.get(
+            f"/documents/{document_id}/review"
+        ).get_data(as_text=True)
+        for field_name in (
+            "residential_address",
+            "emergency_contact_name",
+            "emergency_contact_region_code",
+            "emergency_contact_phone",
+            "emergency_contact_relation",
+            "bank_effective_from",
+            "bank_currency",
+        ):
+            self.assertIn(f'name="{field_name}"', review_page)
+
+        invalid = self.client.post(
+            f"/documents/{document_id}/review",
+            data={
+                "title": "Staff Record profile",
+                "residential_address": "88 Staff Record Road",
+                "bank_name": "TEST BANK",
+                "bank_effective_from": "2026-02-01",
+            },
+        )
+        self.assertEqual(invalid.status_code, 200)
+        self.assertIn(
+            "銀行名稱及賬戶號碼必須同時填寫",
+            invalid.get_data(as_text=True),
+        )
+        with self.app.app_context():
+            self.assertEqual(
+                EmployeeBankAccount.query.filter_by(
+                    employee_id=employee_id
+                ).count(),
+                0,
+            )
+
+        response = self.client.post(
+            f"/documents/{document_id}/review",
+            data={
+                "title": "Staff Record profile",
+                "chinese_name": "職員表已核對",
+                "english_name": "STAFF RECORD CONFIRMED",
+                "gender": "female",
+                "mobile_region_code": "+852",
+                "mobile_number": "68889999",
+                "email": "staff.record@example.test",
+                "residential_address": "88 Staff Record Road",
+                "emergency_contact_name": "緊急聯絡人",
+                "emergency_contact_region_code": "+86",
+                "emergency_contact_phone": "13800138000",
+                "emergency_contact_relation": "家人",
+                "education_level": "大學",
+                "major": "工程",
+                "graduation_school": "測試大學",
+                "bank_effective_from": "2026-02-01",
+                "bank_currency": "HKD",
+                "bank_name": "TEST BANK",
+                "bank_account_no": "99887766",
+                "start_date": "2026-02-01",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        with self.app.app_context():
+            employee = db.session.get(Employee, employee_id)
+            bank = EmployeeBankAccount.query.filter_by(
+                employee_id=employee_id
+            ).one()
+            self.assertEqual(employee.chinese_name, "職員表已核對")
+            self.assertEqual(employee.residential_address, "88 Staff Record Road")
+            self.assertEqual(employee.emergency_contact_name, "緊急聯絡人")
+            self.assertEqual(employee.emergency_contact_region_code, "+86")
+            self.assertEqual(employee.emergency_contact_phone, "13800138000")
+            self.assertEqual(employee.emergency_contact_relation, "家人")
+            self.assertEqual(employee.current_period.start_date, date(2026, 2, 1))
+            self.assertEqual(bank.effective_from, date(2026, 2, 1))
+            self.assertEqual(bank.bank_name, "TEST BANK")
+            self.assertEqual(bank.account_no, "99887766")
+            self.assertEqual(bank.evidence_document_id, document_id)
+            self.assertEqual(employee.bank_name, "TEST BANK")
+            self.assertTrue(
+                AuditLog.query.filter_by(
+                    action="bank_account_added",
+                    entity_type="EmployeeBankAccount",
+                    entity_id=bank.id,
+                ).first()
             )
 
     def test_payroll_regression_matrix_for_leave_ot_ecall_and_export(self):

@@ -91,8 +91,7 @@ def mpf_data_item(employee, on_date):
     enrollment = current_mpf_on(employee, on_date)
     complete = bool(
         enrollment
-        and enrollment.scheme_id
-        and enrollment.member_account_no
+        and (enrollment.scheme_id or enrollment.is_exempt)
     )
     return {
         "code": "mpf",

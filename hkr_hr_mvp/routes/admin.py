@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from flask import (
@@ -16,11 +16,11 @@ from sqlalchemy import or_, text
 
 from models import AuditLog, User, db
 from tools.hr_core import write_audit
+from tools.datetime_utils import hong_kong_datetime
 from tools.releases import CURRENT_VERSION
 
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
-HONG_KONG_TIMEZONE = timezone(timedelta(hours=8), name="HKT")
 
 ROLE_OPTIONS = [
     ("admin", "Admin / 系統管理員"),
@@ -31,17 +31,6 @@ ROLE_OPTIONS = [
 def require_admin():
     if current_user.role != "admin":
         abort(403)
-
-
-def hong_kong_datetime(value):
-    if value is None:
-        return None
-    utc_value = (
-        value.replace(tzinfo=timezone.utc)
-        if value.tzinfo is None
-        else value
-    )
-    return utc_value.astimezone(HONG_KONG_TIMEZONE)
 
 
 def clear_user_references(user_id):

@@ -19,6 +19,7 @@ from flask import (
     url_for,
 )
 from flask_login import current_user, login_required
+from tools.i18n import TRANSLATIONS
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.workbook.properties import CalcProperties
@@ -88,6 +89,7 @@ FORMULA_NOTES = [
     "payroll.rule.work_injury",
     "payroll.rule.allowance",
     "payroll.rule.xlsx_formulas",
+    "payroll.rule.absence_rate",
     "payroll.rule.blockers",
 ]
 
@@ -290,10 +292,10 @@ def mpf_export_issues(row):
     enrollment = row.get("mpf_enrollment")
     if row["blockers"]:
         return issues
+    if enrollment and enrollment.is_exempt and not enrollment.scheme:
+        return issues
     if not enrollment or not enrollment.scheme:
         issues.append("未設定 MPF 計劃")
-    if not enrollment or not enrollment.member_account_no:
-        issues.append("未填寫 Member Account No.")
     if not row["employee"].english_name:
         issues.append("未填寫身份證英文姓名")
     if not employee_hkid(row["employee"]):
@@ -1263,6 +1265,11 @@ def monthly_values(result, line, first, row_number):
     employee = result.employee
     project = project_for_line(line)
     calculation = result.calculation_json or {}
+    allocated = bool(calculation.get('monthly_project_allocation'))
+    absence_days = (decimal_value(line.get('allocated_absence_days')) if allocated else
+                    (decimal_value(result.sick_leave_days) + decimal_value(result.work_injury_days) if first else Decimal('0')))
+    absence_amount = (decimal_value(line.get('sick_leave_amount')) + decimal_value(line.get('work_injury_amount')) if allocated else
+                      (decimal_value(result.sick_leave_amount) + decimal_value(result.work_injury_amount) if first else Decimal('0')))
     current_ot_hours = decimal_value(line.get("current_ot_hours"))
     previous_ot_hours = decimal_value(line.get("previous_ot_hours"))
     holiday_days = decimal_value(line.get("holiday_days"))
@@ -1335,21 +1342,9 @@ def monthly_values(result, line, first, row_number):
         20: float(ecall_amount(line)),
         27: float(ecall_amount(line, previous=True)),
         28: float(decimal_value(line.get("special_allowance_amount"))),
-        29: float(
-            decimal_value(result.sick_leave_days)
-            + decimal_value(result.work_injury_days)
-        ) if first else 0,
-        30: float(effective_rate(
-            decimal_value(result.sick_leave_amount)
-            + decimal_value(result.work_injury_amount),
-            decimal_value(result.sick_leave_days)
-            + decimal_value(result.work_injury_days),
-            0,
-        )) if first else 0,
-        31: float(
-            decimal_value(result.sick_leave_amount)
-            + decimal_value(result.work_injury_amount)
-        ) if first else 0,
+        29: float(absence_days),
+        30: float(effective_rate(absence_amount, absence_days, 0)),
+        31: float(absence_amount),
         32: float(overpay),
         33: float(underpay),
         34: float(decimal_value(line.get("adjustment_amount"))),
@@ -1479,6 +1474,7 @@ def daily_values(result, line, first, row_number):
 
 
 def monthly_formulas(result, line, first, row_number, last_row, values):
+    # Keep the effective sick/injury rate from monthly_values, not the ordinary daily rate.
     working_days = decimal_value(line.get("working_days"))
     current_ot_hours = decimal_value(line.get("current_ot_hours"))
     previous_ot_hours = decimal_value(line.get("previous_ot_hours"))
@@ -1504,7 +1500,6 @@ def monthly_formulas(result, line, first, row_number, last_row, values):
             base_rate,
             previous=True,
         ),
-        30: f"=K{row_number}",
         31: f"=ROUND(AC{row_number}*AD{row_number},2)",
         36: (
             f"=ROUND(M{row_number}+P{row_number}+S{row_number}"
@@ -1522,7 +1517,10 @@ def monthly_formulas(result, line, first, row_number, last_row, values):
     month_start = parse_year_month(result.run.year_month)[0]
     month_days = Decimal(calendar.monthrange(month_start.year, month_start.month)[1])
     standard_rate = decimal_value(values[10]) / month_days
-    if formula_matches(line.get("base_amount"), standard_rate, working_days):
+    allocated = bool((result.calculation_json or {}).get('monthly_project_allocation'))
+    base_matches = (rounded(line.get('base_amount')) == rounded(standard_rate * working_days)
+                    if allocated else formula_matches(line.get("base_amount"), standard_rate, working_days))
+    if base_matches:
         formulas[11] = f"=J{row_number}/$G$5"
         base_rate = standard_rate
 
@@ -1558,6 +1556,7 @@ def monthly_formulas(result, line, first, row_number, last_row, values):
 
 
 def daily_formulas(result, line, first, row_number, last_row, values):
+    # Keep the effective sick/injury rate from daily_values, including mixed pay factors.
     working_days = decimal_value(line.get("working_days"))
     current_ot_hours = decimal_value(line.get("current_ot_hours"))
     previous_ot_hours = decimal_value(line.get("previous_ot_hours"))
@@ -1584,7 +1583,6 @@ def daily_formulas(result, line, first, row_number, last_row, values):
             base_rate,
             previous=True,
         ),
-        29: f"=J{row_number}",
         30: f"=ROUND(AB{row_number}*AC{row_number},2)",
         35: (
             f"=ROUND(L{row_number}+O{row_number}+R{row_number}"
@@ -1684,7 +1682,7 @@ def build_group_workbook(run, group):
         for column, formula in formulas.items():
             sheet.cell(index, column).value = formula
         last_column = 43 if group == "site_daily" else 44
-        warnings = "；".join(result.warnings_json or [])
+        warnings = "；".join(TRANSLATIONS["zh-Hant"].get(item, item) for item in (result.warnings_json or []))
         if decimal_value(line.get("ot_divisor")) == Decimal("10"):
             warnings = "；".join(
                 item for item in [warnings, "HA 日工 OT 除數 10"] if item
@@ -2086,7 +2084,8 @@ def export_mpf_contributions():
             row
             for row in payroll_ready
             if not row.get("mpf_enrollment")
-            or not row["mpf_enrollment"].scheme
+            or (not row["mpf_enrollment"].scheme
+                and not row["mpf_enrollment"].is_exempt)
         ]
         if unassigned:
             names = "、".join(row["employee"].employee_no for row in unassigned[:8])

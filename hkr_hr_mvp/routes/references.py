@@ -21,6 +21,7 @@ from models import (
     EmployeeAssignmentPosition,
     EmployeeCertificate,
     EmployeeBankAccount,
+    EmployeeDocument,
     EmployeeMpfEnrollment,
     EmployeeSalary,
     EmployeeVisa,
@@ -29,6 +30,7 @@ from models import (
     PayrollProjectLine,
     ReferenceList,
     ReferenceValue,
+    SalaryRecord,
     WorkProject,
     WorkCalendarHoliday,
     db,
@@ -105,6 +107,10 @@ REFERENCE_NAV_GROUPS = (
     (
         "finance_contact",
         ("bank", "currency", "phone_region"),
+    ),
+    (
+        "documents",
+        ("general_document_type",),
     ),
 )
 
@@ -223,6 +229,10 @@ def usage_query(value):
             EmployeeCertificate,
             EmployeeCertificate.certificate_type_id,
         ),
+        "general_document_type": (
+            EmployeeDocument,
+            EmployeeDocument.general_document_type_id,
+        ),
     }
     if code in mapping:
         model, column = mapping[code]
@@ -240,6 +250,8 @@ def usage_query(value):
 
 def usage_count(value):
     code = value.reference_list.code
+    if code == 'payroll_entity':
+        return usage_query(value).count() + SalaryRecord.query.filter_by(payroll_entity_id=value.id).count()
     if code == "bank":
         return (
             Employee.query.filter(Employee.bank_name == value.display_name).count()
@@ -260,6 +272,7 @@ def usage_count(value):
             + EmployeeAllowance.query.filter(
                 EmployeeAllowance.currency == value.code
             ).count()
+            + SalaryRecord.query.filter_by(currency=value.code).count()
         )
     query = usage_query(value)
     return query.count() if query is not None else 0
@@ -316,6 +329,12 @@ def current_reference_employee_ids(value, employees, on_date):
             for item in employee.certificates
         ):
             ids.add(employee.id)
+        elif code == "general_document_type" and any(
+            item.status == "active"
+            and item.general_document_type_id == value.id
+            for item in employee.documents
+        ):
+            ids.add(employee.id)
         elif code == "bank" and (
             employee.bank_name == value.display_name
             or (
@@ -338,6 +357,11 @@ def current_reference_employee_ids(value, employees, on_date):
 
 def historical_reference_employee_ids(value):
     code = value.reference_list.code
+    if code in {'payroll_entity','currency'}:
+        query = usage_query(value)
+        ids = {row.employee_id for row in query.all()} if query is not None else set()
+        column = SalaryRecord.payroll_entity_id if code == 'payroll_entity' else SalaryRecord.currency
+        return ids | {row.employee_id for row in SalaryRecord.query.filter(column == (value.id if code == 'payroll_entity' else value.code)).all()}
     if code == "bank":
         return {
             row.employee_id

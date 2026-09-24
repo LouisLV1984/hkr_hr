@@ -67,6 +67,7 @@ from tools.hr_core import (
 )
 from tools.text_search import chinese_search_variants
 from tools.security import UploadValidationError, validate_uploaded_file
+from tools.project_allocation import ProjectAllocationError, update_allocation_from_form
 
 
 attendance_bp = Blueprint("attendance", __name__)
@@ -360,6 +361,7 @@ def linked_absences_for_attendance(employee, year_month):
 
 def summary_snapshot(summary):
     return {
+        "monthly_project_allocation": summary.monthly_project_allocation,
         "employee_id": summary.employee_id,
         "year_month": summary.year_month,
         "status": summary.status,
@@ -761,6 +763,10 @@ def attendance_home():
         else {}
     )
     linked_absences = linked_absences_for_attendance(selected_employee, year_month)
+    from tools.absence_integrity import absence_data_issues, absences_changed_since_attendance
+    absence_issues = absence_data_issues(selected_employee, special_date_start, month_end) if selected_employee else []
+    absence_recheck = bool(selected_employee and absences_changed_since_attendance(
+        selected_employee, selected_summary, special_date_start, month_end))
     linked_absence_counts = [
         (kind, sum(1 for item in linked_absences if item["kind"] == kind))
         for kind in ("annual", "sick", "unpaid", "work_injury")
@@ -814,6 +820,8 @@ def attendance_home():
         segment_prefill_sources=segment_prefill_sources,
         segment_special_days=segment_special_days,
         linked_absences=linked_absences,
+        absence_issues=absence_issues,
+        absence_recheck=absence_recheck,
         linked_absence_counts=linked_absence_counts,
         previous_summary=previous_summary,
         duplicate_document=duplicate_document,
@@ -1251,26 +1259,56 @@ def validate_attendance_segment_totals(year_month):
     return None
 
 
-def void_comp_credits_for_summary(summary):
-    affected_records = {}
-    for special_day in summary.special_days:
-        if special_day.comp_leave_credit:
-            credit = special_day.comp_leave_credit
+def replace_summary_segments(summary, replace=True):
+    """Preserve identical credits; reconcile genuine removals AFTER replacements exist."""
+    if replace:
+        update_allocation_from_form(summary, request.form)
+    reusable = {}
+    for special_day in list(summary.special_days):
+        credit = special_day.comp_leave_credit
+        if credit:
+            key = (credit.employee_id, special_day.work_date, special_day.session, special_day.days)
+            if credit.status == "active":
+                reusable[key] = credit
+            if replace:
+                credit.source_special_day = None
+        if replace:
+            db.session.delete(special_day)
+    if replace:
+        for segment in list(summary.segments):
+            db.session.delete(segment)
+    db.session.flush()
+    summary._reusable_comp_credits = reusable
+    try:
+        if replace:
+            for prefix in ("current_1_20", "current_21_end_forecast", "previous_21_end", "previous_21_end_forecast"):
+                add_segments(summary, prefix)
+        affected = {}
+        for credit in reusable.values():
             credit.status = "voided"
             for allocation in credit.allocations:
-                if (
-                    allocation.leave_record
-                    and allocation.leave_record.status == "active"
-                ):
-                    affected_records[allocation.leave_record.id] = (
-                        allocation.leave_record
-                    )
-    # A corrected attendance record may remove a credit that has already been
-    # consumed. Rebuild those annual-leave allocations against the remaining
-    # comp/legacy/annual buckets so no consumption silently disappears.
-    for record in affected_records.values():
-        clear_leave_allocations(record)
-        allocate_annual_leave_with_comp(record, as_of=record.leave_date)
+                record = allocation.leave_record
+                if record and record.status == "active":
+                    affected[record.id] = record
+        db.session.flush()
+        records = sorted(affected.values(), key=lambda row: (row.leave_date, row.id))
+        for record in records:
+            clear_leave_allocations(record)
+        db.session.flush()
+        for record in records:
+            db.session.expire(record.employee, ["comp_leave_credits"])
+            from tools.hr_core import annual_leave_buckets, comp_leave_credit_remaining
+            zero = parse_decimal("0")
+            available = sum((comp_leave_credit_remaining(credit)
+                             for credit in record.employee.comp_leave_credits
+                             if credit.status == "active" and credit.source_date <= record.leave_date), zero)
+            available += sum((max(zero, bucket["remaining"]) for bucket in annual_leave_buckets(
+                record.employee, as_of=record.leave_date, include_expired=False)), zero)
+            if available < record.days:
+                raise ValueError("Changed compensation credit would overdraw annual leave.")
+            allocate_annual_leave_with_comp(record, as_of=record.leave_date)
+    finally:
+        del summary._reusable_comp_credits
 
 
 def add_special_days(
@@ -1300,6 +1338,11 @@ def add_special_days(
         db.session.add(special_day)
         db.session.flush()
         if handling == "comp_leave":
+            key = (summary.employee_id, work_date, session, days)
+            existing = getattr(summary, "_reusable_comp_credits", {}).pop(key, None)
+            if existing:
+                existing.source_special_day = special_day
+                continue
             db.session.add(
                 EmployeeCompLeaveCredit(
                     employee_id=summary.employee_id,
@@ -1575,16 +1618,19 @@ def save_item(item_id):
     summary.confirmed_by = current_user.id
     summary.confirmed_at = datetime.utcnow()
     summary.remarks = request.form.get("remarks", "").strip() or None
-    void_comp_credits_for_summary(summary)
-    for segment in list(summary.segments):
-        db.session.delete(segment)
-    for special_day in list(summary.special_days):
-        db.session.delete(special_day)
-    db.session.flush()
-    add_segments(summary, "current_1_20")
-    add_segments(summary, "current_21_end_forecast")
-    add_segments(summary, "previous_21_end")
-    add_segments(summary, "previous_21_end_forecast")
+    try:
+        replace_summary_segments(summary)
+    except ProjectAllocationError as exc:
+        employee_id, month = summary.employee_id, summary.year_month
+        db.session.rollback()
+        flash(str(exc), "error")
+        return redirect(url_for("attendance.attendance_home", month=month, employee_id=employee_id,
+                                view="collection", batch_id=item.batch_id, item_id=item.id))
+    except ValueError:
+        employee_id, month = summary.employee_id, summary.year_month
+        db.session.rollback()
+        flash("leave.comp_reconcile_insufficient", "error")
+        return redirect(url_for("attendance.attendance_home", month=month, employee_id=employee_id))
 
     item.status = "saved"
     item.employee = employee
@@ -1596,6 +1642,7 @@ def save_item(item_id):
         summary.id,
         employee_id=employee.id,
         detail=f"{year_month} 考勤已錄入",
+        after=summary_snapshot(summary),
     )
     db.session.commit()
     next_item = next(
@@ -1738,16 +1785,18 @@ def correct_summary(summary_id):
         item.employee = employee
         item.year_month = target_year_month
         item.status = "saved"
-    void_comp_credits_for_summary(summary)
-    for segment in list(summary.segments):
-        db.session.delete(segment)
-    for special_day in list(summary.special_days):
-        db.session.delete(special_day)
-    db.session.flush()
-    add_segments(summary, "current_1_20")
-    add_segments(summary, "current_21_end_forecast")
-    add_segments(summary, "previous_21_end")
-    add_segments(summary, "previous_21_end_forecast")
+    try:
+        replace_summary_segments(summary)
+    except ProjectAllocationError as exc:
+        employee_id, month = summary.employee_id, summary.year_month
+        db.session.rollback()
+        flash(str(exc), "error")
+        return redirect(url_for("attendance.attendance_home", month=month, employee_id=employee_id))
+    except ValueError:
+        employee_id, month = summary.employee_id, summary.year_month
+        db.session.rollback()
+        flash("leave.comp_reconcile_insufficient", "error")
+        return redirect(url_for("attendance.attendance_home", month=month, employee_id=employee_id))
     db.session.flush()
     write_audit(
         "attendance_corrected",
@@ -1795,6 +1844,13 @@ def correct_summary(summary_id):
 def withdraw_summary(summary_id):
     summary = db.get_or_404(AttendanceMonthlySummary, summary_id)
     before = summary_snapshot(summary)
+    try:
+        replace_summary_segments(summary, replace=False)
+    except ValueError:
+        employee_id, month = summary.employee_id, summary.year_month
+        db.session.rollback()
+        flash("leave.comp_reconcile_insufficient", "error")
+        return redirect(url_for("attendance.attendance_home", month=month, employee_id=employee_id))
     summary.status = "voided"
     if summary.document and summary.document.status == "active":
         summary.document.status = "voided"

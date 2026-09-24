@@ -27,6 +27,7 @@ ADRs record accepted design tradeoffs. They explain why the system follows a dir
 | [ADR-0021](0021-daily-sunday-attendance-and-guided-prefill.md) | Accepted | Count daily Sunday work as ordinary attendance and guide four-part calendar prefills |
 | [ADR-0022](0022-daily-prefill-and-official-holiday-import.md) | Accepted | Exclude Sunday and known absences from daily prefills and import Hong Kong official holiday calendars on demand |
 | [ADR-0023](0023-payroll-group-holiday-calendars.md) | Accepted | Apply statutory holidays to Site staff and general holidays to Management/Head Office |
+| [ADR-0024](0024-unified-profile-document-intake-and-owned-record-routing.md) | Accepted | Use one profile document gateway and route structured evidence to its owning record |
 
 Stable terms and current facts are in [`../../../CONTEXT.md`](../../../CONTEXT.md). Executable rules are in [`../../AGENTS.md`](../../AGENTS.md).
 

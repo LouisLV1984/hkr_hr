@@ -8,7 +8,7 @@
   </div>
   <form class="stack-form" method="get">
     <label><span>{{ t("common.month") }}</span><input type="month" name="month" value="{{ year_month }}"></label>
-    <label><span>{{ t("common.search") }}</span><input type="search" name="q" value="{{ request.args.get('q', '') }}" placeholder="{{ t('employees.employee_no') }} / {{ t('employees.chinese_name') }}"></label>
+    <label><span>{{ t("common.search") }}</span><input type="search" name="q" value="{{ request.args.get('q', '') }}" placeholder="{{ t('employees.employee_no') }} / {{ t('employees.chinese_name') }}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
     <label><span>{{ t("employees.readiness_filter") }}</span><select name="readiness">
       <option value="" {% if not readiness_filter %}selected{% endif %}>{{ t("common.all") }}</option>
       <option value="needs_action" {% if readiness_filter == 'needs_action' %}selected{% endif %}>{{ t("employees.needs_action") }}</option>

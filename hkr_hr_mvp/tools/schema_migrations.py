@@ -3,8 +3,9 @@ from sqlalchemy import inspect, text
 from models import SystemSetting, db
 
 
-SCHEMA_VERSION = "2.5"
+SCHEMA_VERSION = "2.8"
 REQUIRED_V1_TABLES = {
+    "employee_salary_records",
     "employees",
     "employee_assignments",
     "employee_salaries",
@@ -34,6 +35,7 @@ ADDITIVE_V1_MIGRATIONS = {
     },
     "employee_documents": {
         "content_sha256": "VARCHAR(64)",
+        "general_document_type_id": "INTEGER",
     },
     "attendance_batch_items": {
         "content_sha256": "VARCHAR(64)",
@@ -45,6 +47,7 @@ ADDITIVE_V1_MIGRATIONS = {
         "other_allowance_amount": "NUMERIC(14, 2) NOT NULL DEFAULT 0",
     },
     "attendance_monthly_summaries": {
+        "monthly_project_allocation": "JSON",
         "special_day_handling": "VARCHAR(20) NOT NULL DEFAULT 'pay'",
     },
     "attendance_special_days": {
@@ -81,6 +84,7 @@ ADDITIVE_V1_MIGRATIONS = {
         "extended_until": "DATE",
     },
     "employee_annual_leave_records": {
+        "leave_units_json": "JSON",
         "end_date": "DATE",
         "start_session": "VARCHAR(20) NOT NULL DEFAULT 'am'",
         "end_session": "VARCHAR(20) NOT NULL DEFAULT 'pm'",

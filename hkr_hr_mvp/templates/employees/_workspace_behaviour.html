@@ -1,0 +1,18 @@
+<script type="application/json" data-profile-workspace>{{ {
+  'discard': t('workspace.discard'), 'saving': t('workspace.saving'),
+  'otherChanges': t('workspace.other_changes'), 'sessionExpired': t('workspace.session_expired'),
+  'uncertain': t('workspace.uncertain'), 'failed': t('workspace.failed'),
+  'effectivePeriod': t('workspace.effective_period'), 'impactPrefix': t('workspace.impact_prefix'),
+  'leaveImpact': t('workspace.leave_impact'), 'probationImpact': t('workspace.probation_impact'),
+  'payImpact': t('workspace.pay_impact'), 'historyImpact': t('workspace.history_impact'),
+  'correct': t('workspace.correct'), 'replace': t('workspace.replace'),
+  'evidence': t('workspace.evidence'), 'void': t('workspace.void'),
+  'add': t('workspace.add'), 'renew': t('workspace.renew')
+}|tojson }}</script>
+<script src="{{ url_for('static', filename='js/profile-workspace.js', v=current_version) }}"></script>
+<script>
+document.querySelectorAll('input[name="mpf_exempt"]').forEach((input) => {
+  const sync = () => { const select = input.form?.querySelector('[name="mpf_selection"]'); if (select) select.required = !input.checked; };
+  input.addEventListener('change', sync); sync();
+});
+</script>

@@ -1,0 +1,8 @@
+<button class="mini-btn" type="button" data-dialog-open="leave-evidence-{{ item.id }}">{{ t('profile.supplement_evidence') }}</button>
+<dialog class="app-dialog record-editor-dialog" id="leave-evidence-{{ item.id }}">
+  <form class="dialog-panel record-editor-form" method="post" enctype="multipart/form-data" action="{{ url_for('employees.supplement_leave_evidence', record_id=item.id) }}">
+    <div class="section-head record-editor-head"><h2>{{ t('profile.supplement_evidence') }} · {{ t('leave.type_' ~ item.leave_type) }}</h2><button type="button" class="icon-btn" data-dialog-close>×</button></div>
+    <div class="record-editor-body"><p>{{ leave_date_label(item) }} · {{ item.days }} {{ t('leave.days') }}</p><p class="form-note">{{ t('profile.evidence_only') }}</p><label><span>{{ t('common.evidence') }}</span><input type="file" name="evidence" required accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx"></label></div>
+    <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t('common.cancel') }}</button><button class="primary-btn" type="submit">{{ t('common.save') }}</button></div>
+  </form>
+</dialog>

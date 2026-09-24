@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 
 from models import (
@@ -85,6 +85,87 @@ def employee_payroll_holidays(employee, start_date, end_date):
     return _employee_holidays(employee, start_date, end_date)
 
 
+def leave_context_text(employee, start=None, end=None, language="zh-Hant"):
+    """Label effective schedules without confusing contractual and leave workweeks."""
+    from datetime import datetime
+    from tools.datetime_utils import HONG_KONG_TIMEZONE
+    from tools.i18n import TRANSLATIONS, OPTION_TRANSLATION_KEYS, normalize_language
+    messages = TRANSLATIONS[normalize_language(language)]
+    start = start or datetime.now(HONG_KONG_TIMEZONE).date()
+    end = end or start
+    if end < start or (end - start).days > 3660:
+        raise ValueError("leave.invalid_range")
+    periods = []
+    day = start
+    while day <= end:
+        assignment = current_assignment_on(employee, day)
+        group = assignment.payroll_group if assignment else None
+        week = assignment_workweek_days(assignment) if assignment and group else None
+        key = (group, week)
+        if periods and periods[-1][0] == key:
+            periods[-1][2] = day
+        else:
+            periods.append([key, day, day])
+        day += timedelta(days=1)
+    lines = [f"{employee.employee_no} · {employee.display_name}"]
+    for (group, week), first, last in periods:
+        label = messages.get(OPTION_TRANSLATION_KEYS['payroll_group'].get(group), messages['common.not_set'])
+        dates = first.isoformat() if first == last else f"{first.isoformat()} – {last.isoformat()}"
+        rule = (messages['leave.context_workweek'].format(week=format(week.normalize(), 'f'), leave_week=5 if week < 6 else 6)
+                if week is not None else messages['leave.missing_schedule'])
+        lines.append(f"{dates} ｜ {label} ｜ {rule}")
+    return '\n'.join(lines)
+
+
+def leave_day_units(employee, start, end, start_session="am", end_session="pm"):
+    """Company leave calendar; deliberately NOT the contractual attendance calendar."""
+    from tools.hr_core import annual_leave_days_between
+    if annual_leave_days_between(start, end, start_session, end_session) is None:
+        raise ValueError("leave.invalid_range")
+    if (end - start).days > 3660:
+        raise ValueError("leave.invalid_range")
+    holidays = employee_payroll_holidays(employee, start, end)
+    result = {}
+    day = start
+    while day <= end:
+        assignment = current_assignment_on(employee, day)
+        if not assignment or not assignment.region_id or not assignment.payroll_group:
+            raise ValueError("leave.missing_schedule")
+        value = Decimal("1")
+        if day == start and start_session == "pm":
+            value -= Decimal("0.5")
+        if day == end and end_session == "am":
+            value -= Decimal("0.5")
+        if (day in holidays or day.weekday() == 6
+                or (day.weekday() == 5 and assignment_workweek_days(assignment) < 6)):
+            value = Decimal("0")
+        result[day] = value
+        day += timedelta(days=1)
+    return result
+
+
+def saved_leave_units(record):
+    """One persisted date distribution feeds payroll, attendance and integrity checks."""
+    if record.leave_units_json is not None:
+        return {date.fromisoformat(key): Decimal(value)
+                for key, value in record.leave_units_json.items()}
+    result = {}
+    day, end = record.leave_date, record.end_date or record.leave_date
+    while day <= end:
+        value = Decimal("1")
+        if day == record.leave_date and record.start_session == "pm":
+            value -= Decimal("0.5")
+        if day == end and record.end_session == "am":
+            value -= Decimal("0.5")
+        result[day] = max(Decimal("0"), value)
+        day += timedelta(days=1)
+    return result
+
+
+def saved_leave_days(record):
+    return sum(saved_leave_units(record).values(), Decimal("0"))
+
+
 def scheduled_work_units(assignment, day):
     payroll_group = assignment.payroll_group if assignment else "site_daily"
     if payroll_group == "site_daily":
@@ -164,16 +245,9 @@ def employee_nonattendance_units(employee, start_date, end_date):
         record_end = record.end_date or record.leave_date
         if record.leave_date > end_date or record_end < start_date:
             continue
-        day = max(start_date, record.leave_date)
-        last_day = min(end_date, record_end)
-        while day <= last_day:
-            value = Decimal("1")
-            if day == record.leave_date and record.start_session == "pm":
-                value -= Decimal("0.5")
-            if day == record_end and record.end_session == "am":
-                value -= Decimal("0.5")
-            units[day] = min(Decimal("1"), units[day] + max(Decimal("0"), value))
-            day += timedelta(days=1)
+        for day, value in saved_leave_units(record).items():
+            if start_date <= day <= end_date:
+                units[day] = min(Decimal("1"), units[day] + value)
     for injury in employee.work_injury_periods:
         if injury.status != "active":
             continue

@@ -5,11 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}{{ t("app.title") }}{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css', v=current_version) }}">
 </head>
 <body>
   {% set endpoint = request.endpoint or "" %}
   {% set module = endpoint.split(".")[0] %}
+  {% if module == 'salary_records' %}{% set module = 'payroll' %}{% endif %}
   {% set attendance_detail_mode = module == "attendance" and (request.args.get("item_id") or request.args.get("summary_id")) %}
   {% set attendance_view = "collection" if module == "attendance" and (request.args.get("batch_id") or attendance_detail_mode) else request.args.get("view", "details") %}
   {% set employee_list_mode = endpoint == "employees.list_employees" %}
@@ -124,6 +125,9 @@
           {% elif module == "payroll" %}
             <section class="context-nav-group">
               <div class="context-nav-title">{{ t("nav.section.payroll_exports") }}</div>
+              <a class="context-nav-item {% if endpoint.startswith('salary_records.') %}active{% endif %}" href="{{ url_for('salary_records.index') }}">
+                <strong>{{ t('salary_record.title') }}</strong><span>{{ t('salary_record.subtitle') }}</span>
+              </a>
               <a class="context-nav-item {% if endpoint == 'payroll.attendance_payroll' %}active{% endif %}"
                   href="{{ url_for('payroll.attendance_payroll', year_month=operating_month) }}"
                  {% if endpoint == 'payroll.attendance_payroll' %}aria-current="page"{% endif %}>
@@ -225,10 +229,10 @@
     document.querySelectorAll("form").forEach((form) => {
       form.setAttribute("autocomplete", "off");
     });
-    document.querySelectorAll("input, textarea").forEach((control, index) => {
-      if (!control.hasAttribute("autocomplete")) {
-        control.setAttribute("autocomplete", `hkr-disabled-${index}`);
-      }
+    document.querySelectorAll('input[type="search"], [data-no-browser-history]').forEach((control) => {
+      control.setAttribute("autocomplete", "off");
+      control.setAttribute("autocapitalize", "off");
+      control.setAttribute("spellcheck", "false");
     });
     document.querySelectorAll('input[type="month"]:not([hidden])').forEach((input) => {
       if (input.closest(".month-input-shell")) return;
@@ -355,8 +359,28 @@
     document.querySelectorAll("[data-dialog-open]").forEach((button) => {
       button.addEventListener("click", () => openAppDialog(button));
     });
+    document.querySelectorAll('input[type="file"]').forEach((input) => {
+      if (!input.accept) input.accept = '.pdf,.jpg,.jpeg,.png,.docx,.xlsx';
+      input.tabIndex = -1;
+      input.setAttribute('aria-hidden', 'true');
+      const fieldLabel = input.closest('label')?.querySelector('span');
+      if (input.required && fieldLabel && !fieldLabel.textContent.includes('*')) fieldLabel.textContent += ' *';
+      const picker = document.createElement('div'); picker.className = 'unified-file-picker';
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'mini-btn';
+      button.textContent = {{ t('profile.select_file')|tojson }};
+      const name = document.createElement('span'); name.setAttribute('aria-live', 'polite'); name.textContent = {{ t('profile.no_file')|tojson }};
+      const hint = document.createElement('small'); hint.className = 'form-note'; hint.textContent = {{ t('profile.file_hint')|tojson }};
+      input.before(picker); picker.append(input, button, name); picker.after(hint);
+      button.addEventListener('click', () => input.click());
+      input.addEventListener('change', () => { name.textContent = Array.from(input.files || []).map(file => file.name).join(', ') || {{ t('profile.no_file')|tojson }}; });
+      input.addEventListener('invalid', (event) => { event.preventDefault(); name.textContent = input.validationMessage; button.focus(); });
+    });
+    document.querySelectorAll('label select').forEach((select) => {
+      const label = select.closest('label')?.querySelector('.field-label-row');
+      if (label && !select.getAttribute('aria-label')) select.setAttribute('aria-label', label.textContent.trim());
+    });
     document.querySelectorAll("[data-dialog-close]").forEach((button) => {
-      if (!button.getAttribute("aria-label")) button.setAttribute("aria-label", "{{ t('common.close') }}");
+      if (!button.getAttribute("aria-label") && button.textContent.trim() === "×") button.setAttribute("aria-label", "{{ t('common.close') }}");
       button.addEventListener("click", () => button.closest("dialog")?.close());
     });
     document.querySelectorAll("dialog.app-dialog").forEach((dialog) => {
@@ -383,6 +407,62 @@
       }, 4000);
     });
   </script>
+  <script>
+    document.querySelectorAll('[data-leave-days]').forEach((output) => {
+      const form = output.closest('form');
+      const sourceContext = document.querySelector('[data-leave-employee-context]');
+      const context = sourceContext ? sourceContext.cloneNode(true) : null;
+      if (context) {
+        context.removeAttribute('data-leave-employee-context');
+        context.setAttribute('data-leave-form-context', '');
+        context.setAttribute('aria-live', 'polite');
+        form.querySelector('.record-editor-body').before(context);
+      }
+      let sequence = 0;
+      const feedback = document.createElement('small');
+      feedback.setAttribute('aria-live', 'polite');
+      output.after(feedback);
+      const update = async () => {
+        const current = ++sequence;
+        const start = form.elements.start_date.value;
+        const end = form.elements.end_date.value;
+        output.value = '';
+        feedback.textContent = '';
+        if (context) context.textContent = sourceContext.textContent;
+        if (!start) return;
+        const query = new URLSearchParams();
+        ['start_date', 'end_date', 'start_session', 'end_session'].forEach(name => query.set(name, form.elements[name].value));
+        if (!end) { query.set('end_date', start); query.set('end_session', 'pm'); }
+        try {
+          const response = await fetch(output.dataset.leavePreviewUrl + '?' + query, {headers: {'Accept': 'application/json'}});
+          const result = await response.json();
+          if (current !== sequence) return;
+          if (!response.ok) {
+            feedback.textContent = result.error;
+            if (context) context.textContent = result.error;
+            return;
+          }
+          if (context) context.textContent = result.context_text;
+          if (!end) return;
+          output.value = result.days;
+          if (Number(result.days) === 0) feedback.textContent = {{ t('leave.zero_days')|tojson }};
+          else if (result.excluded.length) feedback.textContent = {{ t('leave.excluded_dates')|tojson }} + result.excluded.join('、');
+        } catch (_) {
+          if (current === sequence) {
+            feedback.textContent = {{ t('leave.preview_failed')|tojson }};
+            if (context) context.textContent = feedback.textContent;
+          }
+        }
+      };
+      ['start_date', 'end_date', 'start_session', 'end_session'].forEach((name) => {
+        form.elements[name].addEventListener('change', update);
+      });
+      update();
+    });
+  </script>
   {% block scripts %}{% endblock %}
+  {% if request.endpoint in ('employees.new_employee', 'employees.view_employee', 'documents.new_document', 'documents.review_document', 'leave.leave_home') %}
+    {% include 'employees/_workspace_behaviour.html' %}
+  {% endif %}
 </body>
 </html>

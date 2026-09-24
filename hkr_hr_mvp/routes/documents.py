@@ -33,6 +33,7 @@ from models import (
     EmployeeSalary,
     EmployeeVisa,
     GeneratedContract,
+    ReferenceList,
     ReferenceValue,
     db,
 )
@@ -46,6 +47,7 @@ from tools.hr_core import (
     file_sha256,
     find_duplicate_employee_document,
     format_money,
+    masked_bank_account,
     parse_bool,
     parse_date,
     reference_map,
@@ -55,10 +57,34 @@ from tools.hr_core import (
     write_audit,
 )
 from tools.security import UploadValidationError, validate_uploaded_file
+from tools.profile_integrity import identity_conflict, validate_credential_dates
+from tools.hr_core import employee_audit_snapshot, normalize_identity_number
 
 
 documents_bp = Blueprint("documents", __name__)
 PENDING_DUPLICATE_MAX_AGE = 60 * 60
+DIRECT_UPLOAD_CATEGORIES = {
+    code: DOCUMENT_CATEGORIES[code]
+    for code in (
+        "three_treasures",
+        "staff_record",
+        "signed_contract",
+        "cv",
+        "other",
+    )
+}
+SPECIALIST_UPLOAD_CHOICES = (
+    ("bank_record", "employee.current_bank", "personal"),
+    ("credential_record", "employee.credentials", "credentials"),
+    ("employment_record", "employee.employment", "employment"),
+    ("probation_record", "employee.current_probation", "employment_status"),
+    ("leave_record", "leave.title", "leave"),
+    ("work_injury_record", "work_injury.title", "work_injury"),
+    ("attendance_record", "attendance.title", "attendance"),
+    ("termination_record", "employee.termination", "employment_status"),
+    ("name_change_record", "employee.name_change_evidence", "personal"),
+    ("salary_record_entry", "salary_record.title", "salary_records"),
+)
 
 
 def form_int(name):
@@ -85,15 +111,19 @@ def safe_send(
     )
 
 
-def replace_active_category(employee, category, new_document, reason):
-    for document in EmployeeDocument.query.filter_by(
-        employee_id=employee.id,
-        category=category,
-        status="active",
-    ).filter(EmployeeDocument.id != new_document.id):
-        document.status = "replaced"
-        document.replaced_by_document_id = new_document.id
-        document.replacement_reason = reason
+def replace_one_document(old_document, new_document, reason):
+    if (old_document.status != "active" or not reason or
+            old_document.employee_id != new_document.employee_id or
+            old_document.category != new_document.category or
+            old_document.general_document_type_id != new_document.general_document_type_id):
+        abort(400)
+    old_document.status = "replaced"
+    old_document.replaced_by_document_id = new_document.id
+    old_document.replacement_reason = reason
+    relink_document_references(old_document, new_document)
+    write_audit("document_replaced", "EmployeeDocument", old_document.id,
+                employee_id=old_document.employee_id, detail=reason,
+                before={"status": "active"}, after={"status": "replaced", "replaced_by_document_id": new_document.id})
 
 
 def pending_duplicate_root():
@@ -132,24 +162,155 @@ def validated_upload_or_flash(uploaded, allowed_extensions=None):
         return None
 
 
+def general_document_types():
+    return (
+        ReferenceValue.query.join(ReferenceList)
+        .filter(
+            ReferenceList.code == "general_document_type",
+            ReferenceValue.active.is_(True),
+        )
+        .order_by(ReferenceValue.display_name.asc())
+        .all()
+    )
+
+
+def selected_general_document_type(field_name):
+    item = db.session.get(ReferenceValue, form_int(field_name))
+    if (
+        not item
+        or not item.active
+        or item.reference_list.code != "general_document_type"
+    ):
+        return None
+    return item
+
+
+def specialist_upload_target(employee, upload_type):
+    choice = next(
+        (item for item in SPECIALIST_UPLOAD_CHOICES if item[0] == upload_type),
+        None,
+    )
+    if not choice:
+        return None
+    destination = choice[2]
+    if destination == 'salary_records':
+        return url_for('salary_records.index', employee_id=employee.id,
+                       entity_id=employee.current_assignment.payroll_entity_id if employee.current_assignment else None)
+    if destination == "leave":
+        return url_for("leave.leave_home", employee_id=employee.id)
+    if destination == "work_injury":
+        return url_for(
+            "leave.leave_home",
+            view="injury",
+            employee_id=employee.id,
+        )
+    if destination == "attendance":
+        return url_for("attendance.attendance_home", employee_id=employee.id)
+    return url_for(
+        "employees.view_employee",
+        employee_id=employee.id,
+        tab=destination,
+    )
+
+
+def render_new_document(employee, **context):
+    return render_template(
+        "documents/new.html",
+        employee=employee,
+        categories=DIRECT_UPLOAD_CATEGORIES,
+        specialist_choices=SPECIALIST_UPLOAD_CHOICES,
+        general_document_types=general_document_types(),
+        replacement_reasons=REPLACEMENT_REASONS,
+        **context,
+    )
+
+
+def review_source_snapshots(employee):
+    snapshots = {}
+    for relation in ("identities", "certificates", "visas", "qualifications", "employment_periods"):
+        for item in getattr(employee, relation):
+            values = {}
+            for column in item.__table__.columns:
+                value = getattr(item, column.name)
+                if column.name not in {"created_at", "updated_at"}:
+                    values[column.name] = value if isinstance(value, (str, int, float, bool, type(None))) else str(value)
+            snapshots[(type(item).__name__, item.id)] = values
+    return snapshots
+
+
+def audit_review_sources(employee, before, document):
+    after = review_source_snapshots(employee)
+    for (kind, record_id), values in after.items():
+        old = before.get((kind, record_id))
+        if old != values:
+            write_audit("document_source_updated", kind, record_id, employee_id=employee.id,
+                        detail=f"文件人工核對更新（文件 #{document.id}）", before=old, after=values)
+
+
+def render_document_review(document):
+    employee = document.employee
+    current_bank = current_bank_account_on(employee, date.today())
+    bank_effective_default = (
+        current_bank.effective_from
+        if current_bank
+        else employee.current_period.start_date
+        if employee.current_period
+        else document.document_date
+        or date.today()
+    )
+    return render_template(
+        "documents/review.html",
+        employee=employee,
+        document=document,
+        refs=reference_map(),
+        identity_types=IDENTITY_TYPE_OPTIONS,
+        current_bank=current_bank,
+        bank_effective_default=bank_effective_default,
+    )
+
+
 @documents_bp.route("/employees/<int:employee_id>/documents/new", methods=["GET", "POST"])
 @login_required
 def new_document(employee_id):
     employee = db.get_or_404(Employee, employee_id)
-    general_categories = {
-        code: label
-        for code, label in DOCUMENT_CATEGORIES.items()
-        if code in {"cv", "other"}
-    }
-    categories = (
-        general_categories
-        if request.args.get("scope") == "general"
-        else DOCUMENT_CATEGORIES
+    upload_type = (
+        request.args.get("upload_type")
+        or request.args.get("category")
+        or ""
+    ).strip()
+    target = specialist_upload_target(employee, upload_type)
+    if target and request.method == "GET":
+        return redirect(target)
+    selected_category = (
+        upload_type if upload_type in DIRECT_UPLOAD_CATEGORIES else ""
     )
+    selected_general_type_id = None
     if request.method == "POST":
         uploaded = request.files.get("file")
         category = request.form.get("category")
-        if not uploaded or not uploaded.filename or category not in categories:
+        selected_category = category if category in DIRECT_UPLOAD_CATEGORIES else ""
+        selected_general_type_id = form_int("general_document_type_id")
+        general_type = (
+            selected_general_document_type("general_document_type_id")
+            if category == "other"
+            else None
+        )
+        if category not in DIRECT_UPLOAD_CATEGORIES:
+            abort(400)
+        replacement = None
+        if request.form.get("replace_existing") and not request.form.get("replace_document_id"):
+            flash("profile.replace_select", "error")
+            return render_new_document(employee, selected_category=category)
+        if request.form.get("replace_document_id"):
+            replacement = db.get_or_404(EmployeeDocument, form_int("replace_document_id"))
+            if (replacement.employee_id != employee.id or replacement.status != "active" or
+                    replacement.category != category or
+                    replacement.general_document_type_id != (general_type.id if general_type else None) or
+                    not request.form.get("replacement_reason", "").strip()):
+                abort(400)
+        if category == "other" and not general_type:
+            flash("請選擇一般附件類型。", "error")
+        elif not uploaded or not uploaded.filename:
             flash("請選擇附件類別及文件。", "error")
         elif not (upload_meta := validated_upload_or_flash(uploaded)):
             pass
@@ -161,6 +322,9 @@ def new_document(employee_id):
                 content_sha256,
             )
             if duplicate:
+                if replacement and replacement.id != duplicate.id:
+                    flash("profile.replace_duplicate_target", "error")
+                    return render_new_document(employee, selected_category=category)
                 root = pending_duplicate_root()
                 pending_name = (
                     f"{uuid4().hex}{Path(uploaded.filename).suffix.lower()}"
@@ -170,6 +334,9 @@ def new_document(employee_id):
                 payload = {
                     "employee_id": employee.id,
                     "category": category,
+                    "general_document_type_id": (
+                        general_type.id if general_type else None
+                    ),
                     "title": request.form.get("title", "").strip(),
                     "original_filename": uploaded.filename,
                     "pending_name": pending_name,
@@ -179,9 +346,7 @@ def new_document(employee_id):
                     "content_sha256": content_sha256,
                     "document_date": request.form.get("document_date", ""),
                     "remarks": request.form.get("remarks", "").strip(),
-                    "replace_existing": parse_bool(
-                        request.form.get("replace_existing")
-                    ),
+                    "replace_document_id": replacement.id if replacement else duplicate.id,
                     "replacement_reason": (
                         request.form.get("replacement_reason")
                         or "資料更新"
@@ -189,11 +354,9 @@ def new_document(employee_id):
                     "duplicate_id": duplicate.id,
                 }
                 db.session.commit()
-                return render_template(
-                    "documents/new.html",
-                    employee=employee,
-                    categories=categories,
-                    replacement_reasons=REPLACEMENT_REASONS,
+                return render_new_document(
+                    employee,
+                    selected_category=category,
                     duplicate_pending={
                         "token": duplicate_serializer().dumps(payload),
                         "filename": uploaded.filename,
@@ -204,8 +367,13 @@ def new_document(employee_id):
             document = EmployeeDocument(
                 employee=employee,
                 category=category,
+                general_document_type=general_type,
                 title=request.form.get("title", "").strip()
-                or DOCUMENT_CATEGORIES[category],
+                or (
+                    general_type.display_name
+                    if general_type
+                    else DOCUMENT_CATEGORIES[category]
+                ),
                 original_filename=uploaded.filename,
                 stored_path=str(path),
                 mime_type=upload_meta["mime_type"],
@@ -219,9 +387,9 @@ def new_document(employee_id):
             )
             db.session.add(document)
             db.session.flush()
-            if parse_bool(request.form.get("replace_existing")):
+            if replacement:
                 reason = request.form.get("replacement_reason") or "資料更新"
-                replace_active_category(employee, category, document, reason)
+                replace_one_document(replacement, document, reason)
             write_audit(
                 "document_uploaded",
                 "EmployeeDocument",
@@ -236,11 +404,10 @@ def new_document(employee_id):
                     document_id=document.id,
                 )
             )
-    return render_template(
-        "documents/new.html",
-        employee=employee,
-        categories=categories,
-        replacement_reasons=REPLACEMENT_REASONS,
+    return render_new_document(
+        employee,
+        selected_category=selected_category,
+        selected_general_type_id=selected_general_type_id,
     )
 
 
@@ -293,6 +460,18 @@ def resolve_duplicate_document(employee_id):
             url_for("documents.new_document", employee_id=employee.id)
         )
     category = payload["category"]
+    general_type = None
+    if category == "other" and payload.get("general_document_type_id"):
+        general_type = db.session.get(
+            ReferenceValue,
+            payload["general_document_type_id"],
+        )
+        if (
+            not general_type
+            or general_type.reference_list.code != "general_document_type"
+        ):
+            path.unlink(missing_ok=True)
+            abort(400)
     target = copy_file_to_employee(
         employee,
         path,
@@ -303,7 +482,13 @@ def resolve_duplicate_document(employee_id):
     document = EmployeeDocument(
         employee=employee,
         category=category,
-        title=payload.get("title") or DOCUMENT_CATEGORIES[category],
+        general_document_type=general_type,
+        title=payload.get("title")
+        or (
+            general_type.display_name
+            if general_type
+            else DOCUMENT_CATEGORIES[category]
+        ),
         original_filename=payload["original_filename"],
         stored_path=str(target),
         mime_type=payload.get("mime_type"),
@@ -318,12 +503,7 @@ def resolve_duplicate_document(employee_id):
     db.session.add(document)
     db.session.flush()
     reason = payload.get("replacement_reason") or "資料更新"
-    if payload.get("replace_existing"):
-        replace_active_category(employee, category, document, reason)
-    else:
-        duplicate.status = "replaced"
-        duplicate.replaced_by_document_id = document.id
-        duplicate.replacement_reason = reason
+    replace_one_document(duplicate, document, reason)
     write_audit(
         "document_uploaded",
         "EmployeeDocument",
@@ -344,12 +524,82 @@ def resolve_duplicate_document(employee_id):
 @login_required
 def review_document(document_id):
     document = db.get_or_404(EmployeeDocument, document_id)
+    if document.category == 'salary_record':
+        flash('salary_record.profile_hint', 'info')
+        return redirect(url_for('employees.view_employee',employee_id=document.employee_id,tab='attendance'))
     employee = document.employee
     if request.method == "POST":
+        if document.status != "active":
+            abort(400)
+        try:
+            if document.category in {"identity", "three_treasures"}:
+                identity_type = request.form.get("identity_type")
+                number = request.form.get("identity_number", "").strip()
+                if bool(identity_type) != bool(number):
+                    raise ValueError("profile.identity_required")
+                duplicate_identity = identity_conflict(identity_type, number)
+                if duplicate_identity and duplicate_identity.employee_id != employee.id:
+                    raise ValueError("profile.identity_duplicate")
+                prior = duplicate_identity
+                issue = request.form.get("identity_issue_date") or (prior.issue_date.isoformat() if prior and prior.issue_date else None)
+                expiry = request.form.get("identity_expiry_date") or (prior.expiry_date.isoformat() if prior and prior.expiry_date else None)
+                permanent = parse_bool(request.form.get("identity_long_term")) or bool(prior and prior.is_long_term and not request.form.get("identity_expiry_date"))
+                if permanent and not request.form.get("identity_expiry_date"):
+                    expiry = None
+                validate_credential_dates(issue, expiry, permanent)
+                for prefix in ("safety_card", "worker_registration"):
+                    if request.form.get(prefix + "_no", "").strip():
+                        validate_credential_dates(request.form.get(prefix + "_valid_from"), request.form.get(prefix + "_expiry_date"), parse_bool(request.form.get(prefix + "_long_term")), True)
+            if document.category in {"visa", "qualification"}:
+                prefix = document.category
+                validate_credential_dates(request.form.get(prefix + "_issue_date"), request.form.get(prefix + "_expiry_date"))
+            if document.category == "signed_contract" and parse_bool(request.form.get("apply_contract_terms")):
+                if not parse_date(request.form.get("contract_effective_date")):
+                    raise ValueError("profile.invalid_date")
+                value = request.form.get("contract_annual_leave_days", "").strip()
+                if value and (not float(value) >= 0 or float(value) > 366 or float(value) * 2 % 1):
+                    raise ValueError("profile.invalid_entitlement")
+                if request.form.get("probation_end_date") and not parse_date(request.form.get("probation_end_date")):
+                    raise ValueError("profile.invalid_date")
+            if document.category == "staff_record" and request.form.get("start_date"):
+                start = parse_date(request.form.get("start_date"))
+                if not start:
+                    raise ValueError("profile.invalid_date")
+                current = employee.current_period
+                if current and any(p.id != current.id and (p.end_date is None or p.end_date >= start) for p in employee.employment_periods):
+                    raise ValueError("profile.employment_overlap")
+                if current and current.end_date and start > current.end_date:
+                    raise ValueError("profile.date_order")
+        except (ValueError, TypeError) as error:
+            key = str(error) if str(error).startswith("profile.") else "profile.invalid_entitlement"
+            flash(key, "error")
+            return render_document_review(document)
+        before_employee = employee_audit_snapshot(employee)
+        before_sources = review_source_snapshots(employee)
+        category = document.category
+        staff_bank_name = request.form.get("bank_name", "").strip()
+        staff_bank_account_no = request.form.get(
+            "bank_account_no",
+            "",
+        ).strip()
+        staff_bank_effective_from = parse_date(
+            request.form.get("bank_effective_from")
+        )
+        if category == "staff_record" and bool(staff_bank_name) != bool(
+            staff_bank_account_no
+        ):
+            flash("銀行名稱及賬戶號碼必須同時填寫。", "error")
+            return render_document_review(document)
+        if (
+            category == "staff_record"
+            and staff_bank_name
+            and not staff_bank_effective_from
+        ):
+            flash("Staff Record 的銀行資料必須填寫生效日期。", "error")
+            return render_document_review(document)
         document.title = request.form.get("title", "").strip() or document.title
         document.document_date = parse_date(request.form.get("document_date"))
         document.remarks = request.form.get("remarks", "").strip() or None
-        category = document.category
 
         if category == "staff_record":
             for field in (
@@ -360,8 +610,6 @@ def review_document(document_id):
                 "mobile_number",
                 "email",
                 "residential_address",
-                "bank_name",
-                "bank_account_no",
                 "emergency_contact_name",
                 "emergency_contact_region_code",
                 "emergency_contact_phone",
@@ -375,7 +623,127 @@ def review_document(document_id):
                     setattr(employee, field, str(value).strip())
             start_date = parse_date(request.form.get("start_date"))
             if start_date:
-                ensure_current_employment_period(employee, start_date)
+                period = ensure_current_employment_period(employee, start_date)
+                period.start_date = start_date
+            if staff_bank_name and staff_bank_effective_from:
+                bank_currency = (
+                    request.form.get("bank_currency", "HKD").strip()
+                    or "HKD"
+                ).upper()
+                same_effective_date = next(
+                    (
+                        item
+                        for item in employee.bank_accounts
+                        if item.status == "active"
+                        and item.effective_from == staff_bank_effective_from
+                    ),
+                    None,
+                )
+                account_at_date = current_bank_account_on(
+                    employee,
+                    staff_bank_effective_from,
+                )
+                if same_effective_date:
+                    details_changed = any(
+                        (
+                            same_effective_date.bank_name != staff_bank_name,
+                            same_effective_date.account_no
+                            != staff_bank_account_no,
+                            same_effective_date.currency != bank_currency,
+                        )
+                    )
+                    before = {
+                        "effective_from": same_effective_date.effective_from.isoformat(),
+                        "bank_name": same_effective_date.bank_name,
+                        "account_no": masked_bank_account(
+                            same_effective_date.account_no
+                        ),
+                        "currency": same_effective_date.currency,
+                        "evidence_document_id": (
+                            same_effective_date.evidence_document_id
+                        ),
+                    }
+                    same_effective_date.bank_name = staff_bank_name
+                    same_effective_date.account_no = staff_bank_account_no
+                    same_effective_date.currency = bank_currency
+                    if details_changed:
+                        same_effective_date.evidence_document = document
+                        write_audit(
+                            "bank_account_corrected",
+                            "EmployeeBankAccount",
+                            same_effective_date.id,
+                            employee_id=employee.id,
+                            detail="按 Staff Record 核對銀行賬戶記錄",
+                            before=before,
+                            after={
+                                "effective_from": (
+                                    staff_bank_effective_from.isoformat()
+                                ),
+                                "bank_name": staff_bank_name,
+                                "account_no": masked_bank_account(
+                                    staff_bank_account_no
+                                ),
+                                "currency": bank_currency,
+                                "evidence_document_id": document.id,
+                            },
+                        )
+                    elif not same_effective_date.evidence_document_id:
+                        same_effective_date.evidence_document = document
+                        write_audit(
+                            "bank_account_evidence_linked",
+                            "EmployeeBankAccount",
+                            same_effective_date.id,
+                            employee_id=employee.id,
+                            detail="以 Staff Record 補充銀行賬戶憑證",
+                        )
+                elif (
+                    account_at_date
+                    and account_at_date.bank_name == staff_bank_name
+                    and account_at_date.account_no == staff_bank_account_no
+                    and account_at_date.currency == bank_currency
+                ):
+                    if not account_at_date.evidence_document_id:
+                        account_at_date.evidence_document = document
+                else:
+                    account = EmployeeBankAccount(
+                        employee=employee,
+                        effective_from=staff_bank_effective_from,
+                        bank_name=staff_bank_name,
+                        account_no=staff_bank_account_no,
+                        currency=bank_currency,
+                        evidence_document=document,
+                        status="active",
+                        remarks="由 Staff Record 人工核對建立",
+                    )
+                    db.session.add(account)
+                    db.session.flush()
+                    write_audit(
+                        "bank_account_added",
+                        "EmployeeBankAccount",
+                        account.id,
+                        employee_id=employee.id,
+                        detail=(
+                            "按 Staff Record 建立銀行賬戶；"
+                            f"由 {staff_bank_effective_from:%Y-%m-%d} 生效"
+                        ),
+                        after={
+                            "effective_from": staff_bank_effective_from.isoformat(),
+                            "bank_name": staff_bank_name,
+                            "account_no": masked_bank_account(
+                                staff_bank_account_no
+                            ),
+                            "currency": bank_currency,
+                            "evidence_document_id": document.id,
+                        },
+                    )
+                rebuild_effective_ranges(employee.bank_accounts)
+                current_bank = current_bank_account_on(employee, date.today())
+                employee.bank_name = (
+                    current_bank.bank_name if current_bank else None
+                )
+                employee.bank_account_no = (
+                    current_bank.account_no if current_bank else None
+                )
 
         if category in {"three_treasures", "identity"}:
             identity_type = request.form.get("identity_type")
@@ -384,12 +752,18 @@ def review_document(document_id):
                 for item in employee.identities:
                     if parse_bool(request.form.get("identity_primary")):
                         item.is_primary = False
-                existing = EmployeeIdentity.query.filter_by(
-                    employee_id=employee.id,
-                    identity_type=identity_type,
-                    identity_number=identity_number,
-                    status="active",
-                ).first()
+                existing = identity_conflict(identity_type, identity_number)
+                if existing:
+                    existing.is_primary = parse_bool(request.form.get("identity_primary")) or existing.is_primary
+                    # Blank review fields do not erase a previously verified date.
+                    if request.form.get("identity_issue_date"):
+                        existing.issue_date = parse_date(request.form["identity_issue_date"])
+                    if parse_bool(request.form.get("identity_long_term")):
+                        existing.is_long_term, existing.expiry_date = True, None
+                    elif request.form.get("identity_expiry_date"):
+                        existing.is_long_term = False
+                        existing.expiry_date = parse_date(request.form["identity_expiry_date"])
+                    existing.document_id = document.id
                 if not existing:
                     db.session.add(
                         EmployeeIdentity(
@@ -433,13 +807,7 @@ def review_document(document_id):
                     )
                     if not is_long_term and not expiry_date:
                         flash("平安卡及工人註冊證必須填寫到期日，或勾選長期有效。", "error")
-                        return render_template(
-                            "documents/review.html",
-                            document=document,
-                            employee=employee,
-                            refs=reference_map(),
-                            identity_types=IDENTITY_TYPE_OPTIONS,
-                        )
+                        return render_document_review(document)
                     certificate = EmployeeCertificate.query.filter_by(
                         employee_id=employee.id,
                         certificate_type_id=by_code[code].id,
@@ -528,19 +896,29 @@ def review_document(document_id):
                     )
                 )
 
-        if category == "signed_contract":
+        if category == "signed_contract" and parse_bool(request.form.get("apply_contract_terms")):
             effective_date = parse_date(request.form.get("contract_effective_date"))
             if effective_date:
                 period = ensure_current_employment_period(employee, effective_date)
-                period.contract_annual_leave_days = request.form.get(
-                    "contract_annual_leave_days",
-                    type=float,
-                )
-                if employee.payroll_group == "management":
+                if request.form.get("contract_annual_leave_days", "").strip():
+                    period.contract_annual_leave_days = float(request.form["contract_annual_leave_days"])
+                if employee.payroll_group == "management" and request.form.get("probation_end_date"):
                     period.probation_end_date = parse_date(
                         request.form.get("probation_end_date")
                     )
 
+        db.session.flush()
+        after_employee = employee_audit_snapshot(employee)
+        if before_employee != after_employee:
+            write_audit("personal_data_updated", "Employee", employee.id,
+                        employee_id=employee.id, detail="從文件人工核對更新個人資料",
+                        before=before_employee, after=after_employee)
+        education_keys = ("education_level", "graduation_school", "major", "graduation_date")
+        if any(before_employee.get(key) != after_employee.get(key) for key in education_keys):
+            write_audit("education_background_updated", "Employee", employee.id,
+                        employee_id=employee.id, detail="從 Staff Record 核對更新學歷",
+                        before=before_employee, after=after_employee)
+        audit_review_sources(employee, before_sources, document)
         write_audit(
             "document_review_saved",
             "EmployeeDocument",
@@ -552,13 +930,7 @@ def review_document(document_id):
         flash("附件及資料已保存。", "success")
         return redirect(url_for("employees.view_employee", employee_id=employee.id))
 
-    return render_template(
-        "documents/review.html",
-        employee=employee,
-        document=document,
-        refs=reference_map(),
-        identity_types=IDENTITY_TYPE_OPTIONS,
-    )
+    return render_document_review(document)
 
 
 @documents_bp.route("/documents/<int:document_id>/open")
@@ -584,48 +956,16 @@ def download_document(document_id):
 
 
 def relink_document_references(old_document, new_document):
-    for item in EmployeeBankAccount.query.filter_by(
-        evidence_document_id=old_document.id
-    ):
-        item.evidence_document_id = new_document.id
-    for item in EmployeeIdentity.query.filter_by(
-        document_id=old_document.id
-    ):
-        item.document_id = new_document.id
-    for item in EmployeeCertificate.query.filter_by(
-        document_id=old_document.id
-    ):
-        item.document_id = new_document.id
-    for item in EmployeeVisa.query.filter_by(document_id=old_document.id):
-        item.document_id = new_document.id
-    for item in EmployeeQualification.query.filter_by(
-        document_id=old_document.id
-    ):
-        item.document_id = new_document.id
-    for item in EmployeeAssignment.query.filter_by(
-        evidence_document_id=old_document.id
-    ):
-        item.evidence_document_id = new_document.id
-    for item in EmployeeSalary.query.filter_by(
-        evidence_document_id=old_document.id
-    ):
-        item.evidence_document_id = new_document.id
-    for item in AttendanceMonthlySummary.query.filter_by(
-        document_id=old_document.id
-    ):
-        item.document_id = new_document.id
-    for item in GeneratedContract.query.filter_by(
-        document_id=old_document.id
-    ):
-        item.document_id = new_document.id
-    for item in EmployeeEmploymentPeriod.query.filter_by(
-        confirmation_document_id=old_document.id
-    ):
-        item.confirmation_document_id = new_document.id
-    for item in EmployeeEmploymentPeriod.query.filter_by(
-        termination_document_id=old_document.id
-    ):
-        item.termination_document_id = new_document.id
+    # Include every typed document FK (leave, allowances, MPF and injury too).
+    # Replacement-chain pointers are deliberately not relinked.
+    for mapper in db.Model.registry.mappers:
+        model = mapper.class_
+        if model is EmployeeDocument:
+            continue
+        for column in mapper.columns:
+            if any(fk.target_fullname == "employee_documents.id" for fk in column.foreign_keys):
+                for row in db.session.query(model).filter(getattr(model, column.key) == old_document.id):
+                    setattr(row, column.key, new_document.id)
 
 
 @documents_bp.route(
@@ -635,6 +975,11 @@ def relink_document_references(old_document, new_document):
 @login_required
 def replace_document(document_id):
     old_document = db.get_or_404(EmployeeDocument, document_id)
+    if old_document.category == 'salary_record':
+        flash('salary_record.profile_hint', 'info')
+        return redirect(url_for('employees.view_employee',employee_id=old_document.employee_id,tab='attendance'))
+    if old_document.status != "active":
+        abort(400)
     uploaded = request.files.get("file")
     reason = request.form.get("reason", "").strip()
     if not uploaded or not uploaded.filename or not reason:
@@ -676,6 +1021,7 @@ def replace_document(document_id):
     document = EmployeeDocument(
         employee=old_document.employee,
         category=old_document.category,
+        general_document_type_id=old_document.general_document_type_id,
         title=request.form.get("title", "").strip()
         or old_document.title,
         original_filename=uploaded.filename,
@@ -694,20 +1040,7 @@ def replace_document(document_id):
     )
     db.session.add(document)
     db.session.flush()
-    old_document.status = "replaced"
-    old_document.replaced_by_document_id = document.id
-    old_document.replacement_reason = reason
-    relink_document_references(old_document, document)
-    write_audit(
-        "document_replaced",
-        "EmployeeDocument",
-        document.id,
-        employee_id=document.employee_id,
-        detail=(
-            f"{old_document.original_filename} → "
-            f"{document.original_filename}：{reason}"
-        ),
-    )
+    replace_one_document(old_document, document, reason)
     db.session.commit()
     flash("附件已替換，舊文件已保留為歷史。", "success")
     return redirect(
@@ -723,6 +1056,9 @@ def replace_document(document_id):
 @login_required
 def update_document_status(document_id):
     document = db.get_or_404(EmployeeDocument, document_id)
+    if document.category == 'salary_record':
+        flash('salary_record.profile_hint', 'info')
+        return redirect(url_for('employees.view_employee',employee_id=document.employee_id,tab='attendance'))
     before = {
         "status": document.status,
         "replacement_reason": document.replacement_reason,

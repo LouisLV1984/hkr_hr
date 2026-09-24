@@ -32,9 +32,10 @@ from tools.attendance_policy import (
     policy_on,
     scheduled_work_units,
 )
+from tools.project_allocation import allocation_weights, ProjectAllocationError
 
 
-RULE_VERSION = "V2.0-2026-08-19"
+RULE_VERSION = "V2.3-2026-09-16"
 PAYROLL_GROUP_CODES = ("site_daily", "site_monthly", "management")
 ECALL_FLAT_AMOUNT = Decimal("400")
 
@@ -244,6 +245,7 @@ def attendance_segments(summary, kind):
 
 
 def leave_units_by_date(employee, start, end):
+    from tools.attendance_policy import saved_leave_units
     units = defaultdict(
         lambda: {
             "annual": Decimal("0"),
@@ -262,13 +264,9 @@ def leave_units_by_date(employee, start, end):
         kind = record.leave_type or "annual"
         if kind not in {"annual", "sick", "unpaid"}:
             continue
-        for day in date_range(max(start, record.leave_date), min(end, record_end)):
-            value = Decimal("1")
-            if day == record.leave_date and record.start_session == "pm":
-                value -= Decimal("0.5")
-            if day == record_end and record.end_session == "am":
-                value -= Decimal("0.5")
-            units[day][kind] += max(Decimal("0"), value)
+        for day, value in saved_leave_units(record).items():
+            if start <= day <= end:
+                units[day][kind] += value
     return units
 
 
@@ -288,7 +286,7 @@ def work_injury_on(employee, on_date):
     )
 
 
-def monthly_salary_components(employee, start, end):
+def monthly_salary_components(employee, start, end, *, daily_components=None):
     leave_units = leave_units_by_date(employee, start, end)
     sick_full_remaining = Decimal("1")
     result = {
@@ -302,6 +300,7 @@ def monthly_salary_components(employee, start, end):
         "injury_days": Decimal("0"),
     }
     for day in date_range(start, end):
+        before = result.copy()
         rates = salary_rate_for_date(employee, day)
         if not rates or rates["salary"].salary_basis == "daily":
             continue
@@ -325,6 +324,9 @@ def monthly_salary_components(employee, start, end):
                 + during / days_in_month
             )
             result["injury_days"] += Decimal("1")
+            if daily_components is not None:
+                daily_components[day] = {key: result[key] - before[key] for key in result}
+                daily_components[day]['base_days'] = Decimal('0')
             continue
         day_leave = leave_units[day]
         annual = min(Decimal("1"), day_leave["annual"])
@@ -349,6 +351,9 @@ def monthly_salary_components(employee, start, end):
                 full + reduced * Decimal("0.8")
             )
             sick_full_remaining -= full
+        if daily_components is not None:
+            daily_components[day] = {key: result[key] - before[key] for key in result}
+            daily_components[day]['base_days'] = Decimal('1') - sick - unpaid
     return result
 
 
@@ -897,7 +902,7 @@ def prior_forecast_total(employee, year_month):
             PayrollRun.year_month == previous,
             PayrollEmployeeResult.employee_id == employee.id,
         )
-        .order_by(PayrollRun.created_at.desc())
+        .order_by(PayrollRun.created_at.desc(), PayrollRun.id.desc(), PayrollEmployeeResult.id.desc())
         .first()
     )
     if row and row.calculation_json:
@@ -985,6 +990,7 @@ def employee_warnings(employee):
 
 
 def calculate_employee(employee, year_month):
+    from tools.absence_integrity import absence_data_issues, absences_changed_since_attendance
     month_start, month_end = parse_year_month(year_month)
     summary = AttendanceMonthlySummary.query.filter_by(
         employee_id=employee.id,
@@ -1015,6 +1021,10 @@ def calculate_employee(employee, year_month):
     )
     blockers = []
     warnings = employee_warnings(employee)
+    review_start = parse_year_month(previous_month(year_month))[0].replace(day=21)
+    blockers.extend(absence_data_issues(employee, review_start, month_end))
+    if absences_changed_since_attendance(employee, summary, review_start, month_end):
+        warnings.append("leave.attendance_recheck")
     if not summary or summary.status not in {"received", "not_required"}:
         blockers.append("考勤未收")
     elif generated_from_policy:
@@ -1059,6 +1069,11 @@ def calculate_employee(employee, year_month):
         for allowance in employee.allowances
     ):
         blockers.append("日工暫不支持固定補貼，請先撤回補貼記錄")
+    allocation = {}
+    try:
+        allocation = allocation_weights(employee, year_month, getattr(summary, 'monthly_project_allocation', None))
+    except ProjectAllocationError as exc:
+        blockers.append(str(exc))
     if blockers:
         return {
             "employee": employee,
@@ -1262,8 +1277,9 @@ def calculate_employee(employee, year_month):
         leave_line["sick_leave_amount"] += daily_components["sick"]
         leave_line["work_injury_amount"] += daily_components["injury"]
     else:
+        monthly_detail = {} if allocation else None
         monthly_components = monthly_salary_components(
-            employee, month_start, month_end
+            employee, month_start, month_end, daily_components=monthly_detail
         )
         leave_line["base_amount"] += monthly_components["base"]
         month_end_rates = salary_rate_for_date(employee, month_end, project)
@@ -1277,6 +1293,26 @@ def calculate_employee(employee, year_month):
             leave_line["ot_rate"] = month_end_rates["ot_rate"]
         leave_line["sick_leave_amount"] += monthly_components["sick"]
         leave_line["work_injury_amount"] += monthly_components["injury"]
+        if allocation:
+            # Remove only the monthly components just added, not OT or prior-tail pay.
+            leave_line['base_amount'] -= monthly_components['base']
+            leave_line['sick_leave_amount'] -= monthly_components['sick']
+            leave_line['work_injury_amount'] -= monthly_components['injury']
+            if month_end_rates and month_end_rates['base_rate']:
+                leave_line['working_days'] -= monthly_components['base'] / month_end_rates['base_rate']
+            for day, components in monthly_detail.items():
+                for allocated_project, weight in allocation[day]:
+                    line = lines.setdefault(line_key(allocated_project), empty_line(allocated_project))
+                    line['working_days'] += components['base_days'] * weight
+                    for source, target in (('base','base_amount'),('sick','sick_leave_amount'),('injury','work_injury_amount')):
+                        line[target] += components[source] * weight
+                    line['allocated_absence_days'] = line.get('allocated_absence_days', Decimal('0')) + (components['sick_days'] + components['injury_days']) * weight
+            # Project rounding must not change the employee's monthly pay.
+            for source, target in (('base','base_amount'),('sick','sick_leave_amount'),('injury','work_injury_amount')):
+                targets = [line for line in lines.values() if line[target]]
+                if targets:
+                    difference = rounded(monthly_components[source]) - sum(rounded(line[target]) for line in targets)
+                    max(targets, key=lambda line: line[target])[target] += difference
         current_actual_total += (
             monthly_components["base"]
             + monthly_components["sick"]
@@ -1301,6 +1337,31 @@ def calculate_employee(employee, year_month):
         month_end,
         attendance_working_days=attendance_allowance_days,
     ):
+        if allocation and not allowance.project:
+            # Keep the existing allowance total; split only eligible effective dates.
+            weights = defaultdict(Decimal)
+            allocation_projects = {}
+            start = max(month_start, allowance.effective_from)
+            end = min(month_end, allowance.effective_to or month_end)
+            for day in date_range(start, end):
+                weight = (monthly_paid_calendar_days(employee, day, day)
+                          if allowance.allowance_type in {'meal', 'transport'} else Decimal('1'))
+                for project, share in allocation[day]:
+                    weights[line_key(project)] += weight * share
+                    allocation_projects[line_key(project)] = project
+            total_weight = sum(weights.values())
+            if total_weight:
+                remaining = rounded(amount)
+                weighted = [(key, weight) for key, weight in weights.items() if weight]
+                for index, (key, weight) in enumerate(weighted):
+                    part = remaining if index == len(weighted)-1 else rounded(amount * weight / total_weight)
+                    remaining -= part
+                    project = allocation_projects[key]
+                    line = lines.setdefault(key, empty_line(project))
+                    line['allowance_amount'] += part
+                    field = 'traffic_meal_allowance_amount' if allowance.allowance_type in {'meal','transport'} else 'special_allowance_amount'
+                    line[field] += part
+                continue
         project = allowance.project
         if not project:
             assignment = current_assignment_on(employee, month_end)
@@ -1326,6 +1387,11 @@ def calculate_employee(employee, year_month):
 
     line_rows = list(lines.values())
     for line in line_rows:
+        if allocation:
+            for key in ('base_amount','holiday_amount','ot_amount','large_ecall_amount','ecall_amount',
+                        'allowance_amount','sick_leave_amount','work_injury_amount','adjustment_amount',
+                        'previous_ot_amount','previous_holiday_amount','previous_large_ecall_amount','previous_ecall_amount'):
+                line[key] = rounded(line[key])
         line["gross_amount"] = (
             line["base_amount"]
             + line["holiday_amount"]
@@ -1572,7 +1638,7 @@ def serialize_line(line):
     }
 
 
-def snapshot_payroll(year_month, payroll_group, rows, user_id):
+def snapshot_payroll(year_month, payroll_group, rows, user_id, *, commit=True):
     run = PayrollRun(
         year_month=year_month,
         payroll_group=payroll_group,
@@ -1705,6 +1771,7 @@ def snapshot_payroll(year_month, payroll_group, rows, user_id):
                     if row.get("attendance")
                     else None
                 ),
+                "monthly_project_allocation": getattr(row.get('attendance'), 'monthly_project_allocation', None),
                 "leave": {
                     "annual_days": str(row["annual_leave_days"]),
                     "sick_days": str(row["sick_leave_days"]),
@@ -1756,7 +1823,10 @@ def snapshot_payroll(year_month, payroll_group, rows, user_id):
                     gross_amount=line["gross_amount"],
                 )
             )
-    db.session.commit()
+    if commit:
+        db.session.commit()
+    else:
+        db.session.flush()
     return run
 
 
@@ -1769,6 +1839,7 @@ def project_summary(rows):
             "ot": Decimal("0"),
             "ecall": Decimal("0"),
             "allowance": Decimal("0"),
+            "other": Decimal("0"),
             "total": Decimal("0"),
         }
     )
@@ -1783,9 +1854,12 @@ def project_summary(rows):
             item["headcount"].add(row["employee"].id)
             item["base"] += decimal_value(line["base_amount"])
             item["ot"] += decimal_value(line["ot_amount"])
+            item["ot"] += decimal_value(line.get("previous_ot_amount"))
             item["ecall"] += (
                 decimal_value(line["large_ecall_amount"])
                 + decimal_value(line["ecall_amount"])
+                + decimal_value(line.get("previous_large_ecall_amount"))
+                + decimal_value(line.get("previous_ecall_amount"))
             )
             item["allowance"] += decimal_value(line["allowance_amount"])
             item["total"] += decimal_value(line["gross_amount"])
@@ -1797,6 +1871,7 @@ def project_summary(rows):
             "ot": rounded(item["ot"]),
             "ecall": rounded(item["ecall"]),
             "allowance": rounded(item["allowance"]),
+            "other": rounded(item["total"] - item["base"] - item["ot"] - item["ecall"] - item["allowance"]),
             "total": rounded(item["total"]),
         }
         for item in summary.values()

@@ -446,6 +446,12 @@ class EmployeeDocument(TimestampMixin, db.Model):
         index=True,
     )
     category = db.Column(db.String(60), nullable=False, index=True)
+    general_document_type_id = db.Column(
+        db.Integer,
+        db.ForeignKey("reference_values.id"),
+        nullable=True,
+        index=True,
+    )
     title = db.Column(db.String(200), nullable=True)
     original_filename = db.Column(db.String(255), nullable=False)
     stored_path = db.Column(db.Text, nullable=False)
@@ -475,6 +481,10 @@ class EmployeeDocument(TimestampMixin, db.Model):
         "EmployeeDocument",
         remote_side=[id],
         foreign_keys=[replaced_by_document_id],
+    )
+    general_document_type = db.relationship(
+        "ReferenceValue",
+        foreign_keys=[general_document_type_id],
     )
 
 
@@ -1068,6 +1078,7 @@ class AttendanceMonthlySummary(TimestampMixin, db.Model):
         index=True,
     )
     year_month = db.Column(db.String(7), nullable=False, index=True)
+    monthly_project_allocation = db.Column(db.JSON, nullable=True)
     document_id = db.Column(
         db.Integer,
         db.ForeignKey("employee_documents.id"),
@@ -1259,6 +1270,29 @@ class PayrollAdjustment(TimestampMixin, db.Model):
         "EmployeeDocument",
         foreign_keys=[evidence_document_id],
     )
+
+
+class SalaryRecord(TimestampMixin, db.Model):
+    """HR-confirmed payment history. Never a Payroll calculation input."""
+    __tablename__ = "employee_salary_records"
+    __table_args__ = (db.UniqueConstraint("employee_id", "year_month", "payroll_entity_id",
+                                        name="uq_salary_record_employee_month_entity"),)
+    id = db.Column(db.Integer, primary_key=True)
+    employee_id = db.Column(db.Integer, db.ForeignKey("employees.id"), nullable=False, index=True)
+    year_month = db.Column(db.String(7), nullable=False, index=True)
+    payroll_entity_id = db.Column(db.Integer, db.ForeignKey("reference_values.id"), nullable=False)
+    currency = db.Column(db.String(3), nullable=False)
+    gross_amount = db.Column(db.Numeric(14, 2), nullable=False)
+    employee_mpf = db.Column(db.Numeric(14, 2), nullable=False)
+    net_amount = db.Column(db.Numeric(14, 2), nullable=False)
+    remarks = db.Column(db.Text)
+    evidence_document_id = db.Column(db.Integer, db.ForeignKey("employee_documents.id"))
+    status = db.Column(db.String(20), nullable=False, default="active")
+    revision = db.Column(db.Integer, nullable=False, default=1)
+    updated_by = db.Column(db.Integer, db.ForeignKey("users.id"))
+    employee = db.relationship("Employee", backref=db.backref("salary_records", cascade="all, delete-orphan"))
+    payroll_entity = db.relationship("ReferenceValue")
+    evidence_document = db.relationship("EmployeeDocument")
 
 
 class PayrollRun(TimestampMixin, db.Model):
@@ -1479,6 +1513,8 @@ class EmployeeAnnualLeaveRecord(TimestampMixin, db.Model):
     )
     entitlement_year = db.Column(db.Integer, nullable=False, index=True)
     days = db.Column(db.Numeric(4, 1), nullable=False)
+    # NULL preserves legacy calendar-day records until HR explicitly corrects them.
+    leave_units_json = db.Column(db.JSON, nullable=True)
     leave_type = db.Column(
         db.String(30),
         nullable=False,

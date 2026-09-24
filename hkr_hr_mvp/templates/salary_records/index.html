@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head"><div><h1>{{ t('salary_record.title') }}</h1><p>{{ t('salary_record.subtitle') }}</p></div><a class="secondary-btn" href="{{ url_for('salary_records.annual') }}">{{ t('salary_record.annual') }}</a></div>
+<section class="period-context-bar payroll-period-context payroll-centered-context"><div class="payroll-context-month"><span>{{ t('salary_record.month') }}</span><strong>{{ month_t(month) }}</strong></div></section>
+<p class="form-note strong-note">{{ t('salary_record.boundary') }}</p>
+<form method="get" class="salary-record-filters panel" autocomplete="off">
+  <label>{{ t('salary_record.month') }}<input type="month" name="month" value="{{ month }}" min="{{ start_month }}" max="{{ max_month }}" required></label>
+  <label>{{ t('salary_record.entity') }}<select name="entity_id" required><option value="">{{ t('salary_record.choose_entity') }}</option>{% for entity in entities %}<option value="{{ entity.id }}" {% if entity_id==entity.id %}selected{% endif %}>{{ entity.display_name }}</option>{% endfor %}</select></label>
+  <label>{{ t('salary_record.search') }}<input name="q" value="{{ request.args.get('q','') }}" autocomplete="off"></label>
+  <label>{{ t('salary_record.add_employee') }}<select name="employee_id"><option value="">—</option>{% for employee in all_employees %}<option value="{{ employee.id }}" {% if request.args.get('employee_id','')|int==employee.id %}selected{% endif %}>{{ employee.employee_no }} · {{ employee.chinese_name or employee.english_name }}</option>{% endfor %}</select></label>
+  <button class="primary-btn" type="submit">{{ t('salary_record.show') }}</button>
+</form>
+{% if entity_id %}
+<p class="form-note">{{ t('salary_record.mpf_rule') }} {{ t('salary_record.blank_rule') }}</p>
+<form id="salary-record-editor" method="post" action="{{ url_for('salary_records.save') }}" enctype="multipart/form-data" autocomplete="off">
+  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="editor_token" value="{{ editor_token }}">
+  <input type="hidden" name="extra_employee_id" value="{{ request.args.get('employee_id','') }}"><input type="hidden" name="search" value="{{ request.args.get('q','') }}">
+  <div class="section-head"><p id="salary-record-message" role="status" aria-live="polite"></p><button class="primary-btn" type="submit">{{ t('salary_record.save') }}</button></div>
+  <div class="table-wrap"><table class="dense-table salary-record-table"><thead><tr><th>{{ t('salary_record.employee') }}</th><th>{{ t('salary_record.currency') }}</th>{% for field in money_fields %}<th>{{ t('salary_record.'~field) }}</th>{% endfor %}<th>{{ t('salary_record.details') }}</th></tr></thead><tbody>
+  {% for row in rows %}{% set eid=row.employee.id %}{% set record=row.record %}
+  <tr data-salary-row data-employee-id="{{ eid }}" data-net-manual="{{ '1' if record and record.status=='active' else '0' }}">
+    <td><a href="{{ url_for('employees.view_employee', employee_id=eid, tab='attendance') }}">{{ row.employee.employee_no }}<br><strong>{{ row.employee.chinese_name or row.employee.english_name }}</strong></a><br><small>{{ t('salary_record.recorded') if record and record.status=='active' else t('salary_record.voided') if record else t('salary_record.missing') }}</small>{% if not row.expected %}<p class="form-note">{{ t('salary_record.outside_assignment') }}</p>{% endif %}</td>
+    <td><select aria-label="{{ t('salary_record.currency') }}" name="{{ eid }}.currency" required>
+      {% if row['values'].currency not in currencies|map(attribute='code')|list %}<option value="{{ row['values'].currency }}" selected>{{ row['values'].currency }} — {{ t('salary_record.unconfigured_currency') }}</option>{% endif %}
+      {% for currency in currencies %}<option value="{{ currency.code }}" {% if row['values'].currency==currency.code %}selected{% endif %}>{{ currency.display_name }}</option>{% endfor %}
+    </select></td>
+    {% for field in money_fields %}<td><input aria-label="{{ t('salary_record.'~field) }}" name="{{ eid }}.{{ field }}" data-money="{{ field }}" inputmode="decimal" value="{{ fmt_money(row['values'][field]) if row['values'][field] != '' else '' }}" autocomplete="off">{% if field=='net_amount' %}<small class="salary-record-difference" aria-live="polite"></small>{% endif %}</td>{% endfor %}
+    <td><details><summary>{{ t('salary_record.details') }}</summary>
+      <label>{{ t('salary_record.remarks') }}<textarea name="{{ eid }}.remarks" maxlength="2000" rows="2">{{ row['values'].remarks }}</textarea></label>
+      <label>{{ t('salary_record.evidence') }}<input type="file" name="{{ eid }}.evidence" accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx"></label><small>PDF / JPG / PNG / DOCX / XLSX</small>
+      {% if record and record.evidence_document %}<p><a target="_blank" href="{{ url_for('documents.open_document',document_id=record.evidence_document_id) }}">{{ record.evidence_document.original_filename }}</a></p>{% endif %}
+      <button class="mini-btn" type="button" data-prefill="{{ url_for('salary_records.prefill',month=month,entity_id=entity_id,employee_id=eid) }}">{{ t('salary_record.prefill') }}</button>
+      {% if record and record.status=='active' %}<button class="mini-btn danger-text" type="button" data-withdraw="{{ url_for('salary_records.withdraw',record_id=record.id) }}" data-revision="{{ record.revision }}">{{ t('common.withdraw') }}</button>{% endif %}
+    </details></td>
+  </tr>{% else %}<tr><td colspan="6">{{ t('salary_record.no_rows') }}</td></tr>{% endfor %}
+  </tbody></table></div>
+</form>
+<section class="panel"><h2>{{ t('salary_record.history') }}</h2><div class="table-wrap"><table class="dense-table"><thead><tr><th>{{ t('salary_record.changed_at') }}</th><th>{{ t('salary_record.employee') }}</th><th>{{ t('salary_record.change') }}</th><th>{{ t('salary_record.operator') }}</th></tr></thead><tbody>
+{% for audit in history %}<tr><td>{{ audit.created_at|hong_kong_datetime }}</td><td>{{ audit.employee.employee_no }} · {{ audit.employee.chinese_name or audit.employee.english_name }}</td><td><details><summary>{{ t('salary_record.voided') if audit.action=='salary_record_withdrawn' else t('salary_record.saved_change') }}</summary>
+{% for label, values in [(t('salary_record.before'),audit.before_json),(t('salary_record.after'),audit.after_json)] %}<p><strong>{{ label }}</strong> {% if values %}{{ values.currency }} · {% for field in money_fields %}{{ t('salary_record.'~field) }} {{ fmt_money(values[field]) }}{% if not loop.last %} / {% endif %}{% endfor %}<br>{{ values.remarks or '' }}{% if values.evidence_document_id %} · <a target="_blank" href="{{ url_for('documents.open_document', document_id=values.evidence_document_id) }}">{{ t('salary_record.evidence') }}</a>{% endif %}{% else %}—{% endif %}</p>{% endfor %}{{ audit.detail or '' }}</details></td><td>{{ audit.user.username if audit.user else '—' }}</td></tr>{% else %}<tr><td colspan="4">{{ t('salary_record.no_history') }}</td></tr>{% endfor %}
+</tbody></table></div></section>
+{% endif %}
+<script id="salary-record-labels" type="application/json">{{ {'invalid_currency':t('salary_record.invalid_currency'),'difference':t('salary_record.difference'),'negative':t('salary_record.negative'),'prefill_confirm':t('salary_record.prefill_confirm'),'withdraw_reason':t('salary_record.reason_required'),'failed':t('salary_record.failed'),'unsaved':t('salary_record.unsaved'),'discard':t('salary_record.discard')}|tojson }}</script>
+<script src="{{ url_for('static',filename='js/salary_records.js',v=current_version~'-money-1') }}" defer></script>
+{% endblock %}

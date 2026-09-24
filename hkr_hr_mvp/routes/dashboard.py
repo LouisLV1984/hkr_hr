@@ -20,6 +20,7 @@ from models import (
     EmployeeVisa,
 )
 from tools.completeness import employee_readiness
+from tools.profile_integrity import credential_alerts
 from tools.hr_core import current_month, parse_year_month
 from tools.payroll_engine import calculate_payroll
 from tools.releases import RELEASES
@@ -126,45 +127,7 @@ def dashboard():
     }
 
     threshold = date.today() + timedelta(days=60)
-    expiry_alerts = []
-    for identity in EmployeeIdentity.query.filter(
-        EmployeeIdentity.status == "active",
-        EmployeeIdentity.is_long_term.is_(False),
-        EmployeeIdentity.expiry_date.isnot(None),
-        EmployeeIdentity.expiry_date <= threshold,
-    ).all():
-        expiry_alerts.append(
-            {
-                "employee": identity.employee,
-                "label": identity.identity_type,
-                "date": identity.expiry_date,
-            }
-        )
-    for certificate in EmployeeCertificate.query.filter(
-        EmployeeCertificate.status == "active",
-        EmployeeCertificate.is_long_term.is_(False),
-        EmployeeCertificate.expiry_date.isnot(None),
-        EmployeeCertificate.expiry_date <= threshold,
-    ).all():
-        expiry_alerts.append(
-            {
-                "employee": certificate.employee,
-                "label": certificate.certificate_type.display_name,
-                "date": certificate.expiry_date,
-            }
-        )
-    for visa in EmployeeVisa.query.filter(
-        EmployeeVisa.status == "active",
-        EmployeeVisa.expiry_date.isnot(None),
-        EmployeeVisa.expiry_date <= threshold,
-    ).all():
-        expiry_alerts.append(
-            {
-                "employee": visa.employee,
-                "label": visa.visa_category.display_name,
-                "date": visa.expiry_date,
-            }
-        )
+    expiry_alerts = credential_alerts()
     today = date.today()
     for alert in expiry_alerts:
         alert["days_remaining"] = (alert["date"] - today).days

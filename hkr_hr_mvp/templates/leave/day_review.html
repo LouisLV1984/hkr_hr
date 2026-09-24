@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block title %}{{ t('leave.review_title') }}{% endblock %}
+{% block content %}
+<section class="page-head"><h1>{{ t('leave.review_title') }}</h1><a class="secondary-btn" href="{{ url_for('leave.leave_home') }}">{{ t('common.back') }}</a></section>
+<p>{{ t('leave.review_employee_scope' if employee else 'leave.review_scope', total=total, affected=rows|length) }}</p>
+<p class="hint">{{ t('leave.review_rule') }}</p>
+<p class="hint">{{ t('leave.derived_days_rule') }}</p>
+{% if employee %}<p><strong>{{ employee.employee_no }} · {{ employee.display_name }}</strong> <a href="{{ url_for('leave.leave_day_review') }}">{{ t('leave.review_all') }}</a></p>{% endif %}
+<form method="post" action="{{ url_for('leave.apply_leave_day_review') }}" data-review-batch>
+<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="review_token" value="{{ review_token }}">
+{% if employee %}<input type="hidden" name="employee_id" value="{{ employee.id }}">{% endif %}
+<div class="table-wrap"><table><thead><tr><th><input type="checkbox" data-review-all aria-label="{{ t('leave.review_select_all') }}"></th><th>{{ t('leave.review_employee') }}</th><th>{{ t('leave.review_dates') }}</th><th>{{ t('leave.review_old') }}</th><th>{{ t('leave.review_new') }}</th><th>{{ t('leave.review_delta') }}</th><th>{{ t('leave.excluded_dates') }}</th><th>{{ t('leave.review_snapshots') }}</th><th>{{ t('common.actions') }}</th></tr></thead><tbody>
+{% for row in rows %}{% set item = row.record %}<tr>
+<td><input type="checkbox" name="record_ids" value="{{ item.id }}" aria-label="{{ item.employee.employee_no }} {{ leave_date_label(item) }}" {% if row.error or not row.new_days %}disabled{% endif %}></td>
+<td>{{ item.employee.employee_no }} · {{ item.employee.display_name }}</td>
+<td>{{ t('leave.type_' ~ item.leave_type) }}<small class="leave-allocation-note">{{ leave_date_label(item) }}</small></td>
+<td>{{ item.days }}</td><td>{{ row.new_days if row.new_days is not none else t(row.error) }}</td><td>{{ row.delta if row.delta is not none else '—' }}</td>
+<td>{{ row.excluded|join('、') or '—' }}</td><td>{{ row.snapshots|join('、') or '—' }}{% if row.final_months %}<small class="leave-allocation-note">{{ t('leave.review_final') }} {{ row.final_months|join('、') }}</small>{% endif %}</td>
+<td><a class="ghost-btn" href="{{ url_for('leave.leave_home', employee_id=item.employee_id, year=item.leave_date.year, status='all') }}#leave-change-history">{{ t('leave.review_open') }}</a></td>
+</tr>{% else %}<tr><td colspan="9">{{ t('leave.review_none') }}</td></tr>{% endfor %}
+</tbody></table></div>
+{% if rows %}<p class="hint">{{ t('leave.review_zero_hint') }}</p><label><input type="checkbox" name="acknowledge" required> {{ t('leave.review_confirm') }}</label><p><button type="submit" class="primary-btn" data-review-submit disabled>{{ t('leave.review_apply') }}</button></p>{% endif %}
+</form>
+<script>
+(() => {
+  const form = document.querySelector('[data-review-batch]');
+  const choices = Array.from(form.querySelectorAll('[name="record_ids"]:not(:disabled)'));
+  const all = form.querySelector('[data-review-all]');
+  const button = form.querySelector('[data-review-submit]');
+  const update = () => {
+    const count = choices.filter(c => c.checked).length;
+    if (button) button.disabled = !count;
+    all.checked = !!count && count === choices.length;
+    all.indeterminate = count > 0 && count < choices.length;
+  };
+  all.addEventListener('change', () => { choices.forEach(c => c.checked = all.checked); update(); });
+  choices.forEach(c => c.addEventListener('change', update));
+  form.addEventListener('submit', () => { if (button) button.disabled = true; });
+  update();
+})();
+</script>
+{% endblock %}

@@ -21,23 +21,37 @@
     <form class="stack-form" method="post">
       <section>
         <h2>{{ t("common.details") }}</h2>
-        <label><span>{{ t("common.details") }}</span><input name="title" value="{{ document.title or '' }}"></label>
-        <label><span>{{ t("documents.document_date") }}</span><input type="date" name="document_date" value="{{ document.document_date.isoformat() if document.document_date else '' }}"></label>
+        <label><span>{{ t("common.details") }}</span><input name="title" value="{{ request.form.get('title', document.title or '') }}"></label>
+        <label><span>{{ t("documents.document_date") }}</span><input type="date" name="document_date" value="{{ request.form.get('document_date', document.document_date.isoformat() if document.document_date else '') }}"></label>
       </section>
       {% if document.category == "staff_record" %}
         <section><h2>{{ option_t("document_category", "staff_record", "Staff Record") }}</h2>
-          <label><span>{{ t("employees.chinese_name") }}</span><input name="chinese_name" value="{{ employee.chinese_name or '' }}"></label>
-          <label><span>{{ t("employees.english_name") }}</span><input name="english_name" value="{{ employee.english_name or '' }}"></label>
-          <label><span>{{ t("employee.gender") }}</span><select name="gender"><option value=""></option><option value="male" {% if employee.gender == "male" %}selected{% endif %}>{{ t("employee.gender_male") }}</option><option value="female" {% if employee.gender == "female" %}selected{% endif %}>{{ t("employee.gender_female") }}</option></select></label>
-          <label><span>{{ t("employees.contact") }}</span><div class="phone-inputs"><select name="mobile_region_code">{% for item in refs.phone_region %}{% set code = item.display_name.split(' ')[0] %}<option value="{{ code }}" {% if employee.mobile_region_code == code %}selected{% endif %}>{{ code }}</option>{% endfor %}</select><input name="mobile_number" value="{{ employee.mobile_number or '' }}"></div></label>
-          <label><span>{{ t("employee.email") }}</span><input type="email" name="email" value="{{ employee.email or '' }}"></label>
-          <label><span>{{ t("employee.address") }}</span><textarea name="residential_address">{{ employee.residential_address or '' }}</textarea></label>
-          <label><span>{{ t("employee.bank") }}</span><input list="bank-list" name="bank_name" value="{{ employee.bank_name or '' }}"><datalist id="bank-list">{% for item in refs.bank %}<option value="{{ item.display_name }}"></option>{% endfor %}</datalist></label>
-          <label><span>{{ t("employee.bank_account") }}</span><input name="bank_account_no" value="{{ employee.bank_account_no or '' }}"></label>
-          <label><span>{{ t("employee.education") }}</span><select name="education_level"><option value=""></option>{% for item in refs.education_level %}<option value="{{ item.display_name }}" {% if employee.education_level == item.display_name %}selected{% endif %}>{{ item.display_name }}</option>{% endfor %}</select></label>
-          <label><span>{{ t("employee.major") }}</span><input name="major" value="{{ employee.major or '' }}"></label>
-          <label><span>{{ t("employee.school") }}</span><input name="graduation_school" value="{{ employee.graduation_school or '' }}"></label>
-          <label><span>{{ t("employees.start_date") }}</span><input type="date" name="start_date"></label>
+          <label><span>{{ t("employees.chinese_name") }}</span><input name="chinese_name" value="{{ request.form.get('chinese_name', employee.chinese_name or '') }}"></label>
+          <label><span>{{ t("employees.english_name") }}</span><input name="english_name" value="{{ request.form.get('english_name', employee.english_name or '') }}"></label>
+          <label><span>{{ t("employee.gender") }}</span><select name="gender">{% set selected_gender = request.form.get('gender', employee.gender or '') %}<option value=""></option><option value="male" {% if selected_gender == "male" %}selected{% endif %}>{{ t("employee.gender_male") }}</option><option value="female" {% if selected_gender == "female" %}selected{% endif %}>{{ t("employee.gender_female") }}</option></select></label>
+          <label><span>{{ t("employees.contact") }}</span><div class="phone-inputs"><select name="mobile_region_code">{% set selected_mobile_region = request.form.get('mobile_region_code', employee.mobile_region_code or '+852') %}{% for item in refs.phone_region %}{% set code = item.display_name.split(' ')[0] %}<option value="{{ code }}" {% if selected_mobile_region == code %}selected{% endif %}>{{ code }}</option>{% endfor %}</select><input name="mobile_number" value="{{ request.form.get('mobile_number', employee.mobile_number or '') }}"></div></label>
+          <label><span>{{ t("employee.email") }}</span><input type="email" name="email" value="{{ request.form.get('email', employee.email or '') }}"></label>
+          <label class="wide"><span>{{ t("employee.address") }}</span><textarea name="residential_address">{{ request.form.get('residential_address', employee.residential_address or '') }}</textarea></label>
+
+          <h3>{{ t("employee.emergency_contact") }}</h3>
+          <label><span>{{ t("employee.emergency_contact") }}</span><input name="emergency_contact_name" value="{{ request.form.get('emergency_contact_name', employee.emergency_contact_name or '') }}"></label>
+          <label><span>{{ t("employee.emergency_relation") }}</span><input name="emergency_contact_relation" value="{{ request.form.get('emergency_contact_relation', employee.emergency_contact_relation or '') }}"></label>
+          <label class="wide"><span>{{ t("employees.contact") }}</span><div class="phone-inputs"><select name="emergency_contact_region_code">{% set selected_emergency_region = request.form.get('emergency_contact_region_code', employee.emergency_contact_region_code or '+852') %}{% for item in refs.phone_region %}{% set code = item.display_name.split(' ')[0] %}<option value="{{ code }}" {% if selected_emergency_region == code %}selected{% endif %}>{{ code }}</option>{% endfor %}</select><input name="emergency_contact_phone" value="{{ request.form.get('emergency_contact_phone', employee.emergency_contact_phone or '') }}"></div></label>
+
+          <h3>{{ t("employee.education") }}</h3>
+          <label><span>{{ t("employee.education") }}</span><select name="education_level"><option value=""></option>{% set selected_education = request.form.get('education_level', employee.education_level or '') %}{% for item in refs.education_level %}<option value="{{ item.display_name }}" {% if selected_education == item.display_name %}selected{% endif %}>{{ item.display_name }}</option>{% endfor %}</select></label>
+          <label><span>{{ t("employee.major") }}</span><input name="major" value="{{ request.form.get('major', employee.major or '') }}"></label>
+          <label class="wide"><span>{{ t("employee.school") }}</span><input name="graduation_school" value="{{ request.form.get('graduation_school', employee.graduation_school or '') }}"></label>
+
+          <h3>{{ t("employee.bank") }}</h3>
+          <label><span>{{ t("employee.effective_date") }}</span><input type="date" name="bank_effective_from" value="{{ request.form.get('bank_effective_from', bank_effective_default.isoformat()) }}"></label>
+          <label><span>{{ t("common.currency") }}</span><select name="bank_currency">{% set selected_currency = request.form.get('bank_currency', current_bank.currency if current_bank else 'HKD') %}{% for item in refs.currency %}<option value="{{ item.code }}" {% if selected_currency == item.code %}selected{% endif %}>{{ item.display_name }}</option>{% endfor %}</select></label>
+          <label><span>{{ t("employee.bank") }}</span><input list="bank-list" name="bank_name" value="{{ request.form.get('bank_name', current_bank.bank_name if current_bank else employee.bank_name or '') }}"><datalist id="bank-list">{% for item in refs.bank %}<option value="{{ item.display_name }}"></option>{% endfor %}</datalist></label>
+          <label><span>{{ t("employee.bank_account") }}</span><input name="bank_account_no" value="{{ request.form.get('bank_account_no', current_bank.account_no if current_bank else employee.bank_account_no or '') }}"></label>
+          <small class="wide form-note">銀行名稱及賬戶號碼須同時填寫。保存後會建立或核對有生效日期的銀行賬戶記錄，並把本 Staff Record 作為憑證；已有而內容相同的專項銀行憑證不會被取代。</small>
+
+          <h3>{{ t("employees.start_date") }}</h3>
+          <label class="wide"><span>{{ t("employees.start_date") }}</span><input type="date" name="start_date" value="{{ request.form.get('start_date', employee.current_period.start_date.isoformat() if employee.current_period else '') }}"></label>
         </section>
       {% elif document.category in ["three_treasures", "identity"] %}
         <section><h2>{{ t("employee.credentials") }}</h2>
@@ -58,7 +72,7 @@
       {% elif document.category == "qualification" %}
         <section><h2>{{ t("employee.credentials") }}</h2><select name="qualification_category"><option value="degree">{{ t("documents.qualification_degree") }}</option><option value="skill">{{ t("documents.qualification_skill") }}</option></select><input name="qualification_name" placeholder="{{ t('documents.qualification_name') }}"><input name="qualification_no" placeholder="{{ t('employee.certificate_no') }}"><div class="two-inputs"><input type="date" name="qualification_issue_date"><input type="date" name="qualification_expiry_date"></div></section>
       {% elif document.category == "signed_contract" %}
-        <section><h2>{{ t("employee.contract") }}</h2><label><span>{{ t("contract.effective_date") }}</span><input type="date" name="contract_effective_date"></label><label><span>{{ t("contract.annual_leave") }}</span><input type="number" min="0" step="0.5" name="contract_annual_leave_days" value="7"></label>{% if employee.payroll_group == "management" %}<label><span>{{ t("employee.probation_end") }}</span><input type="date" name="probation_end_date"></label>{% endif %}</section>
+        <section><h2>{{ t("employee.contract") }}</h2><label class="check-line"><input type="checkbox" name="apply_contract_terms"><span>{{ t('profile.apply_contract_terms') }}</span></label><small class="wide form-note">{{ t('profile.contract_preserve') }}</small><label><span>{{ t("contract.effective_date") }}</span><input type="date" name="contract_effective_date" value="{{ request.form.get('contract_effective_date', document.document_date.isoformat() if document.document_date else '') }}"></label><label><span>{{ t("contract.annual_leave") }}</span><input type="number" min="0" step="0.5" name="contract_annual_leave_days" value="{{ request.form.get('contract_annual_leave_days', employee.current_period.contract_annual_leave_days if employee.current_period and employee.current_period.contract_annual_leave_days is not none else '') }}"></label>{% if employee.payroll_group == "management" %}<label><span>{{ t("employee.probation_end") }}</span><input type="date" name="probation_end_date" value="{{ request.form.get('probation_end_date', employee.current_period.probation_end_date.isoformat() if employee.current_period and employee.current_period.probation_end_date else '') }}"></label>{% endif %}</section>
       {% endif %}
       <label><span>{{ t("common.remarks") }}</span><textarea name="remarks">{{ document.remarks or '' }}</textarea></label>
       <div class="sticky-actions"><button class="primary-btn full" type="submit">{{ t("common.save") }}</button></div>

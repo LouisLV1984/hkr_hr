@@ -53,30 +53,29 @@
       {% for entry in change_history %}
         {% set item = entry.record %}
         <tr class="{{ 'muted-row' if item.status != 'active' else '' }}" data-record-context>
-          <td class="effective-period-cell">
+          <td><div class="effective-period-cell">
             <strong>{{ fmt_date(item.effective_from) }}</strong>
-            {% if item.effective_to %}<span>– {{ fmt_date(item.effective_to) }}</span>{% endif %}
             {% if item.status != "active" %}<span class="flag">{{ option_t("document_status", item.status, item.status) }}</span>{% endif %}
-          </td>
+          </div></td>
           <td><span class="flag change-kind {{ entry.kind }}">{{ t("employee.change_type_" ~ entry.kind) }}</span></td>
-          <td class="change-content-cell">
+          <td><div class="change-content-cell">
             {% if entry.kind == "employment" %}
               <strong>{{ item.positions|map(attribute='position.display_name')|join('、') or t("common.not_set") }}</strong>
               <span>{{ project_t(item.project, t("common.unassigned")) }} · {{ option_t("payroll_group", item.payroll_group, dict(payroll_groups).get(item.payroll_group, item.payroll_group)) }}{% if item.payroll_group in ('site_monthly', 'management') %} · {{ t("employee.workweek_five_half") if item.workweek_days|float == 5.5 else (t("employee.workweek_five") if item.workweek_days|float == 5 else t("employee.workweek_six")) }}{% endif %}</span>
               {% if item.department %}<small>{{ item.department.display_name }}</small>{% endif %}
             {% elif entry.kind == "salary" %}
-              <strong>{{ t("employee.monthly") if item.salary_basis == "monthly" else t("employee.daily") }} · {{ item.currency }} {{ fmt_money(item.amount) }}</strong>{% if item.salary_basis == "monthly" %}<br><small>{{ t("employee.monthly_pay_attendance_days") if item.monthly_pay_method == "attendance_days" else t("employee.monthly_pay_full_month") }}</small>{% endif %}
+              <strong>{{ t("employee.monthly") if item.salary_basis == "monthly" else t("employee.daily") }} · {{ item.currency }} {{ fmt_money(item.amount) }}</strong>{% if item.salary_basis == "monthly" %}<small>{{ t("employee.monthly_pay_attendance_days") if item.monthly_pay_method == "attendance_days" else t("employee.monthly_pay_full_month") }}</small>{% endif %}
               {% if item.remarks %}<small>{{ item.remarks }}</small>{% endif %}
             {% elif entry.kind == "allowance" %}
               <strong>{{ t("allowance." ~ item.allowance_type) }} · {{ item.currency }} {{ fmt_money(item.amount) }} / {{ t("employee.per_day") if item.allowance_type in ('meal', 'transport') else t("employee.per_month") }}</strong>
-              <span>{{ fmt_date(item.effective_from) }} – {{ fmt_date(item.effective_to) if item.effective_to else t("employee.long_term") }}</span>
               {% if item.exchange_rate %}<small>{{ t("employee.exchange_rate") }}：{{ item.exchange_rate }}</small>{% endif %}
             {% else %}
               <strong>{{ item.scheme.name if item.scheme else t("employee.mpf_exempt") }}</strong>
               <span>Member Account No.：{{ item.member_account_no or "-" }}</span>
               <small>{{ t("employee.mpf_exempt") if item.is_exempt else t("mpf.mode_" ~ item.contribution_mode) }}</small>
             {% endif %}
-          </td>
+            {% if item.effective_to %}<small class="history-effective-end">{{ t("employee.effective_to") }}：{{ fmt_date(item.effective_to) }}</small>{% endif %}
+          </div></td>
           <td class="history-evidence-cell">
             {% if entry.kind == "employment" %}
               {% if item.evidence_document and item.evidence_document.status == "active" %}
@@ -168,8 +167,8 @@
               <div class="section-head record-editor-head"><h2>{{ t("common.correct") }} · MPF</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div>
               <div class="record-editor-body">
                 <label><span>{{ t("employee.effective_date") }}</span><input type="date" name="effective_from" value="{{ item.effective_from.isoformat() }}" required></label>
-                <label><span>{{ t("mpf.scheme_name") }}</span><select name="mpf_selection" required>{% for scheme in mpf_schemes %}<option value="{{ scheme.id }}" {% if item.scheme_id == scheme.id %}selected{% endif %}>{{ scheme.name }}</option>{% endfor %}</select></label>
-                <label><span>Member Account No.</span><input name="member_account_no" value="{{ item.member_account_no or '' }}" required></label>
+                <label><span>{{ t("mpf.scheme_name") }}</span><select name="mpf_selection" {% if not item.is_exempt %}required{% endif %}><option value="">{{ t('common.not_set') }}</option>{% for scheme in mpf_schemes %}<option value="{{ scheme.id }}" {% if item.scheme_id == scheme.id %}selected{% endif %}>{{ scheme.name }}</option>{% endfor %}</select><small>{{ t('mpf.exempt_optional_hint') }}</small></label>
+                <label><span>{{ t('mpf.member_account_optional') }}</span><input name="member_account_no" value="{{ item.member_account_no or '' }}" maxlength="120"><small>{{ t('mpf.member_account_hint') }}</small></label>
                 <label class="check-line"><input type="checkbox" name="mpf_exempt" {% if item.is_exempt %}checked{% endif %}><span>{{ t("employee.mpf_exempt") }}</span></label>
                 <label><span>{{ t("common.remarks") }}</span><textarea name="remarks">{{ item.remarks or '' }}</textarea></label>
               </div>

@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
 from dotenv import load_dotenv
-from flask import Flask, redirect, render_template, request, session, url_for
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from flask_login import current_user
 
 
@@ -19,6 +19,7 @@ from routes.employees import employees_bp
 from routes.exports import exports_bp
 from routes.leave import leave_bp
 from routes.payroll import payroll_bp
+from routes.salary_records import salary_records_bp
 from routes.references import references_bp
 from tools.hr_core import (
     attendance_period_bounds,
@@ -70,9 +71,33 @@ def create_app(config_overrides=None):
     app.register_blueprint(leave_bp)
     app.register_blueprint(attendance_bp)
     app.register_blueprint(payroll_bp)
+    app.register_blueprint(salary_records_bp)
     app.register_blueprint(exports_bp)
     app.register_blueprint(references_bp)
     app.register_blueprint(admin_bp)
+
+    @app.after_request
+    def profile_editor_response(response):
+        # Enhanced employee editors retain their DOM (including selected files)
+        # after validation errors. Native submissions and unrelated flows are unchanged.
+        if (request.method == "POST" and request.headers.get("X-HKR-Profile-Editor") == "1"
+                and request.blueprint in {"employees", "documents", "leave"}
+                and response.status_code in {302, 303}):
+            flashes = session.get("_flashes", [])
+            errors = [message for category, message in flashes if category in {"error", "danger"}]
+            if errors and current_user.is_authenticated:
+                session["_flashes"] = [(category, message) for category, message in flashes
+                                      if category not in {"error", "danger"}]
+                translations = TRANSLATIONS[normalize_language(session.get("lang"))]
+                def localize(key, **values):
+                    return translations.get(key, key).format(**values)
+                response = jsonify(errors=[translate_system_message(message, localize) for message in errors])
+                response.status_code = 422
+            else:
+                # Let the eventual GET consume success/warning flashes exactly once.
+                response = jsonify(redirect=response.location)
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.before_request
     def capture_language():
@@ -152,7 +177,12 @@ def create_app(config_overrides=None):
                 suffix=t(suffix_key),
             )
 
+        from tools.absence_integrity import leave_date_label
+        from tools.attendance_policy import saved_leave_days, leave_context_text
         return {
+            "leave_context_text": lambda employee: leave_context_text(employee, language=language),
+            "leave_date_label": lambda record: leave_date_label(record, t),
+            "leave_days_match": lambda record: record.days == saved_leave_days(record),
             "t": t,
             "active_lang": language,
             "languages": LANGUAGE_OPTIONS,

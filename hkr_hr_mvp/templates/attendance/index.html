@@ -117,7 +117,11 @@
         <strong>{{ t("employee.holiday_calendar") }}：</strong><span>{{ t("employee.holiday_calendar_public") if selected_holiday_calendar_kind == "public" else t("employee.holiday_calendar_statutory") }}</span>
         {% if selected_salary and selected_salary.salary_basis == 'monthly' %}<strong>{{ t("employee.monthly_pay_method") }}：</strong><span>{{ t("employee.monthly_pay_attendance_days") if selected_salary.monthly_pay_method == 'attendance_days' else t("employee.monthly_pay_full_month") }}</span>{% endif %}
         {% if banner_group in ('site_monthly', 'management') %}<strong>{{ t("employee.workweek_days") }}：</strong><span>{{ t("employee.workweek_five_half") if selected_workweek_days|float == 5.5 else (t("employee.workweek_five") if selected_workweek_days|float == 5 else t("employee.workweek_six")) }}</span>{% endif %}
+        {% if selected_summary and selected_summary.monthly_project_allocation %}
+        <strong>{{ t('allocation.banner') }}：</strong><span>{{ project_t(selected_assignment.project, t('common.unassigned')) if selected_assignment else t('common.unassigned') }} / {{ selected_summary.monthly_project_allocation|map(attribute='project_name')|unique|join(' / ') }}</span>
+        {% else %}
         <strong>{{ t("common.project") }}：</strong><span class="{{ 'attendance-project-unassigned' if not selected_assignment or not selected_assignment.project else '' }}">{{ project_t(selected_assignment.project, t("common.unassigned")) if selected_assignment else t("common.unassigned") }}</span>
+        {% endif %}
         <button class="attendance-project-adjust" type="button" data-cross-project-open>{{ t("attendance.adjust_project_allocation") }}</button>
       {% endif %}
     </div>
@@ -241,7 +245,7 @@
           <label class="attendance-entry-month"><span>{{ t("attendance.entry_month") }}</span><input type="month" name="year_month" value="{{ year_month }}" required data-attendance-entry-month></label>
           <div class="attendance-employee-picker" data-attendance-employee-picker>
             <span>{{ t("attendance.select_employee") }}</span>
-            <input type="search" autocomplete="off" data-attendance-employee-search role="combobox" aria-autocomplete="list" aria-expanded="false" placeholder="{{ t('attendance.employee_search_placeholder') }}" value="{% if selected_employee %}{{ selected_employee.employee_no }} · {{ selected_employee.display_name }}{% endif %}">
+            <input type="search" autocomplete="off" autocapitalize="off" spellcheck="false" data-attendance-employee-search role="combobox" aria-autocomplete="list" aria-expanded="false" placeholder="{{ t('attendance.employee_search_placeholder') }}" value="{% if selected_employee %}{{ selected_employee.employee_no }} · {{ selected_employee.display_name }}{% endif %}">
             <input type="hidden" name="employee_id" value="{{ selected_employee.id if selected_employee else '' }}" data-attendance-employee data-payroll-group="{{ selected_assignment.payroll_group if selected_assignment else (selected_employee.payroll_group if selected_employee else '') }}" data-holiday-calendar="{{ selected_holiday_calendar_kind }}" data-workweek-days="{{ selected_workweek_days }}" data-monthly-pay-method="{{ selected_salary.monthly_pay_method if selected_salary and selected_salary.salary_basis == 'monthly' else 'full_month' }}" data-payroll-label="{{ option_t('payroll_group', selected_assignment.payroll_group if selected_assignment else selected_employee.payroll_group, selected_assignment.payroll_group if selected_assignment else selected_employee.payroll_group) if selected_employee else '' }}">
             <div class="attendance-employee-results" data-attendance-employee-results role="listbox" hidden>
               {% for option in attendance_employee_options %}{% set employee = option.employee %}
@@ -250,7 +254,8 @@
             </div>
           </div>
           {% endif %}
-          <details class="attendance-payroll-context" data-attendance-payroll-context hidden>
+            <p class="field-hint">{{ t("leave.attendance_schedule_note") }}</p>
+            <details class="attendance-payroll-context" data-attendance-payroll-context hidden>
             <summary>{{ t("attendance.calculation_rules") }}</summary>
             <div class="attendance-payroll-context-body">
               <p data-payroll-rule="site_daily">{{ t("attendance.rule_site_daily") }}</p>
@@ -269,9 +274,16 @@
             </div>
           {% endif %}
         </section>
-        {% if linked_absences %}
+        {% if linked_absences or absence_recheck or absence_issues %}
         {% set linked_payroll_group = selected_assignment.payroll_group if selected_assignment else selected_employee.payroll_group %}
-        <section class="attendance-linked-alert" aria-labelledby="attendance-linked-title">
+        <section class="attendance-linked-alert" aria-label="{{ t('leave.review_source') }}">
+        {% if absence_recheck or absence_issues %}
+        <div class="attendance-linked-recheck" role="alert">
+          {% if absence_recheck %}<strong>{{ t('leave.attendance_recheck') }}</strong>{% endif %}
+          {% for issue in absence_issues %}<p>{{ t(issue) }}</p>{% endfor %}
+        </div>
+        {% endif %}
+        {% if linked_absences %}
           <details class="attendance-linked-disclosure">
             <summary>
               <span class="attendance-linked-badge">{{ t("attendance.linked_action_badge") }}</span>
@@ -299,6 +311,7 @@
             </div>
             <p class="attendance-linked-action"><strong>{{ t("attendance.linked_action_label") }}</strong> {{ t("attendance.linked_action_hint") }}</p>
           </details>
+          {% endif %}
           <a class="mini-btn" href="{{ url_for('leave.leave_home', employee_id=selected_employee.id, year=period_bounds['current_1_20'][0].year) }}#employee-leave">{{ t("attendance.linked_open_source") }}</a>
         </section>
         {% endif %}
@@ -337,10 +350,10 @@
             <span>{{ t("common.action") }}</span>
           </div>
           {% for kind, title, actual in periods %}
-            {% set prefill_source = segment_prefill_sources.get(kind) %}
-          <details class="review-section attendance-period-row {{ 'actual-period-row' if actual else 'forecast-period-row' }}" data-attendance-period="{{ kind }}" data-period-days="{{ (period_bounds[kind][1] - period_bounds[kind][0]).days + 1 }}" data-period-title="{{ title }}" data-period-actual="{{ '1' if actual else '0' }}" data-period-source="{{ prefill_source or 'saved' }}">
+            {% set prefill_source = segment_prefill_sources.get(kind, 'unselected') %}
+          <details class="review-section attendance-period-row {{ 'actual-period-row' if actual else 'forecast-period-row' }}" data-attendance-period="{{ kind }}" data-period-days="{{ (period_bounds[kind][1] - period_bounds[kind][0]).days + 1 }}" data-period-title="{{ title }}" data-period-actual="{{ '1' if actual else '0' }}" data-period-source="{{ prefill_source }}">
             <summary class="attendance-period-summary">
-              <span class="attendance-period-identity"><strong>{{ title }}</strong><small data-period-source-label>{% if prefill_source == 'saved' or not prefill_source %}{{ t("attendance.source_saved") }}{% elif prefill_source == 'prior_forecast' %}{{ t("attendance.source_prior_forecast") }}{% else %}{{ t("attendance.source_review_baseline") }}{% endif %}</small><small class="attendance-period-zero-state" data-period-zero-state></small></span>
+              <span class="attendance-period-identity"><strong>{{ title }}</strong><small data-period-source-label>{% if prefill_source == 'saved' %}{{ t("attendance.source_saved") }}{% elif prefill_source == 'unselected' %}{{ t("attendance.select_employee") }}{% elif prefill_source == 'prior_forecast' %}{{ t("attendance.source_prior_forecast") }}{% else %}{{ t("attendance.source_review_baseline") }}{% endif %}</small><small class="attendance-period-zero-state" data-period-zero-state></small></span>
               <span class="attendance-period-metric" data-period-base>—</span>
               <span class="attendance-period-metric" data-period-special>—</span>
               <span class="attendance-period-metric" data-period-events>—</span>
@@ -401,9 +414,33 @@
         {% endfor %}
         <dialog class="app-dialog attendance-project-dialog" id="attendance-project-dialog">
           <div class="dialog-panel attendance-project-dialog-panel">
-            <div class="section-head"><div><h2>{{ t("attendance.adjust_project_allocation") }}</h2><p>{{ t("attendance.project_allocation_hint") }}</p></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
+            <div class="section-head allocation-dialog-head"><div><h2>{{ t("attendance.adjust_project_allocation") }}</h2><p>{{ t("attendance.project_allocation_hint") }}</p></div><button class="primary-btn" type="button" data-dialog-close>{{ t('allocation.done') }}</button></div>
+            {% if selected_salary and selected_salary.salary_basis == 'monthly' and selected_salary.monthly_pay_method != 'attendance_days' %}
+            {% set allocations = selected_summary.monthly_project_allocation if selected_summary else none %}
+            <section class="panel monthly-project-allocation">
+              <input type="hidden" name="allocation_present" value="1">
+              <label class="check-line"><input type="checkbox" name="allocation_enabled" {% if allocations %}checked{% endif %}><strong>{{ t('allocation.title') }}</strong></label>
+              <p class="form-note">{{ t('allocation.hint') }}</p>
+              {% if allocations and allocations[0].get('basis') != 'scheduled_workdays' %}
+              <p class="form-note warning">{{ t('allocation.legacy') }}</p>
+              <label class="check-line"><input type="checkbox" name="allocation_convert">{{ t('allocation.convert') }}</label>
+              {% endif %}
+              <div data-monthly-allocation-fields {% if not allocations %}hidden{% endif %}>
+                <div data-allocation-rows>
+                {% for row in allocations or [{'project_id':'', 'start':period_bounds['current_1_20'][0].isoformat(), 'end':period_bounds['current_21_end_forecast'][1].isoformat()}] %}
+                  <div class="monthly-allocation-row">
+                    <label><span>{{ t('common.project') }}</span><select name="allocation_project" required><option value="">{{ t('common.not_set') }}</option>{% for project in projects if project.code|upper != 'UNASSIGNED' %}<option value="{{ project.id }}" {% if row.project_id|string == project.id|string %}selected{% endif %}>{{ project.name }}</option>{% endfor %}</select></label>
+                    <label><span>{{ t('allocation.start') }}</span><input type="date" name="allocation_start" value="{{ row.start }}" required></label>
+                    <label><span>{{ t('allocation.end') }}</span><input type="date" name="allocation_end" value="{{ row.end }}" required></label>
+                    <button type="button" class="mini-btn" data-allocation-remove>{{ t('allocation.remove') }}</button>
+                  </div>
+                {% endfor %}
+                </div>
+                <button type="button" class="mini-btn" data-allocation-add>{{ t('allocation.add') }}</button>
+              </div>
+            </section>
+            {% endif %}
             <div class="attendance-project-dialog-body" data-cross-project-body></div>
-            <div class="dialog-actions"><button class="primary-btn" type="button" data-dialog-close>{{ t("attendance.finish_project_allocation") }}</button></div>
           </div>
         </dialog>
         <section class="review-section special-day-handling-section" data-special-day-handling hidden>
@@ -983,6 +1020,25 @@ document.getElementById("attendance-review-form")?.addEventListener("click", (ev
 const attendanceProjectDialog = document.getElementById("attendance-project-dialog");
 const attendanceProjectDialogBody = attendanceProjectDialog?.querySelector("[data-cross-project-body]");
 const attendanceProjectOpen = document.querySelector("[data-cross-project-open]");
+const monthlyAllocation = document.querySelector('.monthly-project-allocation');
+if (monthlyAllocation) {
+  const toggle = monthlyAllocation.querySelector('[name="allocation_enabled"]');
+  const fields = monthlyAllocation.querySelector('[data-monthly-allocation-fields]');
+  const rows = monthlyAllocation.querySelector('[data-allocation-rows]');
+  const sync = () => { fields.hidden = !toggle.checked; fields.querySelectorAll('input,select').forEach(input => input.disabled = !toggle.checked); };
+  toggle.addEventListener('change', sync); sync();
+  monthlyAllocation.querySelector('[data-allocation-add]').addEventListener('click', () => {
+    const row = rows.firstElementChild.cloneNode(true);
+    row.querySelectorAll('input,select').forEach(input => { input.value = ''; input.disabled = false; });
+    rows.appendChild(row);
+  });
+  rows.addEventListener('click', event => {
+    if (event.target.closest('[data-allocation-remove]') && rows.children.length > 1) event.target.closest('.monthly-allocation-row').remove();
+  });
+  monthlyAllocation.addEventListener('invalid', () => {
+    if (!attendanceProjectDialog.open) attendanceProjectOpen.click();
+  }, true);
+}
 let attendanceProjectGroupSlots = [];
 function restoreAttendanceProjectGroups() {
   attendanceProjectGroupSlots.forEach(({ group, slot, openStates }) => {
@@ -1001,7 +1057,8 @@ if (attendanceProjectDialog && attendanceProjectDialogBody && attendanceProjectO
       const slot = document.createComment("attendance-project-group-slot");
       const periods = [...group.querySelectorAll("[data-attendance-period]")];
       const openStates = periods.map((period) => period.open);
-      periods.forEach((period) => { period.open = true; });
+      // Retain the user's open sections instead of expanding all four periods.
+      periods.forEach((period, index) => { period.open = openStates[index]; });
       group.replaceWith(slot);
       attendanceProjectDialogBody.appendChild(group);
       return { group, slot, openStates };
@@ -1108,10 +1165,15 @@ function updateAttendanceEntrySummary() {
     if (previousActual.largeEcall !== previousForecast.largeEcall) differences.push(`{{ t('attendance.large_ecall_short') }} ${attendanceSignedText(previousActual.largeEcall - previousForecast.largeEcall, "")}`);
     if (previousActual.ordinaryEcall !== previousForecast.ordinaryEcall) differences.push(`{{ t('attendance.ordinary_ecall_short') }} ${attendanceSignedText(previousActual.ordinaryEcall - previousForecast.ordinaryEcall, "")}`);
     if (previousActual.allowance !== previousForecast.allowance) differences.push(`{{ t('attendance.other_allowance_short') }} ${attendanceSignedText(previousActual.allowance - previousForecast.allowance, "")}`);
-    reconciliation.textContent = differences.length
+    const actualSource = form.querySelector('[data-attendance-period="previous_21_end"]')?.dataset.periodSource;
+    const forecastSource = form.querySelector('[data-attendance-period="previous_21_end_forecast"]')?.dataset.periodSource;
+    const hasSavedComparison = actualSource === 'saved' && ['saved', 'prior_forecast'].includes(forecastSource);
+    reconciliation.textContent = !hasSavedComparison
+      ? "{{ t('attendance.tail_pending_review') }}"
+      : differences.length
       ? "{{ t('attendance.reconciliation_difference') }}".replace("__DETAILS__", differences.join(" · "))
       : "{{ t('attendance.reconciliation_match') }}";
-    reconciliation.classList.toggle("has-difference", differences.length > 0);
+    reconciliation.classList.toggle("has-difference", !hasSavedComparison || differences.length > 0);
   }
   const errorBox = summary;
   const list = errorBox.querySelector("ul");

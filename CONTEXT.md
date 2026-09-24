@@ -1,6 +1,6 @@
 # HKR HR Context
 
-Updated: 2026-08-13
+Updated: 2026-09-01
 
 This file records stable vocabulary, current architecture, and operational facts. It does not record task progress or deployment status. Executable rules live in [`AGENTS.md`](AGENTS.md) and [`hkr_hr_mvp/AGENTS.md`](hkr_hr_mvp/AGENTS.md); design rationale lives in the [`ADR index`](hkr_hr_mvp/docs/adr/README.md).
 
@@ -86,6 +86,7 @@ Current intake document type codes are:
 | `qualification` | Degree or skill certificate |
 | `change_evidence` | Employment or salary change evidence |
 | `cv` | Curriculum vitae |
+| `other` | General attachment classified by a configurable general-attachment type |
 
 三寶 covers identity evidence, construction worker registration, and safety training/card evidence. Stable source precedence is:
 
@@ -95,6 +96,11 @@ Current intake document type codes are:
 - Existing manually confirmed values are never silently overwritten.
 
 V1 does not use OCR. HR previews the source document and enters or corrects the relevant structured data manually.
+Staff Record review captures contact, residential address, emergency-contact, education, employment-start and bank facts. Bank details create or update the employee's effective-dated bank-account history and link the Staff Record as evidence without replacing an identical dedicated bank proof.
+
+Contracts & Attachments provides one employee-profile document gateway. Three Treasures, Staff Record, signed Employment Contract, CV, and general attachments can be uploaded and reviewed there. Bank, identity/credential, employment/pay, probation, leave, work-injury, attendance, termination, and name-change evidence is routed to the owning structured record so an attachment cannot exist without the business fact it supports. System document purposes are fixed; only general-attachment subtypes are maintained in Data Options. See ADR-0024.
+
+Annual leave is deducted once in this order: compensation leave, the 2023-and-earlier balance, then the oldest valid 2024+ balance. Calendar-year leave taken and usage of a specific entitlement bucket are separate measures; one leave record must never be counted against two balances.
 
 Employee document status is `active`, `replaced`, or `voided`. Replacing or voiding requires a reason.
 Employee documents store a SHA-256 content digest. Identical-content checks are scoped to the same employee and document category; attendance PDFs are further scoped to the same payroll month. HR must explicitly confirm an identical replacement.
@@ -130,9 +136,14 @@ Replacing a document updates linked identity, certificate, VISA, qualification, 
 - Casual construction-worker MPF uses the MPFA daily relevant-income contribution scale. Regular MPF and casual MPF both follow the four-part payroll reconciliation; employees aged 65 or above have no mandatory contribution.
 - MPF scheme and Member Account No. are effective-dated employee records. The system derives the current record and automatically closes the prior record when a later scheme starts.
 - Four seeded company MPF schemes hold the employer account and payroll group identifiers. MPF reports use the same monthly Payroll results, export one XLSX per scheme or a ZIP for all schemes, and retain zero-income or exempt employees.
-- Missing MPF scheme/member metadata blocks only the MPF contribution report; it does not block otherwise ready Payroll. Mid-month scheme splitting is outside the current core.
+- Employee MPF Member Account No. is optional. Effective date remains required; non-exempt records require a scheme. Explicit exempt records may omit the scheme, count as complete, and do not enter or block scheme reports. Exempt records with a scheme remain in that report. Other missing MPF metadata can block the MPF report, not otherwise ready Payroll. Mid-month scheme splitting is outside the current core.
+- V0.5.6 monthly project allocation was refined on 2026-09-16: opt-in temporary target ranges transfer only scheduled workday shares, using effective employment schedules and applicable paid holidays. Rest days and paid holidays retain the original employment project; Saturday transfers 0 / 0.5 / 1 day for 5 / 5.5 / 6-day schedules. Partial ranges are allowed; overlaps and out-of-month dates are rejected. Base pay, sickness/injury components and unassigned fixed allowances use the same shares; attendance extras and prior-tail reconciliation keep their own project rows. One PDF supports multiple project rows in the existing editor. Previously saved calendar-inclusive allocation remains explicit legacy evidence until HR converts it; snapshots require re-export. Daily, attendance-based monthly and Departure Payroll retain existing paths. No employee data is bulk-converted.
 - Annual leave records support start/end dates and AM/PM sessions in 0.5-day units. The combined 2023-and-earlier balance does not expire. Each balance from 2024 onward normally expires on March 31 of the following year and may have an approved extension date.
+- From V0.5.3, new or explicitly corrected annual, sick and unpaid leave derive from effective assignments and saved local holiday calendars: 5/5.5-day schedules exclude Saturday and Sunday; 6-day schedules count Saturday and exclude Sunday. Applicable Payroll-group holidays are excluded, with AM/PM each 0.5 day. Contractual attendance is unchanged (5.5-day Saturday remains 0.5 attendance day); work-injury calendar-day pay is unchanged. Each new/corrected leave stores its date-unit allocation for consistent attendance and Payroll use. Legacy records retain their prior basis until HR explicitly corrects them. Source writes reject overlapping active leave/injury periods; inconsistent legacy data continues to block affected Payroll until corrected.
+- V0.5.4 adds an explicitly confirmed, employee-filtered batch operation on the existing leave-difference page. Employment & Salary links to outstanding differences. Selected records keep dates, sessions, evidence and remarks; update only day counts and allocations. During the current reconciliation phase, confirmation also recalculates that employee's existing Payroll months from the earliest affected month onward, preserving historical snapshots and before/after audits; no attendance input rewrite. Final Payment leave-pay days follow the balance delta while retaining prior manual offsets and other inputs. All changes are atomic; stale previews, zero-day records, overlaps or calculation blockers cannot silently partially apply. Downloaded workbooks require re-export; a snapshot is not proof of payment.
+- Leave/injury changes after Attendance confirmation produce a derived recheck warning in Attendance and Payroll without automatically modifying entered attendance totals. Unchanged compensation-leave sources retain their IDs and allocations on attendance resave.
 - One leave record may allocate days to both the legacy balance and 2024-onward balances. Regular leave uses the oldest valid balance first. Incorrect records can be corrected or withdrawn.
+- Leave details follow the employee-profile current-state/history pattern: current-year, 2023-and-earlier and compensation-leave cards sit above one change history. Current-year entitlement and the legacy confirmed total are adjusted independently; compensation leave has no manual-add path.
 - Departure Payroll (the export workbook still uses the formal English label Final Payment) is separate from ordinary four-part Payroll. A departing employee is excluded from Monthly Payroll in the departure month; Departure Payroll is the wage source. It inherits fixed allowances effective through the last working day, month-specific adjustments, Attendance substitute-shift allowance and work-injury medical reimbursement. Medical reimbursement increases net pay but is excluded from MPF relevant income. Its MPF replaces (rather than duplicates) ordinary Payroll MPF in that month's MPF report, and an unconfirmed Departure Payroll blocks that employee's MPF export. Annual-leave pay uses the HR-verified previous-12-month wage total divided by 365; departure-year entitlement is prorated by inclusive employment days, with overuse offset against other leave and any remainder deducted in Departure Payroll.
 - Departure Payroll service benefits split at 2025-05-01 where applicable. HR selects statutory eligibility and the reviewed wage basis; the system applies service proration, the HKD 15,000 annual unit cap, the HKD 390,000 overall cap, and any HR-entered pre-transition MPF offset.
 - One Departure Payroll group exports one XLSX; all groups export a ZIP containing daily, monthly, and management/head-office XLSX files. The output retains Excel formulas and keeps employee MPF on the employee's single wage row.
@@ -161,6 +172,9 @@ Replacing a document updates linked identity, certificate, VISA, qualification, 
 - Production requires CSRF protection, login throttling, local post-login redirects, a non-placeholder secret key, server-side upload validation and friendly HTTP error pages. These controls must not add approval steps to ordinary HR work.
 
 ## Current Scope Boundaries
+
+- Salary Records (`employee_salary_records`, `/salary-records`) is an independent manual register from 2026-04. It records gross pay, employee MPF actually deducted (including catch-up deductions in the deduction month), net payment, currency, entity, remarks and evidence. It never feeds Payroll/MPF calculations, leave/final-payment averages or payment execution. Explicit saved-Payroll prefill is read-only until HR saves a separate record.
+- One employee/month/payroll-entity record is revisioned with audit and withdrawal. The central monthly table is the only editor; employee profiles display read-only records. April–March summaries separate currency and entity, include departed workers and flag missing employment months through the current month. Export is reconciliation material, not a statutory tax return.
 
 Not part of the current core:
 

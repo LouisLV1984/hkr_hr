@@ -1,4 +1,357 @@
 RELEASES = [
+{
+    "version": "V0.5.6", "date": "2026-09-16",
+    "title": {"zh-Hant":"月薪項目日期分攤與 MPF 豁免", "zh-Hans":"月薪项目日期分摊与 MPF 豁免", "en":"Monthly project dates and MPF exemptions"},
+    "features": {
+        "zh-Hant":["一份考勤 PDF 可一次錄入多個項目；月薪只將調配期間的正常工作日份額轉往其他項目，休息日及適用有薪假日留在原項目。", "星期六依 5／5.5／6 天制分別轉移 0／半天／一天。底薪及未指定項目的固定補貼按同一份額分攤；OT、E-CALL、額外工作及上月補差保留各自考勤項目。"],
+        "zh-Hans":["一份考勤 PDF 可一次录入多个项目；月薪只将调配期间的正常工作日份额转往其他项目，休息日及适用有薪假日留在原项目。", "星期六依 5／5.5／6 天制分别转移 0／半天／一天。底薪及未指定项目的固定补贴按同一份额分摊；OT、E-CALL、额外工作及上月补差保留各自考勤项目。"],
+        "en":["Enter multiple projects from one PDF. Monthly transfers apply only to scheduled workday shares; rest days and applicable paid holidays stay with the home project.", "Saturday transfers 0, half or one day under 5, 5.5 or 6-day schedules. Base pay and unassigned fixed allowances use these shares; attendance extras and prior-tail pay retain their own projects."]
+    },
+    "improvements": {
+        "zh-Hant":["MPF 豁免記錄可不選計劃；無計劃的豁免員工不阻擋供款表匯出，有計劃者仍列於所屬報表。", "修正員工檔案將已收考勤誤顯示為已撤回。", "跨項目彈窗加寬，只展開需要的時段；日期可只填調配期間，重疊或跨月份時阻止保存。分行總薪金不變，MPF 不重複扣除。"],
+        "zh-Hans":["MPF 豁免记录可不选计划；无计划的豁免员工不阻挡供款表导出，有计划者仍列于所属报表。", "修正员工档案将已收考勤误显示为已撤回。", "跨项目弹窗加宽，只展开需要的时段；日期可只填调配期间，重叠或跨月份时阻止保存。分行总薪金不变，MPF 不重复扣除。"],
+        "en":["Exempt MPF records may omit a scheme without blocking other scheme reports.", "Correct received attendance incorrectly labelled as withdrawn in employee profiles.", "Widen the project editor and expand only needed periods. Partial transfers are allowed, overlapping or out-of-month dates are rejected. Total pay is preserved and MPF deducted only once."]
+    },
+    "limitations": {
+        "zh-Hant":["只在 HR 明確勾選並保存後生效；舊全曆日分攤須明確確認改用工作日規則。不批量更改既有員工或已保存 Payroll 快照，需核對後重新匯出。", "日工及按出勤日數計薪仍按考勤項目處理；離職 Payroll 不使用此每月分攤設定。"],
+        "zh-Hans":["只在 HR 明确勾选并保存后生效；旧全历日分摊须明确确认改用工作日规则。不批量更改既有员工或已保存 Payroll 快照，需核对后重新导出。", "日工及按出勤日数计薪仍按考勤项目处理；离职 Payroll 不使用此每月分摊设置。"],
+        "en":["Opt-in only. Legacy calendar allocation requires explicit conversion. No bulk employee or saved Payroll rewrites; review and re-export.", "Daily and attendance-based pay keep attendance projects. Departure Payroll does not use this monthly allocation."]
+    }
+},
+{
+    "version": "V0.5.5", "date": "2026-09-10",
+    "title": {"zh-Hant":"獨立薪酬紀錄與年度匯總", "zh-Hans":"独立薪酬记录与年度汇总", "en":"Independent salary records and annual summaries"},
+    "features": {
+        "zh-Hant":["新增薪酬紀錄：由 2026 年 4 月起，按員工、月份及發薪單位手動填寫應發工資、員工 MPF 實際扣款及實發金額。", "年度匯總按 4 月至翌年 3 月展示，包含離職員工，分開發薪單位及幣種，支援匯出年度匯總與每月明細。", "員工檔案的考勤與 Payroll 可唯讀查閱薪酬紀錄，新增、更正及撤回集中於同一入口。"],
+        "zh-Hans":["新增薪酬记录：由 2026 年 4 月起，按员工、月份及发薪单位手动填写应发工资、员工 MPF 实际扣款及实发金额。", "年度汇总按 4 月至翌年 3 月展示，包含离职员工，分开发薪单位及币种，支持导出年度汇总与每月明细。", "员工档案的考勤与 Payroll 可只读查阅薪酬记录，新增、更正及撤回集中于同一入口。"],
+        "en":["Record gross pay, actual employee MPF deductions and net payment by employee, month and entity from April 2026.", "April–March summaries include departed employees, separate entities and currencies, and export annual totals plus monthly detail.", "Employee profiles show read-only salary history linked to one central editor."]
+    },
+    "improvements": {
+        "zh-Hant":["員工 MPF 賬號改為可不填，新增、更正、資料完整度及 MPF 匯出同步取消必填限制；不改供款計算。", "幣種改用資料設定下拉選項；金額統一千分位與兩位小數。", "MPF 補扣以實際扣薪月份記錄；實發與應發減 MPF 不一致可備註後保存，空白不視為零。", "可明確帶入相符已保存 Payroll 作預填，但需人工核對保存；更正及撤回保留香港時間審計與歷史憑證。", "多人修改或過期提交阻止覆蓋；整批驗證成功才保存，錯誤時保留畫面輸入及所選附件。"],
+        "zh-Hans":["员工 MPF 账号改为可不填，新增、更正、资料完整度及 MPF 导出同步取消必填限制；不改供款计算。", "币种改用资料设置下拉选项；金额统一千分位与两位小数。", "MPF 补扣以实际扣薪月份记录；实发与应发减 MPF 不一致可备注后保存，空白不视为零。", "可明确带入相符已保存 Payroll 作预填，但需人工核对保存；更正及撤回保留香港时间审计与历史凭证。", "多人修改或过期提交阻止覆盖；整批验证成功才保存，错误时保留页面输入及所选附件。"],
+        "en":["Employee MPF member accounts are optional for entry, correction, completeness and export; contribution calculations are unchanged.", "Use Data Settings currencies and display amounts with thousands separators and two decimals.", "Catch-up MPF belongs to the actual deduction month; manual net overrides are allowed, and blank is not zero.", "Explicitly load a matching saved Payroll snapshot for review; corrections, withdrawals and evidence retain audit history in Hong Kong time.", "Stale submissions cannot overwrite newer changes. Validate the entire batch before saving and retain browser inputs on validation errors."]
+    },
+    "limitations": {
+        "zh-Hant":["完全獨立於現有 Payroll、MPF 供款表及年假／離職補薪計算；不會自動回寫或隨重新計算改動。", "年度匯總只供核對，不等於正式報稅表；未錄入月份按任職資料核對，未來月份不列缺漏。"],
+        "zh-Hans":["完全独立于现有 Payroll、MPF 供款表及年假／离职补薪计算；不会自动回写或随重新计算改动。", "年度汇总仅供核对，不等于正式报税表；未录入月份按任职资料核对，未来月份不列缺漏。"],
+        "en":["No write-back to Payroll, MPF returns or leave/final-payment averages; saved records do not change on recalculation.", "This is a reconciliation register, not a statutory tax return. Employment data determines missing months; future months are excluded."]
+    }
+},
+{
+    "version": "V0.5.4", "date": "2026-09-09",
+    "title": {"zh-Hant": "假期差異一鍵核對與 Payroll 同步更新", "zh-Hans": "假期差异一键核对与 Payroll 同步更新", "en": "Batch leave review and Payroll recalculation"},
+    "features": {
+        "zh-Hant": ["任職與薪酬提示該員工待核對假期，直接進入已篩選的差異清單。", "HR 勾選後一次更新假期日數及扣帳，保留原日期、時段、憑證與備註；無需逐筆開啟更正。", "核對階段確認更新會同步重新計算相關已有 Payroll 月份及離職年假補薪，保留舊快照和前後審計。"],
+        "zh-Hans": ["任职与薪酬提示该员工待核对假期，直接进入已筛选的差异清单。", "HR 勾选后一次更新假期日数及扣账，保留原日期、时段、凭证与备注；无需逐笔打开更正。", "核对阶段确认更新会同步重新计算相关已有 Payroll 月份及离职年假补薪，保留旧快照和前后审计。"],
+        "en": ["Employment & Salary links directly to the employee's leave differences.", "Update selected day counts and allocations together while retaining dates, sessions, evidence and remarks.", "During reconciliation, confirmation recalculates affected saved Payroll months and Final Payment leave balances, retaining old snapshots and before/after audit."]
+    },
+    "improvements": {
+        "zh-Hant": ["清單涵蓋後續已有月份，避免上月尾段補差仍沿用旧結果；不更改考勤原輸入。", "確認頁防止過期、重複及跨範圍提交；假期與 Payroll 全部成功才保存，失敗整批回滾。", "0 日假期及缺資料記錄不自動更改，保留原記錄撤回／補資料入口。"],
+        "zh-Hans": ["清单涵盖后续已有月份，避免上月尾段补差仍沿用旧结果；不更改考勤原输入。", "确认页防止过期、重复及跨范围提交；假期与 Payroll 全部成功才保存，失败整批回滚。", "0 日假期及缺资料记录不自动更改，保留原记录撤回／补资料入口。"],
+        "en": ["Include later saved months for forecast reconciliation; attendance inputs stay unchanged.", "Reject stale, repeated and out-of-scope submissions; leave and Payroll changes commit together or roll back together.", "Zero-day and incomplete records require withdrawal or source correction instead of automatic changes."]
+    },
+    "limitations": {
+        "zh-Hant": ["不代表付款或自動更改已下載 Excel，須重新匯出。無既有 Payroll 的月份不建立多餘快照。離職年假補薪只同步結餘差額，保留人工調整、日薪率及其他離職輸入；若調整後負數或資料缺失，整批不保存。"],
+        "zh-Hans": ["不代表付款或自动更改已下载 Excel，须重新导出。无既有 Payroll 的月份不建立多余快照。离职年假补薪只同步结余差额，保留人工调整、日薪率及其他离职输入；若调整后负数或资料缺失，整批不保存。"],
+        "en": ["No payment or modification of downloaded Excel files; re-export them. Do not create unnecessary snapshots for unsaved months. Final Payment leave-pay days follow balance differences while retaining manual adjustments, rates and other inputs; negative days or missing data block the whole batch."]
+    }
+},
+{
+    "version": "V0.5.3", "date": "2026-09-09",
+    "title": {"zh-Hant": "請假工作日計算與舊記錄差異核對", "zh-Hans": "请假工作日计算与旧记录差异核对", "en": "Leave workday counting and historical difference review"},
+    "features": {
+        "zh-Hant": ["年假、病假及無薪假統一按員工適用工作日計算：5／5.5 天制排除六日；6 天制排除星期日，另排除適用假日。", "假期日數差異核對涵蓋全部年度及在職／離職員工，列出原日數、試算日數、差額及相關 Payroll 快照月份。"],
+        "zh-Hans": ["年假、病假及无薪假统一按员工适用工作日计算：5／5.5 天制排除六日；6 天制排除星期日，另排除适用假日。", "假期日数差异核对涵盖全部年度及在职／离职员工，列出原日数、试算日数、差额及相关 Payroll 快照月份。"],
+        "en": ["Annual, sick and unpaid leave exclude weekends for 5/5.5-day schedules or Sunday for 6-day schedules, plus applicable holidays.", "Read-only historical review covers all years and active/departed employees, showing saved/new days, differences and Payroll snapshot months."]
+    },
+    "improvements": {
+        "zh-Hant": ["假期詳情及錄入視窗沿用考勤的深綠底黃色員工資訊，按請假日期顯示有效 Payroll 類別及合約／請假工作制。", "新增及更正使用伺服器日數預覽，顯示不計假日期；保存逐日計算結果供考勤及 Payroll 共用。", "考勤保留合約工作制：5.5 天制星期六仍計 0.5 天；常駐提示說明與請假計日的差別。", "舊記錄保留原口徑，HR 核對後以原記錄更正；無需重複新增。"],
+        "zh-Hans": ["假期详情及录入窗口沿用考勤的深绿底黄色员工信息，按请假日期显示有效 Payroll 类别及合同／请假工作制。", "新增及更正使用服务器日数预览，显示不计假日期；保存逐日计算结果供考勤及 Payroll 共用。", "考勤保留合同工作制：5.5 天制星期六仍计 0.5 天；常驻提示说明与请假计日的差别。", "旧记录保留原口径，HR 核对后以原记录更正；无需重复新增。"],
+        "en": ["Leave details and editors use the attendance green/yellow employee banner and show effective Payroll group and contractual/leave workweeks for selected dates.", "Server previews list excluded dates; saved date allocations are shared by attendance and Payroll.", "Contractual Saturday attendance remains 0.5 day for 5.5-day schedules, with permanent explanatory guidance.", "Legacy records retain their basis until explicitly corrected by HR."]
+    },
+    "limitations": {
+        "zh-Hant": ["不自動改寫舊假期或已生成 Payroll 快照；歷史出糧由 HR 核對後另行處理。有效工作制及本地工作日曆須準確。工傷連續計薪規則不變。"],
+        "zh-Hans": ["不自动改写旧假期或已生成 Payroll 快照；历史出粮由 HR 核对后另行处理。有效工作制及本地工作日历须准确。工伤连续计薪规则不变。"],
+        "en": ["No automatic rewrite of legacy leave or existing Payroll snapshots. HR must reconcile historical pay. Effective schedules and saved calendars must be accurate. Work-injury calendar-day pay is unchanged."]
+    }
+},
+{
+    "version": "V0.5.2", "date": "2026-09-09",
+    "title": {"zh-Hant": "圖片附件兼容性及請假錯誤保留", "zh-Hans": "图片附件兼容性及请假错误保留", "en": "Image attachment compatibility and leave error recovery"},
+    "features": {
+        "zh-Hant": ["JPG／JPEG／PNG 按實際格式及完整解碼檢查；可讀 JPEG 不再因結尾附加資料而被誤拒。"],
+        "zh-Hans": ["JPG／JPEG／PNG 按实际格式及完整解码检查；可读 JPEG 不再因结尾附加数据而被误拒。"],
+        "en": ["Validate JPG/JPEG/PNG by actual format and complete decoding; readable JPEGs with trailing metadata are no longer rejected solely for their ending."]
+    },
+    "improvements": {
+        "zh-Hant": ["假期與工傷沿用員工編輯的錯誤保留機制；失敗時留在視窗內顯示原因，保留已填日期及已選附件。", "保存後返回同一頁時亦刷新歷史及關閉視窗，避免誤以為保存失敗而重複提交。", "仍拒絕偽裝格式、無法解碼的圖片及超過 4,000 萬像素的圖片；保留 32 MB 請求限制，原始附件不轉檔。"],
+        "zh-Hans": ["假期与工伤沿用员工编辑的错误保留机制；失败时留在窗口内显示原因，保留已填日期及已选附件。", "保存后返回同一页时亦刷新历史及关闭窗口，避免误以为保存失败而重复提交。", "仍拒绝伪装格式、无法解码的图片及超过 4,000 万像素的图片；保留 32 MB 请求限制，原始附件不转档。"],
+        "en": ["Leave and injury editors retain dates and selected files while displaying validation errors in place.", "Same-page successful saves refresh history and close the editor to avoid apparent failures and duplicate submissions.", "Reject disguised formats, undecodable or over-40-megapixel images; retain the 32 MB request limit and original evidence bytes."]
+    },
+    "limitations": {
+        "zh-Hant": ["不變更計薪或假期日數規則；PDF 驗證規則不變。個別正式環境失敗仍需依實際提交及錯誤核查。"],
+        "zh-Hans": ["不变更计薪或假期天数规则；PDF 验证规则不变。个别正式环境失败仍需依实际提交及错误核查。"],
+        "en": ["No payroll or leave-day changes; PDF validation is unchanged. Unreproduced production failures require the actual submission and error."]
+    }
+},
+{
+    "version": "V0.5.1", "date": "2026-09-09",
+    "title": {"zh-Hant": "附件錯誤提示精準化", "zh-Hans": "附件错误提示精准化", "en": "Clear attachment validation messages"},
+    "features": {
+        "zh-Hant": ["附件錯誤列明 .pdf、.jpg、.jpeg、.png、.docx、.xlsx；考勤入口另提示只接受 PDF。"],
+        "zh-Hans": ["附件错误列明 .pdf、.jpg、.jpeg、.png、.docx、.xlsx；考勤入口另提示只接受 PDF。"],
+        "en": ["Attachment errors list all supported extensions; attendance uploads explicitly accept PDF only."]
+    },
+    "improvements": {
+        "zh-Hant": ["區分格式不支援、驗證失敗、空文件及請求超出 32 MB；不直接斷言附件損壞。", "員工編輯彈窗保留伺服器的具體錯誤內容及原有填寫資料。"],
+        "zh-Hans": ["区分格式不支持、验证失败、空文件及请求超过 32 MB；不直接断言附件损坏。", "员工编辑弹窗保留服务器的具体错误内容及原有填写资料。"],
+        "en": ["Distinguish unsupported format, validation failure, empty files and the 32 MB request limit without assuming corruption.", "Employee editors retain the specific server error along with entered fields."]
+    },
+    "limitations": {
+        "zh-Hant": ["不新增支援格式、不放寬驗證、不更改員工或病假資料；個別附件被拒原因仍須原檔核實。"],
+        "zh-Hans": ["不新增支持格式、不放宽验证、不更改员工或病假资料；个别附件被拒原因仍须原文件核实。"],
+        "en": ["No new formats, relaxed validation or employee/leave data changes. A specific rejection still requires the original file to diagnose."]
+    }
+},
+{
+    "version": "V0.5.0",
+    "date": "2026-09-07",
+    "title": {
+        "zh-Hant": "員工編輯防誤操作與附件總庫精簡",
+        "zh-Hans": "员工编辑防误操作与附件总库精简",
+        "en": "Safer employee editing and a lean document library"
+    },
+    "features": {
+        "zh-Hant": [
+            "員工及文件核對表單有未保存修改時，關閉、切換及離開前提醒；未修改則不打擾。",
+            "保存校驗失敗時保留本頁欄位及所選附件，顯示具體錯誤；網絡結果不明時提示先查歷史，避免重複新增。",
+            "合約與附件改為類別／數量篩選及一張文件列表；空類別不再標紅，SHA-256 收入文件詳情。"
+        ],
+        "zh-Hans": [
+            "员工及文件核对表单有未保存修改时，关闭、切换及离开前提醒；未修改则不打扰。",
+            "保存校验失败时保留本页字段及所选附件，显示具体错误；网络结果不明时提示先查历史，避免重复新增。",
+            "合同与附件改为类别／数量筛选及一张文件列表；空类别不再标红，SHA-256 收入文件详情。"
+        ],
+        "en": [
+            "Warn before discarding changed employee or document-review forms; untouched forms need no confirmation.",
+            "Validation errors retain fields and selected files in the open page. Unknown network outcomes prompt a history check before retrying.",
+            "Category/count filters and one document list replace repeated file cards. Empty categories are neutral; hashes move into details."
+        ]
+    },
+    "improvements": {
+        "zh-Hant": [
+            "表單內說明新增、更正、替換附件、補交憑證和作廢的差別；續證新增、日期填錯更正。",
+            "入職、離職、轉正、薪酬生效日期及工作制等改動時，顯示相關影響及歷史月份核對提示，不增加審批步驟。",
+            "保存成功沿用原頁面及成功訊息；繁體、簡體、英文共用相同操作。",
+            "修正變更歷史及共用操作欄的橫線對齊；生效日期欄只顯示起始日，截止日期在內容另行標示，不改歷史計薪資料。"
+        ],
+        "zh-Hans": [
+            "表单内说明新增、更正、替换附件、补交凭证和作废的区别；续证新增、日期填错更正。",
+            "入职、离职、转正、薪酬生效日期及工作制等改动时，显示相关影响及历史月份核对提示，不增加审批步骤。",
+            "保存成功沿用原页面及成功消息；繁体、简体、英文共用相同操作。",
+            "修正变更历史及共用操作栏的横线对齐；生效日期栏只显示起始日，截止日期在内容另行标示，不改历史计薪资料。"
+        ],
+        "en": [
+            "Contextual action guidance distinguishes new records, corrections, replacement, evidence and voiding, including credential renewal.",
+            "Important employment, probation, pay dates and workweek changes show impact hints without new approval steps.",
+            "Successful saves retain existing destinations and flash messages across all three languages.",
+            "Align history and shared action-column row borders. Show only the effective start in the date column and label the end in record content, without changing historical pay data."
+        ]
+    },
+    "limitations": {
+        "zh-Hant": ["不新增草稿資料庫或瀏覽器持久儲存；關閉頁面後不保證恢復。", "不改計薪公式、不重寫歷史考勤／Payroll、不新增關帳、審批或任務系統。"],
+        "zh-Hans": ["不新增草稿数据库或浏览器持久存储；关闭页面后不保证恢复。", "不改计薪公式、不重写历史考勤／Payroll、不新增关账、审批或任务系统。"],
+        "en": ["Drafts stay in the open page only, with no persistent browser or database draft storage.", "No pay-formula changes, historical rewrites, payroll closing, approvals or task system."]
+    }
+},
+{
+    "version": "V0.4.0",
+    "date": "2026-09-07",
+    "title": {
+        "zh-Hant": "員工資料與附件管理一致性完善",
+        "zh-Hans": "员工资料与附件管理一致性完善",
+        "en": "Consistent employee records and evidence workflows"
+    },
+    "features": {
+        "zh-Hant": [
+            "病假待補憑證直接定位原請假記錄；獨立補交附件，不新增假期或更改日數。",
+            "證件卡片與看板共用到期判斷，提醒直接定位證件，並涵蓋有到期日的專業資歷。",
+            "附件替換須選定一份原件及填寫原因，保留歷史並統一更新所屬資料引用。"
+        ],
+        "zh-Hans": [
+            "病假待补凭证直接定位原请假记录；独立补交附件，不新增假期或更改日数。",
+            "证件卡片与看板共用到期判断，提醒直接定位证件，并涵盖有到期日的专业资历。",
+            "附件替换须选定一份原件及填写原因，保留历史并统一更新所属资料引用。"
+        ],
+        "en": [
+            "Missing sick-leave evidence opens the existing record; evidence-only changes do not create leave.",
+            "Credential cards and dashboard share expiry rules and direct links, including dated qualifications.",
+            "Replacement targets one document with a reason; history and typed references are preserved."
+        ]
+    },
+    "improvements": {
+        "zh-Hant": [
+            "合約核對預填現有年假及試用期；僅明確勾選更新條款才套用，空白不清除既有值。",
+            "統一證件重複與日期校驗；Staff Record 更新個人、學歷及入職日期均寫入相應變更歷史。",
+            "工作／安全證件與學歷／專業資歷分區展示；既有資料不搬移或刪除。",
+            "統一彈窗欄位、文件選擇、提示與取消按鈕名稱；新增員工必須自行選擇 Payroll 類別，轉正資料缺失明示待核實。"
+        ],
+        "zh-Hans": [
+            "合同核对预填现有年假及试用期；仅明确勾选更新条款才应用，空白不清除已有值。",
+            "统一证件重复与日期校验；Staff Record 更新个人、学历及入职日期均写入相应变更历史。",
+            "工作／安全证件与学历／专业资历分区展示；已有资料不搬移或删除。",
+            "统一弹窗字段、文件选择、提示与取消按钮名称；新增员工须自行选择 Payroll 类别，转正资料缺失明示待核实。"
+        ],
+        "en": [
+            "Contract review preserves leave/probation terms unless explicitly applied; blank fields preserve existing values.",
+            "Shared duplicate/date validation and source-specific audit history for Staff Record changes.",
+            "Work/safety credentials and education/qualifications are presented separately without migrating records.",
+            "Consistent dialogs and file inputs; explicit Payroll-group selection and unverified probation copy."
+        ]
+    },
+    "limitations": {
+        "zh-Hant": [
+            "不批量更改正式員工、既有假期、附件分類或歷史 Payroll；缺失資料仍須 HR 核對補齊。",
+            "不新增 OCR、任務系統或審批流程；本版不改動 Payroll 計薪公式。"
+        ],
+        "zh-Hans": [
+            "不批量更改正式员工、已有假期、附件分类或历史 Payroll；缺失资料仍须 HR 核对补齐。",
+            "不新增 OCR、任务系统或审批流程；本版不改动 Payroll 计薪公式。"
+        ],
+        "en": [
+            "No bulk edits to employee records, leave, document categories or historical Payroll.",
+            "No OCR, task system, approval workflow or Payroll formula changes."
+        ]
+    }
+},
+    {
+        "version": "V0.3.11",
+        "date": "2026-09-06",
+        "limitations": {
+            "zh-Hant": ["不會批量改寫既有假期或已匯出的歷史 Payroll；受影響記錄須由 HR 核對來源後重新匯出。", "考勤只有分段總日數，不能自行判斷某天是否已被 HR 排除，故假期變更只提示重新核對。"],
+            "zh-Hans": ["不会批量改写已有假期或已导出的历史 Payroll；受影响记录须由 HR 核对来源后重新导出。", "考勤只有分段总日数，不能自行判断某天是否已被 HR 排除，因此假期变更只提示重新核对。"],
+            "en": ["Existing leave and exported historical Payroll are not rewritten in bulk; HR must review affected sources and re-export.", "Segment totals do not identify individual attendance dates, so leave changes prompt review rather than automatically reducing attendance."]},
+        "title": {"zh-Hant": "假期、補休與 Payroll 一致性修正", "zh-Hans": "假期、补休与 Payroll 一致性修正", "en": "Leave, compensation leave and Payroll consistency"},
+        "features": {
+            "zh-Hant": ["請假日數按日期及上午／下午自動計算；新增、更正時阻止假期及工傷時段重疊。", "考勤保存後新增、更正或撤回假期／工傷，會在考勤及 Payroll 提示重新核對，不會自動更改已錄入出勤。"],
+            "zh-Hans": ["请假日数按日期及上午／下午自动计算；新增、更正时阻止假期及工伤时段重叠。", "考勤保存后新增、更正或撤回假期／工伤，会在考勤及 Payroll 提示重新核对，不会自动更改已录入出勤。"],
+            "en": ["Leave days are derived from dates and AM/PM; overlapping leave and injury periods are rejected on creation and correction.", "Leave/injury changes after saved attendance prompt review in Attendance and Payroll without automatically changing attendance."]},
+        "improvements": {
+            "zh-Hant": ["修正三種 XLSX 的病假／工傷平均計薪率被普通日薪率覆蓋，保留首日全薪、4/5及全薪工傷的實際混合計薪率。", "不變的考勤補休來源在重存後保留原記錄及扣假分帳；真正變更時於同一交易重分配，餘額不足則不保存。", "未保存的預填不再標成已保存或無需補差；上月尾段明確提示待按 PDF 核對。", "項目薪酬摘要補列其他款項／補差，OT及E-CALL包含上月尾段，分項可加回總額。", "假期歷史顯示上午／下午；既有假期日期與日數矛盾或重疊時，提示先更正再出糧，不批量改寫歷史資料。"],
+            "zh-Hans": ["修正三种 XLSX 的病假／工伤平均计薪率被普通日薪率覆盖，保留首日全薪、4/5及全薪工伤的实际混合计薪率。", "不变的考勤补休来源在重存后保留原记录及扣假分账；真正变更时在同一交易重分配，余额不足则不保存。", "未保存的预填不再标成已保存或无需补差；上月尾段明确提示待按 PDF 核对。", "项目薪酬摘要补列其他款项／补差，OT及E-CALL包含上月尾段，分项可加回总额。", "假期历史显示上午／下午；已有假期日期与日数矛盾或重叠时，提示先更正再出薪，不批量改写历史资料。"],
+            "en": ["All three XLSX exports preserve the effective sick/injury rate, including first-day full pay, four-fifths and full-pay injury combinations.", "Unchanged attendance preserves credit IDs and leave allocations; genuine changes reconcile atomically and insufficient balances prevent saving.", "Unsaved prefills no longer claim saved attendance or no reconciliation required.", "Project summaries include other pay and reconciliation, plus prior-tail OT/E-CALL, so visible components reconcile.", "Leave history shows AM/PM. Inconsistent legacy dates/days or overlaps require correction before Payroll, without bulk rewriting history."]},
+    },
+    {
+        "version": "V0.3.10",
+        "date": "2026-09-01",
+        "title": {
+            "zh-Hant": "年假帳戶扣減核對修正",
+            "zh-Hans": "年假账户扣减核对修正",
+            "en": "Annual-leave bucket reconciliation fix",
+        },
+        "features": {
+            "zh-Hant": [
+                "假期記錄會顯示每筆年假實際扣自補休、2023及以前或指定年度年假帳戶，方便 HR 直接核對來源。",
+                "假期詳情套用員工檔案的一致模式：上方分為本年度年假、2023及以前及補休三張當前狀態卡片，下方集中顯示假期變更歷史。",
+                "新增請假改為唯一彈窗入口；年假額度調整、舊年假總額調整、更正、撤回及補交憑證均在所屬卡片或歷史記錄操作。",
+            ],
+            "zh-Hans": [
+                "假期记录会显示每笔年假实际扣自补休、2023及以前或指定年度年假账户，方便 HR 直接核对来源。",
+                "假期详情套用员工档案的一致模式：上方分为本年度年假、2023及以前及补休三张当前状态卡片，下方集中显示假期变更历史。",
+                "新增请假改为唯一弹窗入口；年假额度调整、旧年假总额调整、更正、撤回及补交凭证均在所属卡片或历史记录操作。",
+            ],
+            "en": [
+                "Each annual-leave record now shows whether it was deducted from compensation leave, the pre-2024 balance, or a specific annual bucket.",
+                "Leave details now follow the employee-profile pattern with three current-state cards above one consolidated change history.",
+                "A single Add Leave dialog is joined by scoped balance adjustments and history-row correction, withdrawal, and evidence actions.",
+            ],
+        },
+        "improvements": {
+            "zh-Hant": [
+                "修正同一筆年假已扣舊年假或補休後又被本年度帳戶重複計入的問題；本年已放總數與本年度帳戶用量分開計算，離職 Payroll 亦沿用正確帳戶餘額。",
+                "2023及以前年假在同一張卡片清楚列出已確認總額、已扣除及目前剩餘，消除50.5總額與50.0剩餘看似矛盾的情況。",
+                "補休取得來源及年假額度調整納入同一變更歷史；本年度與舊年假調整互相獨立，不會因修改其中一項而改寫另一項。",
+                "假期變更歷史統一按香港時間顯示及排序；假期日期移至內容欄，單日只顯示一次日期，多日才顯示起訖。",
+                "日工考勤提示明確區分預填暫按星期日不上班與實際星期日上班須計入出勤；不改動預填或計薪規則。",
+            ],
+            "zh-Hans": [
+                "修正同一笔年假已扣旧年假或补休后又被本年度账户重复计入的问题；本年已休总数与本年度账户用量分开计算，离职 Payroll 也沿用正确账户余额。",
+                "2023及以前年假在同一张卡片清楚列出已确认总额、已扣除及目前剩余，消除50.5总额与50.0剩余看似矛盾的情况。",
+                "补休取得来源及年假额度调整纳入同一变更历史；本年度与旧年假调整互相独立，不会因修改其中一项而改写另一项。",
+                "假期变更历史统一按香港时间显示及排序；假期日期移至内容栏，单日只显示一次日期，多日才显示起止。",
+                "日工考勤提示明确区分预填暂按星期日不上班与实际星期日上班须计入出勤；不改动预填或计薪规则。",
+            ],
+            "en": [
+                "A leave record consumed from an older or compensation balance is no longer counted again in the current-year bucket. Calendar-year leave taken and current-bucket usage are calculated separately, including final Payroll.",
+                "The pre-2024 card now places confirmed total, consumed days, and remaining days together, removing ambiguity between 50.5 total and 50.0 remaining.",
+                "Comp-leave sources and balance adjustments join the history; current-year and legacy adjustments are isolated from each other.",
+                "Leave history is now sorted and displayed in Hong Kong time; leave dates are shown in the content column, with single-day ranges collapsed to one date.",
+                "Daily-worker hints now distinguish the Sunday-off prefill assumption from recording Sundays actually worked; prefill and pay rules are unchanged.",
+            ],
+        },
+        "limitations": {
+            "zh-Hant": [
+                "扣減次序維持補休、2023及以前、最早到期的2024年起年假；本修正不改寫既有請假或扣減記錄。",
+                "補休仍只能由考勤錄入產生；本頁只提供查看來源，不新增第二個手動入口。",
+            ],
+            "zh-Hans": [
+                "扣减次序维持补休、2023及以前、最早到期的2024年起年假；本修正不改写现有请假或扣减记录。",
+                "补休仍只能由考勤录入产生；本页只提供查看来源，不新增第二个手动入口。",
+            ],
+            "en": [
+                "Deduction priority remains compensation leave, pre-2024 balance, then the oldest valid 2024+ bucket. Existing leave and allocation records are not rewritten.",
+                "Comp leave still originates only from Attendance Entry; this page shows its source without adding a second manual-entry path.",
+            ],
+        },
+    },
+    {
+        "version": "V0.3.9",
+        "date": "2026-08-28",
+        "title": {
+            "zh-Hant": "統一員工文件入口與專項分流",
+            "zh-Hans": "统一员工文件入口与专项分流",
+            "en": "Unified employee document intake and owned-record routing",
+        },
+        "features": {
+            "zh-Hant": [
+                "合約與附件新增唯一的「上傳文件」入口；HR 先選用途，Staff Record、三寶、已簽雇傭合約、CV 及一般附件可直接上傳核對。",
+                "銀行、證件、任職薪酬、轉正、假期、工傷、考勤、離職及改名憑證會自動前往所屬專項模組，避免附件與業務記錄脫節。",
+                "資料選項新增「一般附件類型」，HR 可維護推薦信、培訓記錄、員工聲明等公司自訂分類。",
+            ],
+            "zh-Hans": [
+                "合同与附件新增唯一的“上传文件”入口；HR 先选用途，Staff Record、三宝、已签雇佣合同、CV 及一般附件可直接上传核对。",
+                "银行、证件、任职薪酬、转正、假期、工伤、考勤、离职及改名凭证会自动前往所属专项模块，避免附件与业务记录脱节。",
+                "资料选项新增“一般附件类型”，HR 可维护推荐信、培训记录、员工声明等公司自定义分类。",
+            ],
+            "en": [
+                "Contracts & Attachments now has one Upload document gateway for Staff Record, Three Treasures, signed contracts, CVs and general files.",
+                "Bank, credential, employment/pay, probation, leave, work-injury, attendance, termination and name-change evidence routes to its owning record instead of creating an orphan file.",
+                "General attachment types are configurable in Data Options for company-specific file classification.",
+            ],
+        },
+        "improvements": {
+            "zh-Hant": [
+                "個人資料、證件與資歷及任職與薪酬加入同一入口的用途快捷按鈕；附件總覽及員工資料匯出會顯示一般附件細分類與憑證的實際標題。",
+                "系統文件用途維持固定，只開放一般附件細分類供 HR 維護，保留 Payroll、假期、提醒及審計所需的穩定資料語義。",
+                "Staff Record 人工核對補齊住址、緊急聯絡、學歷及入職資料，銀行資料會建立有生效日期的正式記錄；核對欄位沿用考勤錄入的字體、輸入框及提示風格。",
+            ],
+            "zh-Hans": [
+                "个人资料、证件与资历及任职与薪酬加入同一入口的用途快捷按钮；附件总览及员工资料导出会显示一般附件细分类与凭证的实际标题。",
+                "系统文件用途保持固定，只开放一般附件细分类供 HR 维护，保留 Payroll、假期、提醒及审计所需的稳定资料语义。",
+                "Staff Record 人工核对补齐住址、紧急联系人、学历及入职资料，银行资料会建立有生效日期的正式记录；核对栏位沿用考勤录入的字体、输入框及提示风格。",
+            ],
+            "en": [
+                "Personal, Credentials and Employment offer shortcuts into the same gateway; the file library and employee export show accurate general subtypes and evidence titles.",
+                "System purposes remain fixed while only general subtypes are editable, preserving stable Payroll, leave, reminder and audit semantics.",
+                "Staff Record review now captures address, emergency contact, education and employment-start data, creates effective-dated bank records, and reuses Attendance Entry field styling.",
+            ],
+        },
+        "limitations": {
+            "zh-Hant": ["本版本不使用 OCR；HR 仍須預覽來源文件並人工核對結構化資料。"],
+            "zh-Hans": ["本版本不使用 OCR；HR 仍须预览来源文件并人工核对结构化资料。"],
+            "en": ["OCR remains outside this release; HR previews source documents and confirms structured data manually."],
+        },
+    },
     {
         "version": "V0.3.8",
         "date": "2026-08-21",
@@ -1916,4 +2269,4 @@ RELEASES = [
 CURRENT_VERSION = RELEASES[0]["version"]
 
 # The next published release follows the current version without skipping.
-NEXT_VERSION = "V0.3.9"
+NEXT_VERSION = "V0.5.7"
