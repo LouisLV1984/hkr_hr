@@ -39,12 +39,12 @@
       <label><span>{{ t("employee.gender") }}</span><select name="gender"><option value="">{{ t("common.not_set") }}</option><option value="male" {% if employee.gender == "male" %}selected{% endif %}>{{ t("employee.gender_male") }}</option><option value="female" {% if employee.gender == "female" %}selected{% endif %}>{{ t("employee.gender_female") }}</option></select></label>
       <label><span>{{ t("employee.birth_date") }}</span><input type="date" name="date_of_birth" value="{{ employee.date_of_birth.isoformat() if employee.date_of_birth else '' }}"></label>
       <label class="wide"><span>{{ t("employees.contact") }}</span><div class="phone-inputs"><select name="mobile_region_code">{% for item in refs.phone_region %}{% set phone_code = item.display_name.split(' ')[0] %}<option value="{{ phone_code }}" {% if mobile_region == phone_code %}selected{% endif %}>{{ phone_code }}</option>{% endfor %}</select><input name="mobile_number" value="{{ employee.mobile_number or '' }}"></div></label>
-      <label><span>{{ t("employee.email") }}</span><input type="email" name="email" value="{{ employee.email or '' }}"></label>
-      <label class="wide"><span>{{ t("employee.address") }}</span><textarea name="residential_address">{{ employee.residential_address or '' }}</textarea></label>
+      <label class="wide"><span>{{ t("employee.email") }}</span><input type="email" name="email" value="{{ employee.email or '' }}"></label>
+      <label class="wide"><span>{{ t("employee.address") }}</span><textarea name="residential_address" rows="2">{{ employee.residential_address or '' }}</textarea></label>
       <label><span>{{ t("employee.emergency_contact") }}</span><input name="emergency_contact_name" value="{{ employee.emergency_contact_name or '' }}"></label>
       <label><span>{{ t("employee.emergency_relation") }}</span><input name="emergency_contact_relation" value="{{ employee.emergency_contact_relation or '' }}"></label>
       <label class="wide"><span>{{ t("employee.emergency_phone") }}</span><div class="phone-inputs"><select name="emergency_contact_region_code">{% for item in refs.phone_region %}{% set phone_code = item.display_name.split(' ')[0] %}<option value="{{ phone_code }}" {% if emergency_region == phone_code %}selected{% endif %}>{{ phone_code }}</option>{% endfor %}</select><input name="emergency_contact_phone" value="{{ employee.emergency_contact_phone or '' }}"></div></label>
-      <label class="wide"><span>{{ t("common.remarks") }}</span><textarea name="remarks">{{ employee.remarks or '' }}</textarea></label>
+      <label class="wide"><span>{{ t("common.remarks") }}</span><textarea name="remarks" rows="2">{{ employee.remarks or '' }}</textarea></label>
     </div>
     <div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
   </form>

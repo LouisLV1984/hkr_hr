@@ -3,7 +3,7 @@ from test_v1_workflows import current_profile_revision, pdf_bytes
 import io
 import unittest
 import re
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import test_profile_integrity as integrity
@@ -11,10 +11,12 @@ from models import (
     db,
     Employee,
     EmployeeAssignment,
+    EmployeeCertificate,
     EmployeeSalary,
     PayrollEmployeeResult,
     PayrollRun,
 )
+from tools.hr_core import reference_by_code
 
 
 class ProfileWorkspaceTests(unittest.TestCase):
@@ -229,6 +231,60 @@ class ProfileWorkspaceTests(unittest.TestCase):
             'class="panel history-disclosure payroll-adjustment-panel" id="legacy-adjustments" open',
             attendance_panel,
         )
+
+    def test_v077_cross_module_ui_fixes(self):
+        eid = self.employee()
+        expiring_on = date.today() + timedelta(days=15)
+        with self.app.app_context():
+            run = PayrollRun(year_month="2026-08", payroll_group="management", rule_version="V0.7.7")
+            db.session.add(run)
+            db.session.flush()
+            db.session.add(
+                PayrollEmployeeResult(
+                    run_id=run.id,
+                    employee_id=eid,
+                    currency="HKD",
+                    gross_amount=Decimal("20000"),
+                    employee_mpf=Decimal("1000"),
+                    net_amount=Decimal("19000"),
+                )
+            )
+            db.session.add(
+                EmployeeCertificate(
+                    employee_id=eid,
+                    certificate_type_id=reference_by_code("certificate_type", "SAFETY_CARD").id,
+                    certificate_no="SC-077",
+                    expiry_date=expiring_on,
+                )
+            )
+            db.session.commit()
+
+        attendance_page = self.client.get("/attendance?lang=zh-Hant").get_data(as_text=True)
+        self.assertIn('input[type="file"]:not([data-attendance-file-input])', attendance_page)
+        self.assertLess(attendance_page.index("<h1>考勤收集</h1>"), attendance_page.index('class="intake-desk"'))
+        workbench_head = attendance_page.split('class="page-head compact workbench-head">', 1)[1].split(
+            "</section>", 1
+        )[0]
+        self.assertIn("intake-missing", workbench_head)
+
+        injury_list_en = self.client.get("/annual-leave?view=injury&lang=en").get_data(as_text=True)
+        self.assertIn("Work injury management", injury_list_en)
+        injury_detail_en = self.client.get(
+            f"/annual-leave?view=injury&employee_id={eid}&lang=en"
+        ).get_data(as_text=True)
+        self.assertIn('class="app-dialog record-editor-dialog" id="new-work-injury"', injury_detail_en)
+        self.assertIn("Medical claim history", injury_detail_en)
+        self.assertIn('class="panel history-disclosure" open', injury_detail_en)
+
+        detail_page = self.client.get(f"/employees/{eid}?lang=zh-Hant").get_data(as_text=True)
+        attendance_panel = detail_page.split('data-panel="attendance"', 1)[1]
+        self.assertIn("已保存工資表快照", attendance_panel)
+        self.assertIn("尚無月度考勤單紀錄；下方為已保存工資表快照。", attendance_panel)
+        self.assertNotIn("暫無考勤與工資紀錄。", attendance_panel)
+
+        dashboard_page = self.client.get("/dashboard?lang=zh-Hant").get_data(as_text=True)
+        self.assertIn("history-disclosure-chevron", dashboard_page)
+        self.assertIn(expiring_on.strftime("%Y/%m/%d"), dashboard_page)
 
 
 if __name__ == "__main__":

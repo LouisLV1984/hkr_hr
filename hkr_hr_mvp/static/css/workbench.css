@@ -113,6 +113,10 @@
 .staff-workbench .period, .staff-workbench .tools {
     gap:10px;
 }
+.staff-workbench .tools {
+    flex-wrap:wrap;
+    gap:10px 14px;
+}
 .staff-workbench .period label, .staff-workbench .tools label {
     font-size:13px;
     white-space:nowrap;
@@ -227,6 +231,8 @@
 }
 .staff-workbench .table-head {
     padding:16px 21px;
+    flex-wrap:wrap;
+    gap:10px 16px;
 }
 .staff-workbench .table-head h2 small {
     font-size:14px;
@@ -238,6 +244,7 @@
     vertical-align:middle;
 }
 .staff-workbench .scroll {
+    max-height:70vh;
     overflow:auto;
 }
 .staff-workbench table {
@@ -247,6 +254,9 @@
     white-space:nowrap;
 }
 .staff-workbench th {
+    position:sticky;
+    top:0;
+    z-index:2;
     font-size:12px;
     letter-spacing:.025em;
     color:#526559;

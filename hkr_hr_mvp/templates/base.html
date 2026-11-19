@@ -108,12 +108,12 @@
             <section class="context-nav-group">
               <div class="context-nav-title">{{ t("nav.section.leave") }}</div>
               <a class="context-nav-item {% if request.args.get('view', 'leave') == 'leave' %}active{% endif %}" href="{{ url_for('leave.leave_home', view='leave') }}">
-                <strong>假期管理</strong>
+                <strong>{{ t("leave.nav_leave_title") }}</strong>
                 <span>{{ t("leave.workspace_hint") }}</span>
               </a>
               <a class="context-nav-item {% if request.args.get('view') == 'injury' %}active{% endif %}" href="{{ url_for('leave.leave_home', view='injury') }}">
-                <strong>工傷管理</strong>
-                <span>工傷計薪、免考勤及醫療實銷</span>
+                <strong>{{ t("leave.nav_injury_title") }}</strong>
+                <span>{{ t("leave.nav_injury_subtitle") }}</span>
               </a>
             </section>
           {% elif module == "payroll" %}
@@ -368,7 +368,7 @@
       const row=document.createElement('div'); row.className='leave-date-session';
       label.before(row); row.append(label,sessionLabel);
     });
-    document.querySelectorAll('input[type="file"]').forEach((input) => {
+    document.querySelectorAll('input[type="file"]:not([data-attendance-file-input])').forEach((input) => {
       if (!input.accept) input.accept = '.pdf,.jpg,.jpeg,.png,.docx,.xlsx';
       input.tabIndex = -1;
       input.setAttribute('aria-hidden', 'true');

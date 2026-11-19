@@ -2,6 +2,7 @@
   <details class="panel dashboard-disclosure" id="confirmation-alerts" {% if open_panel == "confirmation" %}open{% endif %}>
     <summary class="dashboard-section-summary">
       <strong>{{ t("dashboard.confirmation_with_count", count=confirmation_alerts|length) }}</strong>
+      <span class="history-disclosure-chevron" aria-hidden="true"></span>
     </summary>
     <div class="dashboard-section-content">
       <p class="form-note">{{ t("dashboard.confirmation_hint") }}</p>
@@ -30,6 +31,7 @@
   <details class="panel dashboard-disclosure" id="expiry-alerts" open>
     <summary class="dashboard-section-summary">
       <strong>{{ t("dashboard.expiry_with_count", count=expiry_alerts|length) }}</strong>
+      <span class="history-disclosure-chevron" aria-hidden="true"></span>
     </summary>
     <div class="dashboard-section-content">
       <div class="table-wrap flat">

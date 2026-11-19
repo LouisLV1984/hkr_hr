@@ -58,6 +58,21 @@
 </div>
 {% endblock %}
 {% block content %}
+{% from '_pdf_preview.html' import pdf_preview with context %}
+{% if not selected_item and not edit_summary_mode %}
+<section class="page-head compact workbench-head">
+  {% if view == "policies" %}
+    <div><h1>{{ t("attendance.long_term_policy") }}</h1><p>{{ t("attendance.long_term_policy_hint") }}</p></div>
+  {% elif view == "monthly_exemptions" %}
+    <div><h1>{{ t("attendance.monthly_exemptions") }}</h1><p>{{ t("attendance.monthly_exemptions_hint") }}</p></div>
+  {% elif view == "collection" %}
+    <div><h1>{{ t("attendance.collection") }}</h1><p>{{ t("attendance.collection_hint") }}</p></div>
+    <a class="secondary-btn intake-missing" href="{{ url_for('attendance.attendance_home',view='details',status='missing',month=year_month) }}">{{ t('hr.missing_people', month=month_t(year_month), count=missing|length) }} →</a>
+  {% else %}
+    <div><h1>{{ t("attendance.details") }}</h1><p>{{ t("attendance.details_hint") }}</p></div>
+  {% endif %}
+</section>
+{% endif %}
 {% if view == 'collection' and not selected_item and not edit_summary_mode %}
 <div class="intake-desk">
   <section class="context-panel attendance-upload-panel">
@@ -99,10 +114,8 @@
   </div>
 {% endif %}
 </section></div>
-<a class="intake-missing" href="{{ url_for('attendance.attendance_home',view='details',status='missing',month=year_month) }}">{{ t('hr.missing_people', month=month_t(year_month), count=missing|length) }} →</a>
 {% endif %}
 
-{% from '_pdf_preview.html' import pdf_preview with context %}
 {% if view != "collection" or selected_item or edit_summary_mode %}
 <section class="period-context-bar attendance-period-context{% if selected_item or edit_summary_mode %} attendance-detail-context{% endif %}" aria-label="{{ t('attendance.current_attendance_month') }}">
   {% if selected_item or edit_summary_mode %}
@@ -157,19 +170,6 @@
       {% endif %}
     </div>
   </div>
-  {% endif %}
-</section>
-{% endif %}
-{% if not selected_item and not edit_summary_mode %}
-<section class="page-head compact workbench-head">
-  {% if view == "policies" %}
-    <div><h1>{{ t("attendance.long_term_policy") }}</h1><p>{{ t("attendance.long_term_policy_hint") }}</p></div>
-  {% elif view == "monthly_exemptions" %}
-    <div><h1>{{ t("attendance.monthly_exemptions") }}</h1><p>{{ t("attendance.monthly_exemptions_hint") }}</p></div>
-  {% elif view == "collection" %}
-    <div><h1>{{ t("attendance.collection") }}</h1><p>{{ t("attendance.collection_hint") }}</p></div>
-  {% else %}
-    <div><h1>{{ t("attendance.details") }}</h1><p>{{ t("attendance.details_hint") }}</p></div>
   {% endif %}
 </section>
 {% endif %}

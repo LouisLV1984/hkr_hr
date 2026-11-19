@@ -3119,11 +3119,12 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertIn('autocomplete="current-password"', login_source)
 
     def test_user_guide_page_and_release_alignment(self):
-        self.assertEqual(CURRENT_VERSION, "V0.7.6")
-        self.assertEqual(NEXT_VERSION, "V0.7.7")
+        self.assertEqual(CURRENT_VERSION, "V0.7.7")
+        self.assertEqual(NEXT_VERSION, "V0.7.8")
         self.assertEqual(
             [(release["version"], release["date"]) for release in RELEASES],
             [
+                ("V0.7.7", "2026-11-19"),
                 ("V0.7.6", "2026-11-19"),
                 ("V0.7.5", "2026-11-19"),
                 ("V0.7.4", "2026-11-19"),
