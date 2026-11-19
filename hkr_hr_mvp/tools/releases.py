@@ -1,5 +1,44 @@
 RELEASES = [
 {
+    "version": "V0.7.5",
+    "date": "2026-11-19",
+    "title": {
+        "zh-Hant": "員工檔案與詳情介面整理",
+        "zh-Hans": "员工档案与详情界面整理",
+        "en": "Employee directory and profile UI cleanup"
+    },
+    "features": {
+        "zh-Hant": [
+            "員工詳情頁頂部缺件標籤可直接點擊跳轉至對應補資料頁面或表單，並一律提供返回「員工檔案」連結；變更歷史改以彈窗補充任職與薪酬憑證，修正欄位重疊與拉高表格的問題。"
+        ],
+        "zh-Hans": [
+            "员工详情页顶部缺件标签可直接点击跳转至对应补资料页面或表单，并统一提供返回“员工档案”链接；变更历史改以弹窗补充任职与薪酬凭证，修复字段重叠与表格过高的问题。"
+        ],
+        "en": [
+            "Missing-data badges in the employee header link directly to the relevant upload page or editor, a back link to Employee Files always renders, and assignment/salary evidence uploads use modal dialogs without overflowing history table columns."
+        ]
+    },
+    "improvements": {
+        "zh-Hant": [
+            "修正 1024px 寬度下頂部導覽列橫向溢出、名冊「更多篩選」頂線偏移與個人資料頁重複按鈕及銀行帳號斷行；收斂已有基本任職及薪酬紀錄員工的入職補齊橫條、空文件分類篩選、日工不適用補貼卡及管理員刪除區。",
+            "統一假期與工傷、考勤與工資紀錄頁籤的按鈕動詞與空態文字，讓 3 張假期餘額卡滿版排列，並為負數工資表快照加上醒目警示標籤。"
+        ],
+        "zh-Hans": [
+            "修复 1024px 宽度下顶部导航栏横向溢出、名册“更多筛选”顶线偏移以及个人资料页重复按钮和银行账号换行；收敛已有基本任职及薪酬记录员工的入职补齐横条、空文件分类筛选、日工不适用补贴卡及管理员删除区。",
+            "统一假期与工伤、考勤与工资记录页签的按钮动词与空态文字，让 3 张假期余额卡满版排列，并为负数工资表快照加上醒目警示标签。"
+        ],
+        "en": [
+            "Fitted the primary navigation bar cleanly at 1024px, aligned directory filter controls, de-duplicated personal edit buttons, kept masked bank account numbers intact on full-width cards, and collapsed onboarding prompts, empty filter pills, inapplicable daily-worker allowances and the admin danger zone.",
+            "Unified leave and payroll action labels and empty states, expanded the 3-card leave balance strip across the full width, and highlighted negative payroll snapshots with a warning badge."
+        ]
+    },
+    "limitations": {
+        "zh-Hant": [],
+        "zh-Hans": [],
+        "en": []
+    }
+},
+{
     "version": "V0.7.4",
     "date": "2026-11-19",
     "title": {
@@ -2589,4 +2628,4 @@ RELEASES = [
 CURRENT_VERSION = RELEASES[0]["version"]
 
 # The next published release follows the current version without skipping.
-NEXT_VERSION = "V0.7.5"
+NEXT_VERSION = "V0.7.6"

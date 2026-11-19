@@ -11,10 +11,13 @@
 {%- endmacro %}
 {% block title %}{{ employee.display_name }} - HKR HR{% endblock %}
 {% block content %}
-{% if payroll_return %}<a class="hr-back" href="{{ payroll_return }}">← {{ t('hr.return_payroll') }} · {{ request.args.get('pay_month') }}</a>{% endif %}
-{% if request.args.get('origin')=='workbench' %}<a class="hr-back" href="{{ url_for('dashboard.dashboard',_anchor='staff-' ~ employee.id) }}">← {{ t('workbench.title') }}</a>{% endif %}
-
-{% if request.args.get('origin') == 'directory' %}<a class="hr-back" href="{{ session.get('employee_list_url') or url_for('employees.list_employees') }}">← {{ t('workbench.files') }}</a>{% endif %}
+{% if payroll_return %}
+  <a class="hr-back" href="{{ payroll_return }}">← {{ t('hr.return_payroll') }} · {{ request.args.get('pay_month') }}</a>
+{% elif request.args.get('origin') == 'workbench' %}
+  <a class="hr-back" href="{{ url_for('dashboard.dashboard', _anchor='staff-' ~ employee.id) }}">← {{ t('workbench.title') }}</a>
+{% else %}
+  <a class="hr-back" href="{{ session.get('employee_list_url') or url_for('employees.list_employees') }}">← {{ t('workbench.files') }}</a>
+{% endif %}
 {% set assignment = employee.current_assignment %}
 {% set default_workweek_days = assignment.workweek_days if assignment else (5 if employee.payroll_group == 'management' else 6) %}
 {% set salary = employee.current_salary %}
@@ -40,7 +43,17 @@
       <span>{{ t("common.project") }}：{% if assignment %}{{ project_t(assignment.project, t("common.unassigned")) }}{% else %}{{ t("employee.assignment_not_created") }}{% endif %}</span>
       {% if salary %}<span>{{ salary.currency }} {{ fmt_money(salary.amount) }} / {{ t("employee.monthly") if salary.salary_basis == "monthly" else t("employee.daily") }}</span>{% endif %}
     </div>
-    <div class="warning-row">{% for item in missing %}<span class="flag danger">{{ t(item) }}</span>{% endfor %}</div>
+    {% if missing_items %}
+    <div class="warning-row">
+      {% for item in missing_items %}
+        {% if item.code in ('staff_record', 'signed_contract', 'three_treasures') %}
+          <a class="flag danger flag-link" href="{{ url_for('documents.new_document', employee_id=employee.id, upload_type=item.code) }}">{{ t(item.label_key) }}</a>
+        {% else %}
+          <a class="flag danger flag-link" href="{{ url_for('employees.view_employee', employee_id=employee.id, tab=item.tab, focus=item.code) }}">{{ t(item.label_key) }}</a>
+        {% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
   </div>
 </section>
 
@@ -74,10 +87,11 @@
         <div><dt>{{ t("employee.social_entity") }}</dt><dd>{{ assignment.social_insurance_entity.display_name if assignment and assignment.social_insurance_entity else "-" }}</dd></div>
         <div><dt>{{ t("employee.dispatch_entity") }}</dt><dd>{{ assignment.labour_dispatch_entity.display_name if assignment and assignment.labour_dispatch_entity else "-" }}</dd></div>
         <div><dt>{{ t("employees.payroll_group") }}</dt><dd>{{ option_t("payroll_group", assignment.payroll_group, dict(payroll_groups).get(assignment.payroll_group, assignment.payroll_group)) if assignment else "-" }}</dd></div>
-        <div><dt>{{ t("employee.holiday_calendar") }}</dt><dd>{% if assignment %}{{ t("employee.holiday_calendar_public") if assignment.payroll_group == "management" else t("employee.holiday_calendar_statutory") }}<small>{{ t("employee.holiday_calendar_hint") }}</small>{% else %}-{% endif %}</dd></div>
+        <div><dt>{{ t("employee.holiday_calendar") }}</dt><dd>{% if assignment %}{{ t("employee.holiday_calendar_public") if assignment.payroll_group == "management" else t("employee.holiday_calendar_statutory") }}{% else %}-{% endif %}</dd></div>
         {% if assignment and assignment.payroll_group in ('site_monthly', 'management') %}<div><dt>{{ t("employee.workweek_days") }}</dt><dd>{{ t("employee.workweek_five_half") if assignment.workweek_days|float == 5.5 else (t("employee.workweek_five") if assignment.workweek_days|float == 5 else t("employee.workweek_six")) }}</dd></div>{% endif %}
         <div><dt>{{ t("common.evidence") }}</dt><dd>{% if assignment and assignment.evidence_document and assignment.evidence_document.status == "active" %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=assignment.evidence_document.id) }}">{{ assignment.evidence_document.original_filename }}</a>{% elif assignment %}<span class="flag danger">{{ t("common.pending") }}</span>{% else %}-{% endif %}</dd></div>
       </dl>
+      {% if assignment %}<p class="form-note card-foot-note">{{ t("employee.holiday_calendar_hint") }}</p>{% endif %}
     </article>
     <article id="pay-mpf" class="panel current-state-card salary-mpf-card">
       <div class="section-head"><div><span class="eyebrow">{{ t("employee.current_salary_mpf") }}</span><h2>{% if salary %}{{ salary.currency }} {{ fmt_money(salary.amount) }}{% else %}{{ t("common.not_set") }}{% endif %}</h2></div><div class="button-row"><button class="mini-btn" type="button" data-dialog-open="add-salary-dialog">{{ t("employee.add_salary_record") }}</button><button class="mini-btn" type="button" data-dialog-open="add-mpf-dialog">{{ t("employee.add_mpf_record") }}</button></div></div>
@@ -98,20 +112,23 @@
         </dl>
       </div>
     </article>
+    {% if employee.payroll_group != 'site_daily' %}
     <article id="pay-allowances" class="panel current-state-card">
-      <div class="section-head"><div><span class="eyebrow">{{ t("employee.current_allowances") }}</span><h2>{{ allowances|selectattr('status', 'equalto', 'active')|list|length }} {{ t("employee.allowance_items") }}</h2></div>{% if employee.payroll_group != 'site_daily' %}<button class="mini-btn" type="button" data-dialog-open="add-allowance-dialog">{{ t("employee.add_allowance") }}</button>{% endif %}</div>
-      <p class="form-note">{{ t("employee.allowance_daily_rule") if employee.payroll_group != 'site_daily' else t("employee.allowance_daily_not_supported") }}</p>
+      <div class="section-head"><div><span class="eyebrow">{{ t("employee.current_allowances") }}</span><h2>{{ allowances|selectattr('status', 'equalto', 'active')|list|length }} {{ t("employee.allowance_items") }}</h2></div><button class="mini-btn" type="button" data-dialog-open="add-allowance-dialog">{{ t("employee.add_allowance") }}</button></div>
+      <p class="form-note">{{ t("employee.allowance_daily_rule") }}</p>
       <ul class="compact-list">
         {% for item in allowances if item.status == 'active' %}
           <li><strong>{{ t("allowance." ~ item.allowance_type) }} · {{ item.currency }} {{ fmt_money(item.amount) }} / {{ t("employee.per_day") if item.allowance_type in ('meal', 'transport') else t("employee.per_month") }}</strong><span>{{ fmt_date(item.effective_from) }}{% if item.effective_to %} – {{ fmt_date(item.effective_to) }}{% else %} – {{ t("employee.long_term") }}{% endif %}{% if salary and item.currency != salary.currency %} · {{ t("employee.exchange_rate") }} {{ item.exchange_rate or '-' }}{% endif %}</span></li>
         {% else %}<li><span>{{ t("common.not_set") }}</span></li>{% endfor %}
       </ul>
     </article>
-    <article id="pay-attendance-policy" class="panel current-state-card">
+    {% endif %}
+    <article id="pay-attendance-policy" class="panel current-state-card{{ ' span-wide' if employee.payroll_group == 'site_daily' else '' }}">
       <div class="section-head"><div><span class="eyebrow">{{ t("employee.current_attendance_policy") }}</span><h2>{{ t("attendance.required") if attendance_required_now else t("attendance.long_term_exempt") }}</h2></div><button class="mini-btn" type="button" data-dialog-open="edit-attendance-policy-dialog">{{ t("common.edit") }}</button></div>
       <dl class="detail-grid"><div><dt>{{ t("employee.effective_date") }}</dt><dd>{% if attendance_policy %}{{ t("attendance.effective_from_value", month=attendance_policy.effective_from_month) }}{% else %}{{ t("employee.default_rule") }}{% endif %}</dd></div><div><dt>{{ t("employee.policy_effect") }}</dt><dd>{{ t("attendance.monthly_required_field_hint") }}</dd></div></dl>
     </article>
   </div>
+  {% if employee.payroll_group == 'site_daily' %}<p id="pay-allowances" class="inline-note allowance-unsupported-note"><strong>{{ t("employee.current_allowances") }}：</strong>{{ t("employee.allowance_daily_not_supported") }}</p>{% endif %}
   <div>
     <dialog class="app-dialog record-editor-dialog" id="add-assignment-dialog">
       <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.add_assignment', employee_id=employee.id) }}" enctype="multipart/form-data" data-assignment-form>{% include 'employees/_payroll_origin.html' %}
@@ -212,8 +229,10 @@
       <h2>{{ t("employee.credentials") }}</h2>
       <p>{{ t("employee.credentials_edit_hint") }}</p>
     </div>
-    <a class="mini-btn" href="#file-library" data-section-link="file-library">{{ t("employee.contracts_documents") }} ↓</a>
-    <a class="secondary-btn" href="{{ url_for('documents.new_document', employee_id=employee.id, upload_type='three_treasures') }}">{{ option_t("document_category", "three_treasures", "三寶") }}</a>
+    <div class="button-row">
+      <a class="mini-btn" href="#file-library" data-section-link="file-library">{{ t("employee.contracts_documents") }} ↓</a>
+      <a class="secondary-btn" href="{{ url_for('documents.new_document', employee_id=employee.id, upload_type='three_treasures') }}">{{ t("documents.upload_three_treasures") }}</a>
+    </div>
   </div>
   <div class="current-state-grid credential-current-grid">
     <article class="panel current-state-card">
@@ -411,14 +430,33 @@
 <section id="file-library" class="profile-subsection" data-document-library>
   <div class="page-head compact"><div><h2>{{ t("employee.contracts_documents") }}</h2><p>{{ t("documents.center_hint") }}</p></div><div class="button-row"><a class="secondary-btn" href="{{ url_for('documents.new_document', employee_id=employee.id) }}">{{ t("documents.upload_file") }}</a><a class="ghost-btn" href="{{ url_for('documents.employee_document_bundle', employee_id=employee.id) }}">{{ t("exports.attachments") }}</a></div></div>
   <p class="inline-note">{{ t("documents.domain_management_hint") }}</p>
+  {% set filter_ns = namespace(populated=[], empty=[]) %}
+  {% for code, label in document_categories.items() %}
+    {% set docs = employee.documents|selectattr('category', 'equalto', code)|list %}
+    {% set count = certificate_files|length if code == 'credential' else docs|length - (certificate_files|length if code == 'qualification' else 0) %}
+    {% set cat_label = t("hr.credential_files") if code == "credential" else option_t("document_category", code, label) %}
+    {% if count > 0 %}
+      {% set filter_ns.populated = filter_ns.populated + [{"code": code, "label": cat_label, "count": count}] %}
+    {% else %}
+      {% set filter_ns.empty = filter_ns.empty + [{"code": code, "label": cat_label}] %}
+    {% endif %}
+  {% endfor %}
   <div class="document-category-filters" role="group" aria-label="{{ t('documents.category') }}">
     <button class="ghost-btn" type="button" data-document-filter="" aria-pressed="true">{{ t('workspace.all_documents') }} <span>{{ employee.documents|length }}</span></button>
-    {% for code, label in document_categories.items() %}
-      {% set docs = employee.documents|selectattr('category', 'equalto', code)|list %}
-      {% set count = certificate_files|length if code == 'credential' else docs|length - (certificate_files|length if code == 'qualification' else 0) %}
-      <button class="ghost-btn" type="button" data-document-filter="{{ code }}" aria-pressed="false">{{ t("hr.credential_files") if code == "credential" else option_t("document_category", code, label) }} <span>{{ count }}</span></button>
+    {% for item in filter_ns.populated %}
+      <button class="ghost-btn" type="button" data-document-filter="{{ item.code }}" aria-pressed="false">{{ item.label }} <span>{{ item.count }}</span></button>
     {% endfor %}
   </div>
+  {% if filter_ns.empty %}
+    <details class="document-empty-filters" data-document-empty-filters>
+      <summary data-document-empty-toggle>{{ t('workspace.other_empty_categories', count=filter_ns.empty|length) }}</summary>
+      <div class="document-category-filters is-secondary" role="group" aria-label="{{ t('documents.category') }}">
+        {% for item in filter_ns.empty %}
+          <button class="ghost-btn" type="button" data-document-filter="{{ item.code }}" aria-pressed="false">{{ item.label }} <span>0</span></button>
+        {% endfor %}
+      </div>
+    </details>
+  {% endif %}
   <div class="table-wrap">
     <table class="dense-table document-library-table">
       <colgroup><col class="document-category-column"><col class="document-file-column"><col class="document-status-column"><col class="document-actions-column"></colgroup>
@@ -464,15 +502,18 @@
       </tbody>
     </table>
   </div>
-  <div class="section-head"><h2>{{ t("documents.generated_contracts") }}</h2><div class="button-row"><a class="secondary-btn" href="{{ url_for('documents.new_document', employee_id=employee.id, upload_type='signed_contract') }}">{{ option_t("document_category", "signed_contract", "僱傭合約") }}</a><a class="secondary-btn" href="{{ url_for('documents.generate_contract', employee_id=employee.id) }}">{{ t("contract.generate") }}</a></div></div>
-  <ul class="compact-list">{% for contract in contracts %}<li><a href="{{ url_for('documents.download_contract', contract_id=contract.id) }}">{{ contract.output_filename }}</a><span>{{ fmt_date(contract.contract_date) }} · {{ option_t("workflow_status", contract.status, contract.status) }}</span></li>{% else %}<li><span>{{ t("common.not_set") }}</span></li>{% endfor %}</ul>
+  <div class="section-head"><h2>{{ t("documents.generated_contracts") }}</h2><div class="button-row"><a class="secondary-btn" href="{{ url_for('documents.new_document', employee_id=employee.id, upload_type='signed_contract') }}">{{ t("documents.upload_signed_contract") }}</a><a class="secondary-btn" href="{{ url_for('documents.generate_contract', employee_id=employee.id) }}">{{ t("contract.generate_draft") }}</a></div></div>
+  <ul class="compact-list">{% for contract in contracts %}<li><a href="{{ url_for('documents.download_contract', contract_id=contract.id) }}">{{ contract.output_filename }}</a><span>{{ fmt_date(contract.contract_date) }} · {{ option_t("workflow_status", contract.status, contract.status) }}</span></li>{% else %}<li><span>{{ t("common.no_records") }}</span></li>{% endfor %}</ul>
 </section>
 
 </section>
 <section class="profile-tab-panel" data-panel="leave" id="employee-leave" hidden>
   <div class="page-head compact">
     <div><h2>{{ t("leave.employee_detail_title") }}</h2><p>{{ t("leave.employee_detail_hint") }}</p></div>
-    <button class="primary-btn" type="button" data-dialog-open="add-leave-dialog">{{ t("leave.add_request") }}</button>
+    <div class="button-row">
+      <a class="secondary-btn" href="{{ url_for('leave.leave_home', employee_id=employee.id) }}">{{ t("leave.open_employee_leave") }}</a>
+      <button class="primary-btn" type="button" data-dialog-open="add-leave-dialog">{{ t("leave.add_request") }}</button>
+    </div>
   </div>
   <div class="leave-employee-context" data-leave-employee-context>{{ leave_context_text(employee) }}</div>
   <div class="current-state-strip">
@@ -484,7 +525,7 @@
   {% set missing_evidence = leave_records|selectattr('status', 'equalto', 'active')|selectattr('leave_type', 'equalto', 'sick')|rejectattr('evidence_document_id')|list %}
   {% if missing_evidence %}<article class="panel" id="missing-leave-evidence"><h2>{{ t('leave.sick_evidence_missing') }}</h2><p class="form-note">{{ t('profile.evidence_only') }}</p>{% for item in missing_evidence %}<div class="section-head"><span>{{ leave_date_label(item) }} · {{ item.days }} {{ t('leave.days') }}</span>{% include 'employees/_leave_evidence.html' %}</div>{% endfor %}</article>{% endif %}
 
-  <div class="section-head"><div><h2>{{ t("leave.timeline") }}</h2><p>{{ t("leave.attendance_link_hint") }}</p></div><a class="secondary-btn" href="{{ url_for('leave.leave_home', view='injury', employee_id=employee.id) }}">前往工傷管理</a></div>
+  <div class="section-head"><div><h2>{{ t("leave.timeline") }}</h2><p>{{ t("leave.attendance_link_hint") }}</p></div><a class="secondary-btn" href="{{ url_for('leave.leave_home', view='injury', employee_id=employee.id) }}">{{ t("work_injury.open_manage") }}</a></div>
   <div class="table-wrap">
     <table class="dense-table">
       <thead><tr><th>{{ t("leave.type") }}</th><th>{{ t("leave.period") }}</th><th>{{ t("leave.days") }}</th><th>{{ t("common.evidence") }}</th><th>{{ t("common.status") }}</th><th>{{ t("common.actions") }}</th></tr></thead>
@@ -493,9 +534,9 @@
           <tr class="{{ 'muted-row' if item.status != 'active' else '' }}"><td>{{ t("leave.type_" ~ item.leave_type) }}</td><td>{{ leave_date_label(item) }}</td><td>{{ item.days }}</td><td>{% if item.evidence_document %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=item.evidence_document.id) }}">{{ item.evidence_document.original_filename }}</a>{% elif item.leave_type == 'sick' and item.status == 'active' %}<span class="flag danger">{{ t("leave.sick_evidence_missing") }}</span>{% else %}-{% endif %}</td><td>{{ t('profile.record_active') if item.status == 'active' else t('profile.record_voided') }}</td><td><a class="mini-btn" href="{{ url_for('leave.leave_home', employee_id=employee.id) }}#employee-leave">{{ t("common.open") }}</a></td></tr>
         {% endfor %}
         {% for item in work_injury_periods %}
-          <tr class="{{ 'muted-row' if item.status != 'active' else '' }}"><td>{{ t("work_injury.title") }}</td><td>{{ fmt_date(item.payroll_start_date) }} – {{ fmt_date(item.payroll_end_date) if item.payroll_end_date else t("employee.long_term") }}</td><td>{{ '4/5' if item.pay_mode == 'four_fifths' else '全薪' }} · {{ t("work_injury.attendance_exempt") }}</td><td>{% if item.evidence_document %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=item.evidence_document.id) }}">{{ item.evidence_document.original_filename }}</a>{% else %}-{% endif %}</td><td>{{ t('profile.record_active') if item.status == 'active' else t('profile.record_voided') }}</td><td><a class="mini-btn" href="{{ url_for('leave.leave_home', view='injury', employee_id=employee.id) }}">{{ t("common.open") }}</a></td></tr>
+          <tr class="{{ 'muted-row' if item.status != 'active' else '' }}"><td>{{ t("work_injury.title") }}</td><td>{{ fmt_date(item.payroll_start_date) }} – {{ fmt_date(item.payroll_end_date) if item.payroll_end_date else t("employee.long_term") }}</td><td>{{ t("work_injury.pay_four_fifths_exempt") if item.pay_mode == 'four_fifths' else t("work_injury.pay_full_exempt") }}</td><td>{% if item.evidence_document %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=item.evidence_document.id) }}">{{ item.evidence_document.original_filename }}</a>{% else %}-{% endif %}</td><td>{{ t('profile.record_active') if item.status == 'active' else t('profile.record_voided') }}</td><td><a class="mini-btn" href="{{ url_for('leave.leave_home', view='injury', employee_id=employee.id) }}">{{ t("common.open") }}</a></td></tr>
         {% endfor %}
-        {% if not leave_records and not work_injury_periods %}<tr><td colspan="6" class="empty-cell">{{ t("common.not_set") }}</td></tr>{% endif %}
+        {% if not leave_records and not work_injury_periods %}<tr><td colspan="6" class="empty-cell">{{ t("common.no_records") }}</td></tr>{% endif %}
       </tbody>
     </table>
   </div>
@@ -507,12 +548,12 @@
 
 <section class="profile-tab-panel" data-panel="attendance" hidden>
   <section class="panel">
-    <div class="section-head"><h2>{{ t('salary_record.title') }}</h2><a class="secondary-btn" href="{{ url_for('salary_records.index',employee_id=employee.id,entity_id=employee.current_assignment.payroll_entity_id if employee.current_assignment else None) }}">{{ t('salary_record.title') }}</a></div>
+    <div class="section-head"><h2>{{ t('salary_record.title') }}</h2><a class="secondary-btn" href="{{ url_for('salary_records.index',employee_id=employee.id,entity_id=employee.current_assignment.payroll_entity_id if employee.current_assignment else None) }}">{{ t('salary_record.manage_action') }}</a></div>
     <p class="form-note">{{ t('salary_record.profile_hint') }}</p>
     <div class="table-wrap"><table class="dense-table"><thead><tr><th>{{ t('salary_record.month') }}</th><th>{{ t('salary_record.entity') }}</th><th>{{ t('salary_record.currency') }}</th><th>{{ t('salary_record.gross_amount') }}</th><th>{{ t('salary_record.employee_mpf') }}</th><th>{{ t('salary_record.net_amount') }}</th><th>{{ t('salary_record.details') }}</th></tr></thead><tbody>
     {% for record in employee.salary_records|sort(attribute='year_month',reverse=true) %}
-      <tr><td>{{ record.year_month }}<br><small>{{ t('salary_record.recorded') if record.status=='active' else t('salary_record.voided') }}</small></td><td>{{ record.payroll_entity.display_name }}</td><td>{{ record.currency }}</td><td>{{ fmt_money(record.gross_amount) }}</td><td>{{ fmt_money(record.employee_mpf) }}</td><td>{{ fmt_money(record.net_amount) }}</td><td>{{ record.remarks or '' }} {% if record.evidence_document_id %}<a target="_blank" href="{{ url_for('documents.open_document',document_id=record.evidence_document_id) }}">{{ t('salary_record.evidence') }}</a>{% endif %} <a class="mini-btn" href="{{ url_for('salary_records.index',employee_id=employee.id,entity_id=record.payroll_entity_id,month=record.year_month) }}">{{ t('salary_record.title') }}</a></td></tr>
-    {% else %}<tr><td colspan="7">{{ t('salary_record.no_history') }}</td></tr>{% endfor %}
+      <tr><td>{{ record.year_month }}<br><small>{{ t('salary_record.recorded') if record.status=='active' else t('salary_record.voided') }}</small></td><td>{{ record.payroll_entity.display_name }}</td><td>{{ record.currency }}</td><td>{{ fmt_money(record.gross_amount) }}</td><td>{{ fmt_money(record.employee_mpf) }}</td><td>{{ fmt_money(record.net_amount) }}</td><td>{{ record.remarks or '' }} {% if record.evidence_document_id %}<a target="_blank" href="{{ url_for('documents.open_document',document_id=record.evidence_document_id) }}">{{ t('salary_record.evidence') }}</a>{% endif %} <a class="mini-btn" href="{{ url_for('salary_records.index',employee_id=employee.id,entity_id=record.payroll_entity_id,month=record.year_month) }}">{{ t('common.open') }}</a></td></tr>
+    {% else %}<tr><td colspan="7" class="empty-cell">{{ t('common.no_records') }}</td></tr>{% endfor %}
     </tbody></table></div>
   </section>
   <div class="page-head compact">
@@ -579,10 +620,13 @@
         {% endif %}
         {% with records=corrections_by_month.get(item.year_month, []) %}{% include 'attendance/_correction_history.html' %}{% endwith %}
         {% if payroll_result %}
-          <div class="payroll-result-strip" id="pay-snapshot-{{ payroll_result.id }}">
+          <div class="payroll-result-strip{{ ' is-negative' if payroll_result.net_amount < 0 else '' }}" id="pay-snapshot-{{ payroll_result.id }}">
             <span>{{ t("employee.latest_payroll_snapshot") }} · {{ payroll_result.run.created_at|hong_kong_datetime("%Y-%m-%d %H:%M") }}</span>
             {% if payroll_result.calculation_json and payroll_result.calculation_json.get('forecast_tail_total') is not none %}<small>{{ t('hr.prior_forecast') }} {{ fmt_money(payroll_result.calculation_json.forecast_tail_total) }}</small>{% endif %}
-            <strong>{{ payroll_result.currency }} {{ fmt_money(payroll_result.net_amount) }}</strong>
+            <div class="payroll-net-wrap">
+              <strong>{{ payroll_result.currency }} {{ fmt_money(payroll_result.net_amount) }}</strong>
+              {% if payroll_result.net_amount < 0 %}<span class="flag danger">{{ t("payroll.negative_net_warning") }}</span>{% endif %}
+            </div>
             <small>{{ t("payroll.gross") }} {{ fmt_money(payroll_result.gross_amount) }} · MPF {{ fmt_money(payroll_result.employee_mpf) }}</small>
           </div>
         {% endif %}
@@ -593,10 +637,10 @@
   </div>
 
   {% for month in extra_months %}{% set result=payroll_by_month.get(month) %}
-  <article class="panel"{% if result %} id="pay-snapshot-{{ result.id }}"{% endif %}>
+  <article class="panel{{ ' is-negative-panel' if result and result.net_amount < 0 else '' }}"{% if result %} id="pay-snapshot-{{ result.id }}"{% endif %}>
     <h3>{{ month }} · {{ t('employee.latest_payroll_snapshot' if result else 'corr.history') }}</h3>
     {% if result %}
-    <p>{{ t('payroll.gross') }} {{ result.currency }} {{ fmt_money(result.gross_amount) }} · {{ t('payroll.net') }} {{ fmt_money(result.net_amount) }}</p>
+    <p>{{ t('payroll.gross') }} {{ result.currency }} {{ fmt_money(result.gross_amount) }} · {{ t('payroll.net') }} <strong>{{ fmt_money(result.net_amount) }}</strong>{% if result.net_amount < 0 %} <span class="flag danger">{{ t("payroll.negative_net_warning") }}</span>{% endif %}</p>
     {% if result.calculation_json and result.calculation_json.get('forecast_tail_total') is not none %}<p>{{ t('hr.prior_forecast') }} {{ fmt_money(result.calculation_json.forecast_tail_total) }}</p>{% endif %}
     {% endif %}
     {% with records=corrections_by_month.get(month, []) %}{% include 'attendance/_correction_history.html' %}{% endwith %}
@@ -619,10 +663,10 @@
               <td>{% if adjustment.evidence_document %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=adjustment.evidence_document.id) }}">{{ adjustment.evidence_document.original_filename }}</a>{% else %}<span class="flag warn">{{ t("common.pending") }}</span>{% endif %}</td>
               <td>{{ option_t("document_status", adjustment.status, adjustment.status) }}</td>
               <td>
-                <a class="mini-btn" href="{{ url_for('payroll.attendance_payroll', year_month=adjustment.year_month, employee_id=employee.id, status='all') }}">前往 Payroll</a>
+                <a class="mini-btn" href="{{ url_for('payroll.attendance_payroll', year_month=adjustment.year_month, employee_id=employee.id, status='all') }}">{{ t("payroll.open_monthly_payroll") }}</a>
               </td>
             </tr>
-          {% else %}<tr><td colspan="7" class="empty-cell">{{ t("common.not_set") }}</td></tr>{% endfor %}
+          {% else %}<tr><td colspan="7" class="empty-cell">{{ t("common.no_records") }}</td></tr>{% endfor %}
         </tbody>
       </table>
     </div>

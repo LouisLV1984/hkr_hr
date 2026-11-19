@@ -1079,6 +1079,9 @@ def view_employee(employee_id):
         credential_history=build_credential_history(employee),
         employment_status_history=build_employment_status_history(employee),
         missing=missing_employee_data_labels(employee),
+        missing_items=[
+            item for item in employee_data_items(employee) if not item["ok"]
+        ],
         leave=annual_leave_summary(employee),
         comp_leave=comp_leave_summary(employee),
         leave_records=EmployeeAnnualLeaveRecord.query.filter_by(

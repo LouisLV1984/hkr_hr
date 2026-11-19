@@ -81,13 +81,13 @@
               {% if item.evidence_document and item.evidence_document.status == "active" %}
                 <a target="_blank" href="{{ url_for('documents.open_document', document_id=item.evidence_document.id) }}">{{ item.evidence_document.original_filename }}</a>
               {% elif item.status == "active" %}
-                <form class="inline-upload compact-upload" method="post" action="{{ url_for('employees.supplement_assignment_evidence', assignment_id=item.id) }}" enctype="multipart/form-data"><input type="file" name="evidence" required><button class="mini-btn" type="submit">{{ t("employee.add_evidence") }}</button></form>
+                <div class="history-evidence-actions"><span class="flag warn">{{ t("common.pending") }}</span><button class="mini-btn" type="button" data-dialog-open="supplement-employment-evidence-{{ item.id }}">{{ t("employee.add_evidence") }}</button></div>
               {% else %}-{% endif %}
             {% elif entry.kind == "salary" %}
               {% if item.evidence_document and item.evidence_document.status == "active" %}
                 <a target="_blank" href="{{ url_for('documents.open_document', document_id=item.evidence_document.id) }}">{{ item.evidence_document.original_filename }}</a>
               {% elif item.status == "active" %}
-                <form class="inline-upload compact-upload" method="post" action="{{ url_for('employees.supplement_salary_evidence', salary_id=item.id) }}" enctype="multipart/form-data"><input type="file" name="evidence" required><button class="mini-btn" type="submit">{{ t("employee.add_evidence") }}</button></form>
+                <div class="history-evidence-actions"><span class="flag warn">{{ t("common.pending") }}</span><button class="mini-btn" type="button" data-dialog-open="supplement-salary-evidence-{{ item.id }}">{{ t("employee.add_evidence") }}</button></div>
               {% else %}-{% endif %}
             {% elif entry.kind == "allowance" %}
               {% if item.evidence_document and item.evidence_document.status == "active" %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=item.evidence_document.id) }}">{{ item.evidence_document.original_filename }}</a>{% else %}-{% endif %}
@@ -127,6 +127,15 @@
               <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
             </form>
           </dialog>
+          {% if not (item.evidence_document and item.evidence_document.status == "active") %}
+          <dialog class="app-dialog record-editor-dialog" id="supplement-employment-evidence-{{ item.id }}">
+            <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.supplement_assignment_evidence', assignment_id=item.id) }}" enctype="multipart/form-data">
+              <div class="section-head record-editor-head"><div><h2>{{ t("employee.add_evidence") }} · {{ t("employee.employment") }}</h2><p>{{ fmt_date(item.effective_from) }}</p></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
+              <div class="record-editor-body"><label><span>{{ t("common.evidence") }}</span><input type="file" name="evidence" required></label></div>
+              <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
+            </form>
+          </dialog>
+          {% endif %}
         {% elif item.status == "active" and entry.kind == "salary" %}
           <dialog class="app-dialog record-editor-dialog" id="salary-editor-{{ item.id }}">
             <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.correct_salary', salary_id=item.id) }}" enctype="multipart/form-data" data-salary-form>
@@ -143,6 +152,15 @@
               <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
             </form>
           </dialog>
+          {% if not (item.evidence_document and item.evidence_document.status == "active") %}
+          <dialog class="app-dialog record-editor-dialog" id="supplement-salary-evidence-{{ item.id }}">
+            <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.supplement_salary_evidence', salary_id=item.id) }}" enctype="multipart/form-data">
+              <div class="section-head record-editor-head"><div><h2>{{ t("employee.add_evidence") }} · {{ t("employee.current_salary") }}</h2><p>{{ fmt_date(item.effective_from) }}</p></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
+              <div class="record-editor-body"><label><span>{{ t("common.evidence") }}</span><input type="file" name="evidence" required></label></div>
+              <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
+            </form>
+          </dialog>
+          {% endif %}
         {% elif item.status == "active" and entry.kind == "allowance" %}
           <dialog class="app-dialog record-editor-dialog" id="allowance-editor-{{ item.id }}">
             <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.correct_allowance', allowance_id=item.id) }}" enctype="multipart/form-data">

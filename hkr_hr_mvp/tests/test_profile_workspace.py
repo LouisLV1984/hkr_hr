@@ -1,11 +1,20 @@
 """Progressive employee editors: isolated synthetic records, no runtime data."""
-from test_v1_workflows import current_profile_revision
+from test_v1_workflows import current_profile_revision, pdf_bytes
+import io
 import unittest
 import re
 from datetime import date
+from decimal import Decimal
 
 import test_profile_integrity as integrity
-from models import db, Employee, EmployeeSalary
+from models import (
+    db,
+    Employee,
+    EmployeeAssignment,
+    EmployeeSalary,
+    PayrollEmployeeResult,
+    PayrollRun,
+)
 
 
 class ProfileWorkspaceTests(unittest.TestCase):
@@ -93,6 +102,68 @@ class ProfileWorkspaceTests(unittest.TestCase):
         self.assertTrue(response.json["redirect"].startswith('/login'))
         with self.app.app_context():
             self.assertNotEqual(db.session.get(Employee, eid).residential_address, "SHOULD NOT SAVE")
+
+    def test_v075_profile_layout_and_links_contract(self):
+        eid = self.employee()
+        did = self.document(eid, "staff_record")
+        with self.app.app_context():
+            assignment = EmployeeAssignment(
+                employee_id=eid,
+                effective_from=date(2026, 1, 1),
+                payroll_group="management",
+                workweek_days=Decimal("5.0"),
+            )
+            salary = EmployeeSalary(
+                employee_id=eid,
+                effective_from=date(2026, 1, 1),
+                salary_basis="monthly",
+                currency="HKD",
+                amount=Decimal("20000"),
+                evidence_document_id=did,
+            )
+            db.session.add_all([assignment, salary])
+            run = PayrollRun(year_month="2026-08", payroll_group="management", rule_version="V0.7.5")
+            db.session.add(run)
+            db.session.flush()
+            db.session.add(
+                PayrollEmployeeResult(
+                    run_id=run.id,
+                    employee_id=eid,
+                    currency="HKD",
+                    gross_amount=Decimal("0"),
+                    employee_mpf=Decimal("300"),
+                    net_amount=Decimal("-300"),
+                )
+            )
+            db.session.commit()
+            aid = assignment.id
+
+        page = self.client.get(f"/employees/{eid}?lang=zh-Hant").get_data(as_text=True)
+        self.assertIn('class="hr-back"', page)
+        self.assertIn('class="flag danger flag-link"', page)
+        self.assertNotIn('class="panel initial-setup"', page)
+        self.assertEqual(page.count('data-dialog-open="edit-personal-dialog"'), 1)
+        self.assertIn('class="panel current-state-card span-wide"', page)
+        self.assertNotIn("compact-upload", page)
+        self.assertIn(f'data-dialog-open="supplement-employment-evidence-{aid}"', page)
+        self.assertIn(f'id="supplement-employment-evidence-{aid}"', page)
+        self.assertIn("data-document-empty-filters", page)
+        self.assertIn("is-negative", page)
+        self.assertIn("實發為負數，請核對", page)
+
+        upload = self.client.post(
+            f"/assignments/{aid}/evidence",
+            data={"evidence": (io.BytesIO(pdf_bytes("A")), "ev.pdf")},
+            follow_redirects=False,
+        )
+        self.assertEqual(upload.status_code, 302)
+        with self.app.app_context():
+            self.assertIsNotNone(db.session.get(EmployeeAssignment, aid).evidence_document_id)
+
+    def test_v075_onboarding_setup_still_shows_before_assignment_and_salary(self):
+        eid = self.employee()
+        page = self.client.get(f"/employees/{eid}?lang=zh-Hant").get_data(as_text=True)
+        self.assertIn('class="panel initial-setup"', page)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-{% if not employee.employment_periods or not employee.assignments or not employee.salaries or not employee.bank_accounts or not employee.mpf_enrollments %}
+{% if not employee.employment_periods or not employee.assignments or not employee.salaries %}
 <details class="panel initial-setup" {% if not employee.assignments and not employee.salaries %}open{% endif %}><summary>{{ t('workflow.initial_setup') }}</summary>
 <p class="form-note">{{ t('workflow.initial_setup_hint') }}</p>
 <form class="form-grid" data-retain-form method="post" action="{{ url_for('employees.initial_setup', employee_id=employee.id) }}">

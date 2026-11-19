@@ -111,9 +111,24 @@ const base = 'http://127.0.0.1:8766';
           assert.ok(Math.max(...cells.map(cell => cell.bottom)) - Math.min(...cells.map(cell => cell.bottom)) < 1);
         }
       }
+      assert.ok(await page.evaluate(() => {
+        const tabs = document.querySelector('.system-tabs');
+        const bar = document.querySelector('.topbar');
+        return tabs && bar && tabs.scrollWidth <= tabs.clientWidth + 1 && bar.scrollWidth <= bar.clientWidth + 1;
+      }));
       await page.setViewportSize({width: 1440, height: 1050});
       fs.mkdirSync('tmp', {recursive: true});
       await table.screenshot({path: 'tmp/profile-history-alignment.png'});
+    });
+    await check('evidence supplement dialog opens from history table without inline overflow', async () => {
+      await page.locator('[data-tab=employment]').click();
+      const trigger = page.locator('[data-dialog-open^="supplement-employment-evidence-"]').first();
+      const targetId = await trigger.getAttribute('data-dialog-open');
+      await trigger.click();
+      const dialog = page.locator('#' + targetId);
+      assert.equal(await dialog.getAttribute('open'), '');
+      await dialog.locator('[data-dialog-close]').last().click();
+      assert.equal(await dialog.getAttribute('open'), null);
     });
     await check('real sick-leave upload error lists formats inside the original dialog', async () => {
       await page.locator('[data-tab=leave]').click();
@@ -176,6 +191,7 @@ const base = 'http://127.0.0.1:8766';
       await lib.locator('[data-document-filter=staff_record]').click();
       assert.equal(await lib.locator('tr[data-document-category]:visible').count(), 1);
       assert.equal(await lib.locator('.document-file-details[open]').count(), 0);
+      await lib.locator('[data-document-empty-toggle]').click();
       await lib.locator('[data-document-filter=cv]').click();
       assert.equal(await lib.locator('tr[data-document-category]:visible').count(), 0);
       assert.ok(await lib.locator('[data-library-empty]').isVisible());

@@ -55,7 +55,7 @@
       </a>
       {% set missing_items = row.employee_data|rejectattr('ok')|list %}
       <details class="directory-file-detail"{% if readiness_filter == 'employee_data' %} open{% endif %}>
-        <summary>{{ t('workflow.file_details') }}</summary>
+        <summary class="{{ 'is-missing' if missing_items else 'is-complete' }}">{{ t('workflow.file_details_missing', count=missing_items|length) if missing_items else t('workflow.file_details_complete') }}</summary>
         {% for item in row.employee_data if item.code=='mpf' %}<small data-mpf-status="{{ 'complete' if item.ok else 'missing' }}">{{ t(item.label_key) }}</small>{% endfor %}
         <div class="directory-missing">{% for item in missing_items %}
           <a href="{{ url_for('employees.view_employee',employee_id=person.id,tab=item.tab,focus=item.code,origin='directory') }}">{{ t(item.label_key) }}</a>
