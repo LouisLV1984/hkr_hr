@@ -1,0 +1,8 @@
+{% for correction in records %}
+<details class="corr-history" id="pay-correction-{{ correction.id }}">
+  <summary>{{ t('corr.history') }} · {{ correction.source_month }} → {{ correction.pay_month }} · {{ correction.currency }} {{ fmt_money(correction.amount) }}</summary>
+  <p>{{ t('corr.edited') }} · {{ correction.editor.username }} · {{ correction.edited_hk }}</p>
+  <ul>{% for line in correction.lines %}<li>{{ line.date }} · {{ line.project }} · {{ t('corr.' + line.kind) }} · {{ t('corr.' + line.direction) }} {{ line.quantity }} × {{ fmt_money(line.rate) }} → {{ fmt_money(line.amount) }} {% if line.included %}({{ t('corr.included') }}){% elif line.kind == 'day' and line.rate|float == 0 %}({{ t('corr.fixed') }}){% endif %}</li>{% endfor %}</ul>
+  {% for doc in correction.documents %}<a target="_blank" rel="noopener" href="{{ url_for('documents.open_document', document_id=doc.id) }}">{{ doc.original_filename }}</a> {% endfor %}
+</details>
+{% endfor %}

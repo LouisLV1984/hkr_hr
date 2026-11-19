@@ -1,4 +1,6 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+import hashlib
+import hmac
 
 from flask_login import LoginManager, UserMixin
 from flask_sqlalchemy import SQLAlchemy
@@ -42,10 +44,22 @@ class User(UserMixin, db.Model):
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
 
+    def get_id(self):
+        # Rotates automatically on password reset, including remembered sessions.
+        revision = hashlib.sha256(self.password_hash.encode()).hexdigest()
+        return f"{self.id}:{revision}"
+
 
 @login_manager.user_loader
 def load_user(user_id):
-    return db.session.get(User, int(user_id))
+    try:
+        identifier, revision = user_id.split(":", 1)
+        user = db.session.get(User, int(identifier))
+    except (ValueError, TypeError, AttributeError):
+        return None
+    if user and user.active and hmac.compare_digest(user.get_id().encode(), user_id.encode()):
+        return user
+    return None
 
 
 class ReferenceList(TimestampMixin, db.Model):
@@ -307,6 +321,7 @@ class Employee(TimestampMixin, db.Model):
         cascade="all, delete-orphan",
         order_by="EmployeeAttendancePolicy.effective_from_month.desc()",
     )
+    attendance_corrections = db.relationship("AttendanceCorrection", cascade="all, delete-orphan")
     payroll_adjustments = db.relationship(
         "PayrollAdjustment",
         cascade="all, delete-orphan",
@@ -338,7 +353,8 @@ class Employee(TimestampMixin, db.Model):
 
     @property
     def primary_identity(self):
-        active = [item for item in self.identities if item.status == "active"]
+        from tools.profile_integrity import credential_state
+        active = [item for item in self.identities if credential_state(item)["code"] not in {"voided", "renewed", "future"}]
         return next((item for item in active if item.is_primary), active[0] if active else None)
 
     def is_active_on(self, on_date):
@@ -521,6 +537,8 @@ class EmployeeBankAccount(TimestampMixin, db.Model):
 class EmployeeIdentity(TimestampMixin, db.Model):
     __tablename__ = "employee_identities"
 
+    renews_id = db.Column(db.Integer, db.ForeignKey("employee_identities.id"), nullable=True)
+
     id = db.Column(db.Integer, primary_key=True)
     employee_id = db.Column(
         db.Integer,
@@ -561,6 +579,8 @@ class EmployeeEmploymentPeriod(TimestampMixin, db.Model):
     probation_end_date = db.Column(db.Date, nullable=True, index=True)
     confirmation_date = db.Column(db.Date, nullable=True)
     contract_annual_leave_days = db.Column(db.Numeric(5, 1), nullable=True)
+    annual_leave_policy_year = db.Column(db.Integer, nullable=True)
+    annual_leave_contract_verified = db.Column(db.Boolean, nullable=True)
     termination_reason = db.Column(db.String(40), nullable=True)
     notice_period_value = db.Column(db.Numeric(6, 2), nullable=True)
     notice_period_unit = db.Column(db.String(20), nullable=True)
@@ -857,6 +877,8 @@ class EmployeeAllowance(TimestampMixin, db.Model):
 class EmployeeQualification(TimestampMixin, db.Model):
     __tablename__ = "employee_qualifications"
 
+    renews_id = db.Column(db.Integer, db.ForeignKey("employee_qualifications.id"), nullable=True)
+
     id = db.Column(db.Integer, primary_key=True)
     employee_id = db.Column(
         db.Integer,
@@ -888,6 +910,8 @@ class EmployeeQualification(TimestampMixin, db.Model):
 
 class EmployeeCertificate(TimestampMixin, db.Model):
     __tablename__ = "employee_certificates"
+
+    renews_id = db.Column(db.Integer, db.ForeignKey("employee_certificates.id"), nullable=True)
 
     id = db.Column(db.Integer, primary_key=True)
     employee_id = db.Column(
@@ -929,6 +953,8 @@ class EmployeeCertificate(TimestampMixin, db.Model):
 
 class EmployeeVisa(TimestampMixin, db.Model):
     __tablename__ = "employee_visas"
+
+    renews_id = db.Column(db.Integer, db.ForeignKey("employee_visas.id"), nullable=True)
 
     id = db.Column(db.Integer, primary_key=True)
     employee_id = db.Column(
@@ -1026,6 +1052,7 @@ class AttendanceBatchItem(TimestampMixin, db.Model):
         nullable=False,
         index=True,
     )
+    archived_summary = db.Column(db.JSON, nullable=True)
     original_filename = db.Column(db.String(255), nullable=False)
     stored_path = db.Column(db.Text, nullable=False)
     mime_type = db.Column(db.String(120), nullable=True)
@@ -1142,6 +1169,7 @@ class EmployeeAttendancePolicy(TimestampMixin, db.Model):
 
 
 class AttendanceSegment(TimestampMixin, db.Model):
+    rate_allocations = db.Column(db.JSON)
     __tablename__ = "attendance_segments"
     __table_args__ = (
         db.UniqueConstraint(
@@ -1228,6 +1256,35 @@ class AttendanceSpecialDay(TimestampMixin, db.Model):
         back_populates="source_special_day",
         uselist=False,
     )
+
+
+correction_documents = db.Table(
+    "attendance_correction_documents",
+    db.Column("correction_id", db.ForeignKey("attendance_corrections.id"), primary_key=True),
+    db.Column("document_id", db.ForeignKey("employee_documents.id"), primary_key=True),
+)
+
+
+class AttendanceCorrection(TimestampMixin, db.Model):
+    __tablename__ = "attendance_corrections"
+    __table_args__ = (db.UniqueConstraint("employee_id", "source_month", "pay_month"),)
+    id = db.Column(db.Integer, primary_key=True)
+    employee_id = db.Column(db.ForeignKey("employees.id"), nullable=False, index=True)
+    source_month = db.Column(db.String(7), nullable=False, index=True)
+    pay_month = db.Column(db.String(7), nullable=False, index=True)
+    lines = db.Column(db.JSON, nullable=False)
+    currency = db.Column(db.String(8), nullable=False)
+    amount = db.Column(db.Numeric(14, 2), nullable=False)
+    edited_by = db.Column(db.ForeignKey("users.id"), nullable=False)
+    editor = db.relationship("User")
+    revision = db.Column(db.Integer, nullable=False, default=1)
+    __mapper_args__ = {"version_id_col": revision}
+    documents = db.relationship("EmployeeDocument", secondary=correction_documents,
+                                order_by="EmployeeDocument.id")
+
+    @property
+    def edited_hk(self):
+        return (self.updated_at + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M")
 
 
 class PayrollAdjustment(TimestampMixin, db.Model):
@@ -1468,6 +1525,9 @@ class EmployeeAnnualLeaveBalance(TimestampMixin, db.Model):
     )
     year = db.Column(db.Integer, nullable=False, index=True)
     entitled_days_override = db.Column(db.Numeric(5, 1), nullable=True)
+    calculated_entitled_days = db.Column(db.Numeric(5, 1), nullable=True)
+    calculated_annual_rate = db.Column(db.Numeric(5, 1), nullable=True)
+    calculation_start_date = db.Column(db.Date, nullable=True)
     carried_from_previous_days = db.Column(
         db.Numeric(5, 1),
         nullable=False,
@@ -1727,6 +1787,7 @@ class EmployeeWorkInjuryMonthlyExpense(TimestampMixin, db.Model):
 
 
 class EmployeeFinalPaymentCase(TimestampMixin, db.Model):
+    rate_allocations = db.Column(db.JSON)
     __tablename__ = "employee_final_payment_cases"
     __table_args__ = (
         db.UniqueConstraint(

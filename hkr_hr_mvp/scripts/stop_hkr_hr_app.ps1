@@ -18,16 +18,6 @@ function Get-ListenerProcessIds {
 
 $ProcessIds = @(Get-ListenerProcessIds -Port $Port)
 
-if ($ProcessIds.Count -eq 0 -and (Test-Path -LiteralPath $PidFile)) {
-    $SavedPid = (Get-Content -LiteralPath $PidFile -ErrorAction SilentlyContinue | Select-Object -First 1)
-    if ($SavedPid -match "^\d+$") {
-        $Existing = Get-Process -Id ([int]$SavedPid) -ErrorAction SilentlyContinue
-        if ($Existing) {
-            $ProcessIds = @([int]$SavedPid)
-        }
-    }
-}
-
 if ($ProcessIds.Count -eq 0) {
     Write-Host "No HKR HR web process is listening on port $Port."
     if (Test-Path -LiteralPath $PidFile) {
@@ -49,8 +39,12 @@ if (Test-Path -LiteralPath $PidFile) {
     Remove-Item -LiteralPath $PidFile -Force
 }
 
-Start-Sleep -Seconds 1
-$Remaining = @(Get-ListenerProcessIds -Port $Port)
+$Deadline = (Get-Date).AddSeconds(15)
+do {
+    $Remaining = @(Get-ListenerProcessIds -Port $Port)
+    if ($Remaining.Count -eq 0) { break }
+    Start-Sleep -Milliseconds 500
+} while ((Get-Date) -lt $Deadline)
 if ($Remaining.Count -gt 0) {
     Write-Warning "Port $Port still has listener PID(s): $($Remaining -join ', ')"
     exit 1

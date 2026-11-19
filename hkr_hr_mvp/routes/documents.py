@@ -2,6 +2,8 @@ import io
 import time
 import zipfile
 from datetime import date
+from decimal import Decimal
+from tools.hr_core import parse_decimal, annual_leave_summary
 from pathlib import Path
 from uuid import uuid4
 
@@ -11,6 +13,7 @@ from flask import (
     abort,
     current_app,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -43,6 +46,8 @@ from tools.hr_core import (
     REPLACEMENT_REASONS,
     copy_file_to_employee,
     current_bank_account_on,
+    current_assignment_on,
+    current_salary_on,
     ensure_current_employment_period,
     file_sha256,
     find_duplicate_employee_document,
@@ -103,6 +108,8 @@ def safe_send(
     file_path = Path(path)
     if not file_path.exists() or not file_path.is_file():
         abort(404)
+    if file_path.stat().st_size == 0:
+        abort(400, description="upload.empty_file")
     return send_file(
         file_path,
         as_attachment=as_attachment,
@@ -557,6 +564,9 @@ def review_document(document_id):
                 if not parse_date(request.form.get("contract_effective_date")):
                     raise ValueError("profile.invalid_date")
                 value = request.form.get("contract_annual_leave_days", "").strip()
+                if value and employee.current_period and employee.current_period.annual_leave_policy_year is not None:
+                    from tools.annual_leave_setup import validate
+                    validate(employee.current_period.start_date, parse_decimal(value), employee.current_period.end_date)
                 if value and (not float(value) >= 0 or float(value) > 366 or float(value) * 2 % 1):
                     raise ValueError("profile.invalid_entitlement")
                 if request.form.get("probation_end_date") and not parse_date(request.form.get("probation_end_date")):
@@ -566,12 +576,14 @@ def review_document(document_id):
                 if not start:
                     raise ValueError("profile.invalid_date")
                 current = employee.current_period
+                from tools.annual_leave_setup import validate_date_choice
+                validate_date_choice(employee, start, request.form.get("date_change_action"))
                 if current and any(p.id != current.id and (p.end_date is None or p.end_date >= start) for p in employee.employment_periods):
                     raise ValueError("profile.employment_overlap")
                 if current and current.end_date and start > current.end_date:
                     raise ValueError("profile.date_order")
         except (ValueError, TypeError) as error:
-            key = str(error) if str(error).startswith("profile.") else "profile.invalid_entitlement"
+            key = str(error) if str(error).startswith(("profile.", "leave.")) else "profile.invalid_entitlement"
             flash(key, "error")
             return render_document_review(document)
         before_employee = employee_audit_snapshot(employee)
@@ -624,7 +636,20 @@ def review_document(document_id):
             start_date = parse_date(request.form.get("start_date"))
             if start_date:
                 period = ensure_current_employment_period(employee, start_date)
+                old_leave = annual_leave_summary(employee, date.today().year)["entitled"]
+                changed_start = period.start_date != start_date
                 period.start_date = start_date
+                if period.annual_leave_policy_year is not None:
+                    from tools.annual_leave_policy import save_current_balance
+                    balance = save_current_balance(employee)
+                    if changed_start:
+                        balance.entitled_days_override = (old_leave if request.form.get("date_change_action") == "keep_current" else None)
+                    write_audit("annual_leave_balance_updated", "EmployeeAnnualLeaveBalance", balance.id,
+                                employee_id=employee.id, detail="員工資料表修正入職日期及本年度年假計算",
+                                before={"entitled": str(old_leave)},
+                                after={"year": date.today().year, "start_date": str(start_date),
+                                       "date_change_action": request.form.get("date_change_action"),
+                                       "applied": str(balance.entitled_days_override if balance.entitled_days_override is not None else balance.calculated_entitled_days)})
             if staff_bank_name and staff_bank_effective_from:
                 bank_currency = (
                     request.form.get("bank_currency", "HKD").strip()
@@ -901,7 +926,19 @@ def review_document(document_id):
             if effective_date:
                 period = ensure_current_employment_period(employee, effective_date)
                 if request.form.get("contract_annual_leave_days", "").strip():
+                    old_leave = annual_leave_summary(employee, date.today().year)["entitled"]
                     period.contract_annual_leave_days = float(request.form["contract_annual_leave_days"])
+                    period.annual_leave_contract_verified = True
+                    if period.annual_leave_policy_year is not None:
+                        from tools.annual_leave_policy import save_current_balance
+                        from tools.annual_leave_setup import validate
+                        validate(period.start_date, Decimal(str(period.contract_annual_leave_days)), period.end_date)
+                        balance = save_current_balance(employee)
+                        write_audit("annual_leave_balance_updated", "EmployeeAnnualLeaveBalance", balance.id,
+                                    employee_id=employee.id, detail="合約核對更新初始年假及本年度計算",
+                                    before={"entitled": str(old_leave)},
+                                    after={"initial_days": str(period.contract_annual_leave_days), "year": date.today().year,
+                                           "applied": str(balance.entitled_days_override if balance.entitled_days_override is not None else balance.calculated_entitled_days)})
                 if employee.payroll_group == "management" and request.form.get("probation_end_date"):
                     period.probation_end_date = parse_date(
                         request.form.get("probation_end_date")
@@ -937,6 +974,12 @@ def review_document(document_id):
 @login_required
 def open_document(document_id):
     document = db.get_or_404(EmployeeDocument, document_id)
+    if Path(document.original_filename).suffix.lower() == '.pdf' and request.args.get('raw') != '1':
+        if not Path(document.stored_path).is_file():
+            abort(404)
+        return render_template('documents/pdf.html', title=document.original_filename,
+            source_url=url_for('documents.open_document', document_id=document.id, raw=1),
+            download_url=url_for('documents.download_document', document_id=document.id))
     return safe_send(
         document.stored_path,
         download_name=document.original_filename,
@@ -1122,15 +1165,15 @@ def contract_context(
     probation,
     notice_period,
 ):
-    assignment = employee.current_assignment
-    salary = employee.current_salary
+    assignment = current_assignment_on(employee, effective_date)
+    salary = current_salary_on(employee, effective_date)
     identity = employee.primary_identity
     positions = (
         "、".join(item.position.display_name for item in assignment.positions)
         if assignment
         else ""
     )
-    salary_basis = "每月" if salary.salary_basis == "monthly" else "每日"
+    salary_basis = "每月" if salary and salary.salary_basis == "monthly" else "每日"
     salary_text = (
         f"{salary_basis} {salary.currency} {format_money(salary.amount)}"
         if salary
@@ -1179,19 +1222,19 @@ def generate_contract(employee_id):
         template_code = request.form.get("template_code") or automatic_template
         contract_date = parse_date(request.form.get("contract_date")) or date.today()
         effective_date = parse_date(request.form.get("effective_date"))
-        annual_leave = request.form.get("annual_leave_days", type=float) or 7
-        notice_period = request.form.get("notice_period_days", type=float) or 7
+        annual_leave = float(request.form.get("annual_leave_days") or 7)
+        notice_period = float(request.form.get("notice_period_days") or 7)
         probation = (
-            request.form.get("probation_months", type=float) or 3
+            float(request.form.get("probation_months") or 3)
             if template_code == "OFFICE"
             else 0
         )
         missing = []
         if not effective_date:
             missing.append("合同生效日")
-        if not employee.current_assignment:
+        if not effective_date or not current_assignment_on(employee, effective_date):
             missing.append("任職資料")
-        if not employee.current_salary:
+        if not effective_date or not current_salary_on(employee, effective_date):
             missing.append("薪酬資料")
         if not employee.primary_identity:
             missing.append("主要身份證件")
@@ -1211,7 +1254,7 @@ def generate_contract(employee_id):
                 output_root.mkdir(parents=True, exist_ok=True)
                 output_name = (
                     f"{employee.employee_no}_{employee.display_name}_"
-                    f"{effective_date:%Y%m%d}_{template_code}.docx"
+                    f"{effective_date:%Y%m%d}_{template_code}_{uuid4().hex[:12]}.docx"
                 )
                 output_path = output_root / output_name
                 template = DocxTemplate(template_path)
@@ -1226,11 +1269,7 @@ def generate_contract(employee_id):
                     )
                 )
                 template.save(output_path)
-                period = employee.current_period
-                if period:
-                    period.contract_annual_leave_days = annual_leave
-                    period.notice_period_value = notice_period
-                    period.notice_period_unit = "day"
+                # Draft terms never update the signed employment facts.
                 document = EmployeeDocument(
                     employee=employee,
                     category="contract_draft",
@@ -1260,7 +1299,7 @@ def generate_contract(employee_id):
                     contract_date=contract_date,
                     effective_date=effective_date,
                     annual_leave_days=annual_leave,
-                    probation_months=probation if probation else None,
+                    probation_months=probation,
                     generated_by=current_user.id,
                     document_id=document.id,
                 )
@@ -1285,9 +1324,22 @@ def generate_contract(employee_id):
         "documents/generate_contract.html",
         employee=employee,
         automatic_template=automatic_template,
+        contract_effective_date=parse_date(request.values.get("effective_date")) or (employee.current_period.start_date if employee.current_period else date.today()),
         now_date=date.today().isoformat(),
     )
 
+
+
+@documents_bp.get("/employees/<int:employee_id>/contracts/facts")
+@login_required
+def contract_facts(employee_id):
+    employee = db.get_or_404(Employee, employee_id)
+    on_date = parse_date(request.args.get("effective_date")) or date.today()
+    assignment = current_assignment_on(employee, on_date)
+    salary = current_salary_on(employee, on_date)
+    return jsonify(project=assignment.project.name if assignment and assignment.project else "—",
+                   position="、".join(item.position.display_name for item in assignment.positions) if assignment else "—",
+                   salary=f"{salary.currency} {salary.amount:,.2f}" if salary else "—")
 
 @documents_bp.route("/contracts/<int:contract_id>/download")
 @login_required

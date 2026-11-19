@@ -12,11 +12,19 @@ $PidFile = Join-Path $LogDir "hkr_hr_app_$Port.pid"
 $OutLog = Join-Path $LogDir "hkr_hr_app.out.log"
 $ErrLog = Join-Path $LogDir "hkr_hr_app.err.log"
 
+$HttpReady = $false
+try {
+    $response = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/login" -UseBasicParsing -TimeoutSec 5
+    $HttpReady = $response.StatusCode -eq 200
+} catch { }
+if ($HttpReady) { Write-Host "HKR HR web app responds normally on port $Port." }
+else { Write-Host "HKR HR web app did not return a successful login page on port $Port." }
+
 $Connections = @(Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue)
 $Listeners = @($Connections | Where-Object { $_.State -eq "Listen" -and $_.OwningProcess -ne 0 })
 
 if ($Listeners.Count -eq 0) {
-    Write-Host "HKR HR web app is not listening on port $Port."
+    Write-Host "Windows did not return listener details; use the HTTP result above."
 } else {
     Write-Host "HKR HR web app listener(s):"
     $Listeners | Select-Object LocalAddress, LocalPort, State, OwningProcess | Format-Table -AutoSize
@@ -61,3 +69,5 @@ if (Test-Path -LiteralPath $ErrLog) {
     Write-Host "Error log tail:"
     Get-Content -LiteralPath $ErrLog -Tail 20
 }
+
+if (-not $HttpReady) { exit 1 }

@@ -1,8 +1,11 @@
+import csv
+import io
 from datetime import date
 from decimal import Decimal
 
 from flask import (
     Blueprint,
+    Response,
     abort,
     flash,
     jsonify,
@@ -1179,6 +1182,72 @@ def archive_mpf_scheme(scheme_id):
         "mpf_schemes",
     )
 
+
+
+@references_bp.get("/references/work-calendar/csv")
+@login_required
+def export_work_calendar_csv():
+    year = request.args.get("calendar_year", type=int) or date.today().year
+    region_id = request.args.get("region_id", type=int)
+    query = WorkCalendarHoliday.query.filter(db.extract("year", WorkCalendarHoliday.holiday_date) == year, WorkCalendarHoliday.active.is_(True))
+    if region_id:
+        query = query.filter_by(region_id=region_id)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["date", "name", "scope", "region_code"])
+    for item in query.order_by(WorkCalendarHoliday.holiday_date).all():
+        writer.writerow([item.holiday_date.isoformat(), item.name, work_calendar_scope_value(item), item.region.code])
+    return Response("\ufeff" + output.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": f"attachment; filename=work-calendar-{year}.csv"})
+
+
+@references_bp.post("/references/work-calendar/csv")
+@login_required
+def import_work_calendar_csv():
+    if not editor_allowed():
+        abort(403)
+    upload = request.files.get("calendar_csv")
+    try:
+        if not upload:
+            raise ValueError("請選擇工作日曆 CSV。")
+        reader = csv.DictReader(io.StringIO(upload.read().decode("utf-8-sig")))
+        rows, seen = [], set()
+        for index, row in enumerate(reader, start=2):
+            day = parse_date(row.get("date"))
+            name = normalize_reference_display(row.get("name"))
+            scope = work_calendar_scope(row.get("scope"))
+            region = ReferenceValue.query.join(ReferenceList).filter(ReferenceList.code == "work_region", ReferenceValue.code == row.get("region_code")).first()
+            if not day or not name or not scope or not region:
+                raise ValueError(f"CSV 第 {index} 行：請填日期、名稱、scope（statutory/public/both）及有效 region_code。")
+            key = (region.id, day)
+            if key in seen:
+                raise ValueError(f"CSV 第 {index} 行：同地區日期重複，請合併適用日曆。")
+            seen.add(key); rows.append((region.id, day, name, scope))
+        if not rows:
+            raise ValueError("CSV 沒有假日；可先下載現有日曆作為格式範本。")
+    except (ValueError, UnicodeError, csv.Error) as exc:
+        flash(str(exc), "error")
+        return references_redirect("work_calendar")
+    added = updated = 0
+    for region_id, day, name, scope in rows:
+        item = WorkCalendarHoliday.query.filter_by(region_id=region_id, holiday_date=day).first()
+        before = None
+        if item:
+            before = {"name": item.name, "scope": work_calendar_scope_value(item), "active": item.active}
+            item.applies_to_statutory = item.applies_to_statutory or scope in {"statutory", "both"}
+            item.applies_to_public = item.applies_to_public or scope in {"public", "both"}
+            updated += 1
+        else:
+            item = WorkCalendarHoliday(region_id=region_id, holiday_date=day, name=name, active=True)
+            set_work_calendar_scope(item, scope)
+            db.session.add(item); added += 1
+        db.session.flush()
+        write_audit("work_calendar_csv_import", "WorkCalendarHoliday", item.id, before=before,
+                    after={"name": item.name, "scope": work_calendar_scope_value(item), "active": item.active},
+                    detail=day.isoformat())
+    db.session.commit()
+    flash(f"離線日曆已匯入：新增 {added} 日，核對 {updated} 日。既有名稱及封存狀態保留。", "success")
+    return references_redirect("work_calendar")
 
 @references_bp.route("/references/work-calendar", methods=["POST"])
 @login_required

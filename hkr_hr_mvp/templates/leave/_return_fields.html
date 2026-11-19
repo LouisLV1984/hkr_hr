@@ -1,0 +1,6 @@
+<input type="hidden" name="return_to" value="annual_leave">
+<input type="hidden" name="entitlement_year" value="{{ year }}">
+<input type="hidden" name="origin" value="{{ request.args.get('origin', '') }}">
+{% for key in ('q', 'status', 'action', 'project_id', 'payroll_group') if request.args.get(key) %}
+<input type="hidden" name="back_{{ key }}" value="{{ request.args[key] }}">
+{% endfor %}

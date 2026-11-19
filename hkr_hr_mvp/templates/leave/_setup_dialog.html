@@ -1,0 +1,15 @@
+<dialog class="app-dialog record-editor-dialog" id="annual-leave-setup-dialog">
+  <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('leave.annual_leave_setup', employee_id=selected.id) }}" data-annual-setup data-preview-url="{{ url_for('leave.annual_leave_setup_preview', employee_id=selected.id) }}" data-preview-label="{{ t('leave.setup_preview') }}" data-error-label="{{ t('leave.setup_invalid') }}">
+    <input type="hidden" name="setup_token" value="{{ setup_token }}">
+    {% set hire_employee = selected %}{% include 'leave/_date_choice.html' %}
+    <div class="section-head"><h2>{{ t('leave.setup_title') }}</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div>
+    <div class="record-editor-body form-grid">
+      <label><span>{{ t('employees.start_date') }}</span><input type="date" name="start_date" value="{{ selected.current_period.start_date.isoformat() if selected.current_period else '' }}" required></label>
+      <label><span>{{ t('leave.initial_days') }}</span><input type="number" name="initial_days" min="7" max="14" step="0.5" value="{{ selected.current_period.contract_annual_leave_days if selected.current_period and selected.current_period.contract_annual_leave_days is not none else 7 }}" required><small>{{ t('leave.initial_hint') }}</small></label>
+      <label><span>{{ t('leave.setup_override') }}</span><select name="preserve"><option value="1">{{ t('leave.setup_keep') }}</option><option value="0">{{ t('leave.setup_replace') }}</option></select></label>
+      <p class="form-note" data-setup-result aria-live="polite">{{ t('leave.setup_invalid') }}</p>
+      <p class="form-note">{{ t('leave.setup_scope') }}</p>
+    </div>
+    <div class="dialog-actions"><button type="button" class="ghost-btn" data-dialog-close>{{ t('common.cancel') }}</button><button class="primary-btn" type="submit" data-setup-save disabled>{{ t('common.save') }}</button></div>
+  </form>
+</dialog>

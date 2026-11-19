@@ -1,0 +1,368 @@
+
+.staff-workbench * {
+    box-sizing:border-box;
+}
+.staff-workbench {
+    margin:0;
+    background:#f4f6f2;
+    color:#182f26;
+    font:15px/1.55 "Segoe UI","Microsoft JhengHei",sans-serif;
+}
+.staff-workbench a {
+    color:inherit;
+    text-decoration:none;
+}
+.staff-workbench a:hover {
+    text-decoration:underline;
+    text-underline-offset:3px;
+}
+.staff-workbench button, .staff-workbench input {
+    font:inherit;
+    color:inherit;
+}
+.staff-workbench a:focus-visible, .staff-workbench input:focus-visible, .staff-workbench button:focus-visible {
+    outline:3px solid #078565;
+    outline-offset:3px;
+}
+.staff-workbench .wrap {
+    max-width:1512px;
+    margin:auto;
+    padding:0 clamp(18px,3.5vw,62px);
+}
+.staff-workbench header {
+    background:#fff;
+    border-bottom:1px solid #dce3da;
+}
+.staff-workbench .bar, .staff-workbench .intro, .staff-workbench .title, .staff-workbench .actions, .staff-workbench .table-head, .staff-workbench .tools, .staff-workbench .metrics, .staff-workbench .line, .staff-workbench .period {
+    display:flex;
+    align-items:center;
+}
+.staff-workbench .bar {
+    min-height:64px;
+    gap:38px;
+}
+.staff-workbench .brand {
+    display:flex;
+    align-items:center;
+    gap:5px;
+    font-size:21px;
+    font-weight:750;
+    white-space:nowrap;
+}
+.staff-workbench .brand b {
+    font-weight:450;
+    color:#66786b;
+}
+.staff-workbench .brand i {
+    background:#1a503c;
+    color:white;
+    font:italic 750 22px/31px Georgia;
+    text-align:center;
+    display:inline-block;
+    width:31px;
+    border-radius:7px;
+    margin-right:5px;
+}
+.staff-workbench nav {
+    display:flex;
+    align-self:stretch;
+    gap:26px;
+    overflow:auto;
+}
+.staff-workbench nav a, .staff-workbench .settings {
+    white-space:nowrap;
+    font-weight:550;
+    font-size:14px;
+}
+.staff-workbench nav a {
+    align-content:center;
+    border-bottom:3px solid transparent;
+    padding:2px 1px 0;
+}
+.staff-workbench nav [aria-current] {
+    border-color:#276448;
+    color:#276448;
+}
+.staff-workbench .settings {
+    margin-left:auto;
+}
+.staff-workbench .intro {
+    justify-content:space-between;
+    gap:12px;
+    margin:31px 0 23px;
+}
+.staff-workbench .date, .staff-workbench .tile small, .staff-workbench .muted, .staff-workbench .employee small {
+    color:#677669;
+}
+.staff-workbench .date {
+    margin:0 0 2px;
+    font:600 12px/1.5 "Segoe UI",sans-serif;
+    letter-spacing:.12em;
+}
+.staff-workbench h1 {
+    font-size:clamp(30px,3vw,43px);
+    line-height:1.2;
+    margin:0;
+    letter-spacing:-.05em;
+}
+.staff-workbench h2 {
+    font-size:19px;
+    margin:0;
+    line-height:1.4;
+}
+.staff-workbench .period, .staff-workbench .tools {
+    gap:10px;
+}
+.staff-workbench .period label, .staff-workbench .tools label {
+    font-size:13px;
+    white-space:nowrap;
+}
+.staff-workbench .period input, .staff-workbench button, .staff-workbench .tools input[type=search] {
+    border:1px solid #c6d1c7;
+    border-radius:6px;
+    background:white;
+    padding:7px 10px;
+}
+.staff-workbench button {
+    cursor:pointer;
+}
+.staff-workbench .overview {
+    display:grid;
+    grid-template-columns:1fr 1fr 1.15fr;
+    gap:14px;
+}
+.staff-workbench .tile, .staff-workbench .directory {
+    border:1px solid #d9e1d8;
+    border-radius:11px;
+    background:#fff;
+}
+.staff-workbench .tile {
+    padding:19px 21px;
+    min-width:0;
+}
+.staff-workbench .title, .staff-workbench .table-head, .staff-workbench .actions {
+    justify-content:space-between;
+    gap:10px;
+}
+.staff-workbench .title a, .staff-workbench .actions a {
+    font-size:13px;
+    font-weight:600;
+}
+.staff-workbench .title {
+    margin-bottom:11px;
+}
+.staff-workbench .big {
+    font-size:32px;
+    font-weight:650;
+    line-height:1.1;
+}
+.staff-workbench .big small {
+    font-size:13px;
+}
+.staff-workbench .line {
+    gap:7px;
+    justify-content:space-between;
+    padding:6px 0;
+    border-bottom:1px solid #edf0eb;
+    font-size:13px;
+}
+.staff-workbench .line:last-child {
+    border-bottom:0;
+}
+.staff-workbench .line em {
+    font-size:12px;
+    font-style:normal;
+    white-space:nowrap;
+}
+.staff-workbench .amber, .staff-workbench .highlight {
+    color:#7c530b;
+}
+.staff-workbench .red {
+    color:#9c3838;
+}
+.staff-workbench .leave-names {
+    margin-left:auto;
+    color:#4d6755;
+}
+.staff-workbench .accent {
+    background:#174935;
+    color:white;
+    border-color:#174935;
+}
+.staff-workbench .accent small {
+    color:#d1e4d4;
+}
+.staff-workbench .metrics {
+    gap:10px;
+    justify-content:space-between;
+}
+.staff-workbench .metrics a {
+    display:grid;
+    font-size:12px;
+    color:#d9e7d9;
+}
+.staff-workbench .metrics strong {
+    font-size:31px;
+    color:#fff;
+    line-height:1.25;
+}
+.staff-workbench .metrics strong small {
+    font-size:16px;
+}
+.staff-workbench .actions {
+    border-top:1px solid #436951;
+    padding-top:13px;
+    margin-top:13px;
+    flex-wrap:wrap;
+}
+.staff-workbench .upload {
+    background:#e3efc2;
+    color:#173b25;
+    padding:6px 10px;
+    border-radius:5px;
+}
+.staff-workbench .directory {
+    margin:22px 0 50px;
+    overflow:hidden;
+}
+.staff-workbench .table-head {
+    padding:16px 21px;
+}
+.staff-workbench .table-head h2 small {
+    font-size:14px;
+    color:#66796c;
+    margin-left:5px;
+}
+.staff-workbench .tools input[type=checkbox] {
+    accent-color:#24593e;
+    vertical-align:middle;
+}
+.staff-workbench .scroll {
+    overflow:auto;
+}
+.staff-workbench table {
+    width:100%;
+    border-collapse:collapse;
+    text-align:left;
+    white-space:nowrap;
+}
+.staff-workbench th {
+    font-size:12px;
+    letter-spacing:.025em;
+    color:#526559;
+    background:#f2f5ee;
+}
+.staff-workbench td, .staff-workbench th {
+    padding:10px 16px;
+    border-top:1px solid #e4e9e2;
+}
+.staff-workbench th:first-child, .staff-workbench td:first-child {
+    padding-left:21px;
+}
+.staff-workbench tbody tr:hover {
+    background:#fafcf8;
+}
+.staff-workbench .employee strong, .staff-workbench .employee small {
+    display:block;
+}
+.staff-workbench .employee small {
+    font-size:11px;
+    letter-spacing:.025em;
+}
+.staff-workbench .status {
+    display:inline-block;
+    padding:2px 8px;
+    border-radius:4px;
+    font-size:12px;
+}
+.staff-workbench .ok {
+    background:#e9f2e8;
+    color:#286140;
+}
+.staff-workbench .warn {
+    background:#fff0d7;
+    color:#79530d;
+}
+.staff-workbench .neutral {
+    color:#58655d;
+    background:#f1f3ef;
+}
+.staff-workbench .absence {
+    display:block;
+}
+.staff-workbench .muted, .staff-workbench #empty {
+    font-size:13px;
+}
+.staff-workbench #empty {
+    margin:20px;
+}
+.staff-workbench .period input {
+    margin-left:5px;
+}
+.staff-workbench td {
+    font-size:14px;
+}
+
+@media(max-width:950px) {
+.staff-workbench .overview {
+        grid-template-columns:1fr 1fr;
+    }
+.staff-workbench .accent {
+        grid-column:1/-1;
+    }
+.staff-workbench .metrics {
+        justify-content:flex-start;
+        gap:35px;
+    }
+.staff-workbench .bar {
+        gap:20px;
+    }
+.staff-workbench nav {
+        gap:15px;
+    }
+
+}
+
+@media(max-width:640px) {
+.staff-workbench .bar {
+        flex-wrap:wrap;
+        gap:0;
+        padding-top:8px;
+    }
+.staff-workbench .bar nav {
+        order:3;
+        width:100%;
+        height:42px;
+        gap:18px;
+    }
+.staff-workbench .intro, .staff-workbench .table-head {
+        align-items:flex-start;
+        flex-direction:column;
+    }
+.staff-workbench .overview {
+        grid-template-columns:1fr;
+    }
+.staff-workbench .accent {
+        grid-column:auto;
+    }
+.staff-workbench .intro {
+        margin:22px 0 15px;
+    }
+.staff-workbench .tools {
+        flex-wrap:wrap;
+    }
+.staff-workbench .tile {
+        padding:15px 17px;
+    }
+.staff-workbench .table-head {
+        gap:12px;
+    }
+.staff-workbench .period label {
+        font-size:12px;
+    }
+.staff-workbench .directory {
+        margin-top:14px;
+    }
+
+}
+

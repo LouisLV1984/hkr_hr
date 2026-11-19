@@ -22,13 +22,22 @@ def document_reference_count(document):
     return count
 
 
-def identity_conflict(identity_type, identity_number, exclude_id=None):
+def identity_conflict(identity_type, identity_number, exclude_id=None, renewal=None):
     number = normalize_identity_number(identity_number)
     if not number:
         return None
+    related = set()
+    if renewal:
+        family = {row.id: row for row in renewal.employee.identities}
+        while renewal and renewal.id not in related:
+            related.add(renewal.id)
+            renewal = family.get(renewal.renews_id)
+        for row in sorted(family.values(), key=lambda row: row.id):
+            if row.renews_id in related:
+                related.add(row.id)
     return next((item for item in EmployeeIdentity.query.filter_by(
         identity_type=identity_type, status="active").all()
-        if item.id != exclude_id and normalize_identity_number(item.identity_number) == number), None)
+        if item.id != exclude_id and item.id not in related and normalize_identity_number(item.identity_number) == number), None)
 
 
 def validate_credential_dates(start, end, long_term=False, require_expiry=False):
@@ -80,10 +89,42 @@ def credential_form_validation(kind):
     return decorate
 
 
+CREDENTIAL_GROUPS = {
+    EmployeeIdentity: ("identities", "identity_type"),
+    EmployeeCertificate: ("certificates", "certificate_type_id"),
+    EmployeeVisa: ("visas", "visa_category_id"),
+    EmployeeQualification: ("qualifications", "category"),
+}
+
+
+def active_successor(item):
+    group, _ = CREDENTIAL_GROUPS[type(item)]
+    return next((row for row in getattr(item.employee, group)
+                 if row.renews_id == item.id and row.status == "active"), None)
+
+
+def renewal_source(model, employee):
+    source_id = request.form.get("renews_id", type=int)
+    if not source_id:
+        return None
+    _, type_field = CREDENTIAL_GROUPS[model]
+    old = model.query.filter_by(id=source_id, employee_id=employee.id, status="active").with_for_update().first()
+    date_field = "valid_from" if model is EmployeeCertificate else "issue_date"
+    effective = parse_date(request.form.get(date_field))
+    if (not old or active_successor(old) or not effective
+            or str(getattr(old, type_field)) != request.form.get(type_field)
+            or (getattr(old, date_field) and effective < getattr(old, date_field))):
+        raise ValueError("hr.renewal_invalid")
+    return old
+
+
 def credential_state(item, today=None):
     today = today or date.today()
     if item.status != "active":
         return {"code": "voided", "tone": "muted"}
+    successor = active_successor(item)
+    if successor and (getattr(successor, "valid_from", None) or getattr(successor, "issue_date", None) or today) <= today:
+        return {"code": "renewed", "tone": "muted"}
     start = getattr(item, "valid_from", None) or getattr(item, "issue_date", None)
     if start and start > today:
         return {"code": "future", "tone": "warn"}

@@ -1,0 +1,6 @@
+{% if payroll_return %}
+<p class="form-note">{{ t('hr.review_month', month=request.args.get('pay_month')) }}
+{% if salary_dates and request.args.get('focus') == 'salary' %} · {{ t('hr.salary_dates') }} {{ salary_dates|join(' · ') }}{% endif %}</p>
+{% for key in ('from_payroll','pay_month','pay_group','pay_entity','pay_status','pay_q','pay_employee','focus') %}
+{% if key in request.args %}<input type="hidden" name="{{ key }}" value="{{ request.args[key] }}">{% endif %}
+{% endfor %}{% endif %}

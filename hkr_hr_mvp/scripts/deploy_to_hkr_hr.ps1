@@ -1,6 +1,7 @@
 param(
     [string]$ProductionRoot = "R:\",
-    [switch]$SkipCompile
+    [switch]$SkipCompile,
+    [switch]$RestartToolsOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,6 +32,26 @@ $UserGuideSource = Join-Path $SourceRoot $UserGuideName
 $UserGuideTarget = Join-Path $ProductionRoot $UserGuideName
 $Timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $LogPath = Join-Path $DeployLogRoot "deploy_to_hkr_hr_$Timestamp.log"
+$restartScripts = @(
+    "mini_pc_restart_hkr_hr_app.bat",
+    "restart_hkr_hr_app.ps1",
+    "stop_hkr_hr_app.ps1",
+    "process_hkr_hr_restart_inbox.ps1",
+    "install_hkr_hr_restart_inbox.ps1",
+    "mini_pc_install_hkr_hr_restart_inbox.bat"
+)
+
+if ($RestartToolsOnly) {
+    if (!(Test-Path -LiteralPath (Join-Path $AppTarget "app.py") -PathType Leaf) -or
+        !(Test-Path -LiteralPath $OperatorScriptTarget -PathType Container)) {
+        throw "Deploy HKR HR before copying restart tools: $ProductionRoot"
+    }
+    foreach ($name in $restartScripts) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $OperatorScriptTarget -Force
+    }
+    Write-Host "Copied HKR HR restart tools to $OperatorScriptTarget ($($restartScripts.Count) files)."
+    return
+}
 
 New-Item -ItemType Directory -Force -Path $DeployLogRoot, $AppTarget, $OperatorScriptTarget, $TemplateTarget, $PayrollTemplateTarget, $AttachmentRoot, $GeneratedRoot, $LogRoot | Out-Null
 
@@ -70,16 +91,14 @@ function Test-DeployablePath {
     )
     $excludedNames = @(
         ".env",
+        "test_postgres.py",
         "HKR_HR_Web.url",
         "flask_stdout.log",
         "flask_stderr.log",
         "deploy_to_hkr_hr.ps1",
-        "mini_pc_restart_hkr_hr_app.bat",
         "mini_pc_upgrade_hkr_hr_v1_and_restart.bat",
-        "restart_hkr_hr_app.ps1",
         "setup_system_venv.ps1",
         "start_hkr_hr_app.ps1",
-        "stop_hkr_hr_app.ps1",
         "status_hkr_hr_app.ps1",
         "open_hkr_hr_web.bat",
         "allow_hkr_hr_firewall_port.ps1",
@@ -91,8 +110,9 @@ function Test-DeployablePath {
         "setup_hkr_hr_backup.ps1",
         "verify_hkr_hr_backup_restore.ps1",
         "repair_salary_timeline_20260811.py",
-        "mini_pc_repair_salary_timeline_20260811.bat"
-    )
+        "mini_pc_repair_salary_timeline_20260811.bat",
+        "request_hkr_hr_restart.ps1"
+    ) + $restartScripts
     foreach ($prefix in $excludedPrefixes) {
         if ($normalized.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
             return $false
@@ -199,13 +219,10 @@ foreach ($templateName in $stalePayrollTemplateNames) {
     }
 }
 
-$operatorScripts = @(
-    "mini_pc_restart_hkr_hr_app.bat",
+$operatorScripts = $restartScripts + @(
     "mini_pc_upgrade_hkr_hr_v1_and_restart.bat",
-    "restart_hkr_hr_app.ps1",
     "setup_system_venv.ps1",
     "start_hkr_hr_app.ps1",
-    "stop_hkr_hr_app.ps1",
     "status_hkr_hr_app.ps1",
     "open_hkr_hr_web.bat",
     "allow_hkr_hr_firewall_port.ps1",

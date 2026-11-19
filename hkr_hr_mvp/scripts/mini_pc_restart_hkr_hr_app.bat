@@ -28,16 +28,12 @@ if defined CHECK_ONLY (
     echo App root: "%ROOT%\_system\app"
     echo Venv:     "%ROOT%\_system\.venv"
     echo Logs:     "%ROOT%\03.Output\logs"
-    echo powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\setup_system_venv.ps1" -Root "%ROOT%"
-    echo powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\init_hkr_hr_database.ps1" -Root "%ROOT%" -Username "admin" -Password "[configured]"
-    echo powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\stop_hkr_hr_app.ps1" -Port %PORT% -Root "%ROOT%"
-    echo powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\start_hkr_hr_app.ps1" -Port %PORT% -Root "%ROOT%"
-    echo powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\status_hkr_hr_app.ps1" -Port %PORT% -Root "%ROOT%"
+    echo powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\restart_hkr_hr_app.ps1" -Root "%ROOT%" -Port %PORT%
     exit /b 0
 )
 
-if not exist "%ROOT%\scripts\setup_system_venv.ps1" (
-    echo ERROR: Cannot find "%ROOT%\scripts\setup_system_venv.ps1"
+if not exist "%ROOT%\scripts\restart_hkr_hr_app.ps1" (
+    echo ERROR: Cannot find "%ROOT%\scripts\restart_hkr_hr_app.ps1"
     echo Please confirm the HR app scripts have been deployed to the mini PC root.
     pause
     exit /b 1
@@ -49,20 +45,8 @@ cd /d "%ROOT%" || (
     exit /b 1
 )
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\setup_system_venv.ps1" -Root "%ROOT%"
-if errorlevel 1 goto failed
-
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\init_hkr_hr_database.ps1" -Root "%ROOT%" -Username "admin"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\restart_hkr_hr_app.ps1" -Root "%ROOT%" -Port %PORT%
 if %ERRORLEVEL% EQU 20 goto schema_upgrade_required
-if errorlevel 1 goto failed
-
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\stop_hkr_hr_app.ps1" -Port %PORT% -Root "%ROOT%"
-if errorlevel 1 goto failed
-
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\start_hkr_hr_app.ps1" -Port %PORT% -Root "%ROOT%"
-if errorlevel 1 goto failed
-
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\status_hkr_hr_app.ps1" -Port %PORT% -Root "%ROOT%"
 if errorlevel 1 goto failed
 
 echo.

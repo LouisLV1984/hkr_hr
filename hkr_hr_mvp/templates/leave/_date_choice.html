@@ -1,0 +1,14 @@
+{% if hire_employee.current_period and hire_employee.current_period.annual_leave_policy_year is not none %}
+<div data-hire-date-policy
+     data-original="{{ hire_employee.current_period.start_date.isoformat() }}"
+     data-initial="{{ hire_employee.current_period.contract_annual_leave_days }}"
+     data-url="{{ url_for('leave.annual_leave_setup_preview', employee_id=hire_employee.id) }}"
+     data-title="{{ t('leave.date_choice_title') }}"
+     data-label="{{ t('leave.date_choice_preview') }}"
+     data-recalculate="{{ t('leave.date_recalculate') }}"
+     data-keep="{{ t('leave.date_keep') }}"
+     data-cancel="{{ t('common.cancel') }}"
+     data-error="{{ t('leave.setup_invalid') }}">
+  <input type="hidden" name="date_change_action" value="">
+</div>
+{% endif %}

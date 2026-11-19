@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="panel">
+  <h1>{{ t('leave.setup_list') }} · {{ year }}</h1>
+  <p>{{ t('leave.setup_list_hint') }}</p>
+  <a class="mini-btn" href="{{ url_for('leave.leave_home') }}">{{ t('common.back') }}</a>
+  <div class="table-wrap"><table class="dense-table">
+    <thead><tr><th>{{ t('common.employee') }}</th><th>{{ t('employees.start_date') }}</th><th>{{ t('leave.initial_days') }}</th><th>{{ t('leave.setup_old') }}</th><th>{{ t('leave.setup_new') }}</th><th>{{ t('leave.setup_used') }}</th><th>{{ t('leave.setup_remaining') }}</th><th>{{ t('leave.setup_status') }}</th><th>{{ t('leave.setup_history') }}</th></tr></thead>
+    <tbody>{% for row in rows %}<tr>
+      <td><a href="{{ url_for('leave.leave_home', employee_id=row.employee.id, year=year) }}">{{ row.employee.employee_no }} · {{ row.employee.display_name }}</a></td>
+      <td>{{ fmt_date(row.period.start_date) if row.period else '—' }}</td>
+      <td>{{ row.period.contract_annual_leave_days if row.period and row.period.contract_annual_leave_days is not none else '—' }}</td>
+      <td>{{ row.old.entitled }}</td><td>{{ row.proposed.calculated if row.proposed else '—' }}</td>
+      <td>{{ row.old.bucket_used }}</td><td>{{ row.proposed.remaining if row.proposed else '—' }}</td>
+      <td>{{ t('leave.setup_pending') if not row.ready or row.old.calculation_pending else t('leave.setup_ready') }}{% if row.old.entitled_override is not none %} · {{ t('leave.setup_keep') }}{% endif %}<br>{{ t('leave.contract_verified') if row.period and row.period.annual_leave_contract_verified else t('leave.contract_pending') }}</td>
+      <td>{% if row.audit %}{{ (row.audit.before_json or {}).get('entitled', '—') }} → {{ (row.audit.after_json or {}).get('applied', '—') }}{% else %}—{% endif %}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+{% endblock %}

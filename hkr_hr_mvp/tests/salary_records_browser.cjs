@@ -1,3 +1,4 @@
+const {pdfBytes} = require('./pdf_fixture.cjs');
 /* Synthetic localhost fixture only. */
 const {chromium}=require('playwright');
 const assert=require('node:assert/strict');
@@ -34,7 +35,7 @@ const fs=require('node:fs');
   assert.match(await row.locator('.salary-record-difference').innerText(),/不一致/);
   await row.locator('summary').click();
   await row.locator('textarea').fill('QA net override; catch-up MPF');
-  await row.locator('[type=file]').setInputFiles({name:'qa.pdf',mimeType:'application/pdf',buffer:Buffer.from('%PDF-1.4\nQA\n%%EOF')});
+  await row.locator('[type=file]').setInputFiles({name:'qa.pdf',mimeType:'application/pdf',buffer:pdfBytes('QA')});
   await row.locator('[data-money=net_amount]').fill('invalid');
   await page.locator('#salary-record-editor button[type=submit]').click();
   await page.waitForFunction(()=>document.getElementById('salary-record-message').textContent.includes('有效金額'));

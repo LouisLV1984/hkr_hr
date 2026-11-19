@@ -1,4 +1,5 @@
 """Synthetic isolated-data acceptance tests for the independent salary register."""
+from test_v1_workflows import pdf_bytes
 import html
 import io
 import re
@@ -159,7 +160,7 @@ class SalaryRecordTests(unittest.TestCase):
     def test_attachment_history_retained_and_invalid_upload_preserves_record(self):
         eid,_=self.employee()
         form=self.values(self.form(eid),eid)
-        form[f'{eid}.evidence']=(io.BytesIO(b'%PDF-1.4\nQA\n%%EOF'),'qa.pdf')
+        form[f'{eid}.evidence']=(io.BytesIO(pdf_bytes('QA')),'qa.pdf')
         self.assertEqual(self.save(form).status_code,200)
         with self.app.app_context():
             did=SalaryRecord.query.one().evidence_document_id
@@ -171,7 +172,7 @@ class SalaryRecordTests(unittest.TestCase):
             self.assertEqual(SalaryRecord.query.one().net_amount,8400)
             self.assertEqual(SalaryRecord.query.one().evidence_document_id,did)
         form=self.values(self.form(eid),eid,net='8500')
-        form[f'{eid}.evidence']=(io.BytesIO(b'%PDF-1.4\nQA2\n%%EOF'),'qa2.pdf')
+        form[f'{eid}.evidence']=(io.BytesIO(pdf_bytes('QA2')),'qa2.pdf')
         self.assertEqual(self.save(form).status_code,200)
         page=self.client.get('/salary-records',query_string=dict(month='2026-04',entity_id=self.entity())).get_data(as_text=True)
         self.assertIn(f'/documents/{did}/open',page)
@@ -230,7 +231,7 @@ class SalaryRecordTests(unittest.TestCase):
     def test_reference_usage_and_evidence_single_owner(self):
         eid,_=self.employee()
         form=self.values(self.form(eid),eid)
-        form[f'{eid}.evidence']=(io.BytesIO(b'%PDF-1.4\nQA\n%%EOF'),'owned.pdf')
+        form[f'{eid}.evidence']=(io.BytesIO(pdf_bytes('QA')),'owned.pdf')
         self.save(form)
         with self.app.app_context():
             from routes.references import usage_count, historical_reference_employee_ids
@@ -252,14 +253,15 @@ class SalaryRecordTests(unittest.TestCase):
             db.session.commit()
         self.login('hr_test','test-hr-password')
         self.assertEqual(self.save(self.values(self.form(eid,'2026-07'),eid)).status_code,200)
-        with self.app.app_context():
+        with self.app.app_context(), patch('tools.salary_records.date', wraps=date) as test_date:
+            test_date.today.return_value = date(2026, 9, 30)
             rows,_,_=annual_summary(2026)
             self.assertEqual(rows[0]['missing'],['2026-08','2026-09'])
 
     def test_commit_failure_cleans_new_attachment_and_no_partial_records(self):
         eid,_=self.employee()
         form=self.values(self.form(eid),eid)
-        form[f'{eid}.evidence']=(io.BytesIO(b'%PDF-1.4\nQA\n%%EOF'),'rollback.pdf')
+        form[f'{eid}.evidence']=(io.BytesIO(pdf_bytes('QA')),'rollback.pdf')
         with patch('routes.salary_records.write_audit',side_effect=ValueError('salary_record.stale')):
             self.assertEqual(self.save(form).status_code,422)
         with self.app.app_context():

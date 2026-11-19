@@ -1,7 +1,10 @@
+from tools.payroll_export_policy import saved_export_message, policy_text
 import io
 import zipfile
 from datetime import date, datetime
 from pathlib import Path
+
+from tools.profile_integrity import credential_state
 
 from flask import (
     Blueprint,
@@ -205,14 +208,11 @@ def filtered_employees(args):
     expiry = args.get("expiry")
     if expiry == "due_60" or warning == "expiry":
         today = date.today()
-        cutoff = date.fromordinal(today.toordinal() + 60)
         rows = [
             employee
             for employee in rows
             if any(
-                item.expiry_date
-                and today <= item.expiry_date <= cutoff
-                and getattr(item, "status", "active") == "active"
+                credential_state(item, today)["code"] == "expiring"
                 for item in (
                     list(employee.identities)
                     + list(employee.certificates)
@@ -800,6 +800,13 @@ def export_employees():
         user_id=current_user.id,
     )
     db.session.commit()
+    # Every cell in this export is data, never a workbook calculation.
+    # Keep leading '=' exactly as text, including names and attachment filenames.
+    for worksheet in workbook.worksheets:
+        for row in worksheet.iter_rows():
+            for cell in row:
+                if cell.data_type == "f":
+                    cell.data_type = "s"
     return xlsx_response(
         workbook,
         f"HKR_員工資料總表_{timestamp()}.xlsx",
@@ -867,23 +874,21 @@ def export_salary_certificate():
             url_for("exports.export_center", section="employees")
         )
 
+    for result in results:
+        review = saved_export_message(result.run, employee_ids={employee.id})
+        if review:
+            flash(policy_text("review.export_blocked") + " " + review, "error")
+            return redirect(url_for("exports.export_center", section="employees"))
+
     workbook = load_workbook(template_path)
     sheet = workbook[workbook.sheetnames[0]]
     for row_index in range(9, 12):
         for column_index in range(1, 11):
             sheet.cell(row=row_index, column=column_index).value = None
 
-    assignment = employee.current_assignment
-    position = (
-        "、".join(
-            item.position.display_name
-            for item in assignment.positions
-        )
-        if assignment
-        else ""
-    )
-    period = employee.current_period
+    from routes.payroll import saved_employee_facts
     for row_index, result in enumerate(results, start=9):
+        facts = saved_employee_facts(result)
         month_value = datetime.strptime(
             result.run.year_month,
             "%Y-%m",
@@ -893,18 +898,18 @@ def export_salary_certificate():
         sheet.cell(
             row=row_index,
             column=2,
-            value=employee.english_name or "",
+            value=facts.get("english_name") or "",
         )
         sheet.cell(
             row=row_index,
             column=3,
-            value=employee.chinese_name or "",
+            value=facts.get("chinese_name") or "",
         )
-        sheet.cell(row=row_index, column=4, value=position)
+        sheet.cell(row=row_index, column=4, value=facts.get("position") or "")
         sheet.cell(
             row=row_index,
             column=5,
-            value=period.start_date if period else None,
+            value=facts.get("employment_start"),
         )
         sheet.cell(row=row_index, column=5).number_format = "dd/mm/yy"
         sheet.cell(
@@ -937,13 +942,11 @@ def export_salary_certificate():
                 row=row_index,
                 column=column_index,
             ).number_format = '#,##0.00;[Red](#,##0.00)'
-    employer = (
-        assignment.employer.display_name
-        if assignment and assignment.employer
-        else "Hong Kong River Engineering Company Limited"
-    )
+    employer = saved_employee_facts(results[-1]).get("employer") or "Hong Kong River Engineering Company Limited"
     sheet["H14"] = f"For and on behalf of\n{employer}"
     sheet["H19"] = f"Date / 日期：{issue_date_value:%d %B %Y}"
+    if any(not (r.calculation_json or {}).get("employee_snapshot") for r in results):
+        sheet["A14"] = "舊批次未保存身份快照：身份及職位使用現時資料，金額仍為原批次。"
 
     write_audit(
         "salary_certificate_exported",
@@ -1111,6 +1114,10 @@ def export_payroll_summary():
     if not run:
         flash("請先在考勤出糧頁建立 Payroll 計算快照。", "error")
         return redirect(url_for("exports.export_center"))
+    review = saved_export_message(run)
+    if review:
+        flash(policy_text("review.export_blocked") + " " + review, "error")
+        return redirect(url_for("payroll.attendance_payroll", year_month=run.year_month))
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Payroll Summary"
@@ -1138,13 +1145,15 @@ def export_payroll_summary():
             "提示",
         ]
     )
+    from routes.payroll import saved_employee_facts
     for result in run.employee_results:
+        facts = saved_employee_facts(result)
         sheet.append(
             [
                 run.year_month,
                 (result.calculation_json or {}).get("group"),
-                result.employee.employee_no,
-                result.employee.display_name,
+                facts["employee_no"],
+                facts.get("chinese_name") or facts.get("english_name") or facts["employee_no"],
                 result.currency,
                 float(result.base_amount),
                 float(result.ot_amount),
@@ -1160,7 +1169,7 @@ def export_payroll_summary():
                 float(result.payment_in_lieu),
                 float(result.severance_long_service),
                 float(result.net_amount),
-                "；".join(result.warnings_json or []),
+                "；".join((result.warnings_json or []) + ([] if (result.calculation_json or {}).get("employee_snapshot") else ["舊批次未保存身份快照；身份資料使用現時資料，金額仍為原批次。"])),
             ]
         )
     finish_sheet(
@@ -1259,14 +1268,5 @@ def export_attachments():
 @exports_bp.route("/export/monthly-payroll")
 @login_required
 def export_monthly_payroll():
-    year_month = normalized_month(request.args.get("year_month"))
-    payroll_group = request.args.get("payroll_group") or "all"
-    if payroll_group not in {*PAYROLL_GROUP_CODES, "all"}:
-        payroll_group = "all"
-    return redirect(
-        url_for(
-            "payroll.export_current_payroll",
-            year_month=year_month,
-            payroll_group=payroll_group,
-        )
-    )
+    filters = {key: request.args[key] for key in ("year_month", "payroll_group", "payroll_entity_id") if key in request.args}
+    return redirect(url_for("payroll.attendance_payroll", **filters))

@@ -6,49 +6,46 @@
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}{{ t("app.title") }}{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css', v=current_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/hr-workspaces.css', v=current_version) }}">
+  {% block styles %}{% endblock %}
 </head>
 <body>
   {% set endpoint = request.endpoint or "" %}
   {% set module = endpoint.split(".")[0] %}
   {% if module == 'salary_records' %}{% set module = 'payroll' %}{% endif %}
   {% set attendance_detail_mode = module == "attendance" and (request.args.get("item_id") or request.args.get("summary_id")) %}
-  {% set attendance_view = "collection" if module == "attendance" and (request.args.get("batch_id") or attendance_detail_mode) else request.args.get("view", "details") %}
-  {% set employee_list_mode = endpoint == "employees.list_employees" %}
-  {% set show_context_sidebar = current_user.is_authenticated and (module in ["attendance", "payroll", "exports", "references", "admin", "leave"] or employee_list_mode) and not attendance_detail_mode %}
+  {% set attendance_view = "collection" if module == "attendance" and (request.args.get("batch_id") or attendance_detail_mode) else request.args.get("view", "collection") %}
+  {% set show_context_sidebar = current_user.is_authenticated and (module in ["attendance", "payroll", "exports", "references", "admin", "leave"]) and not attendance_detail_mode %}
   <header class="topbar">
     <a class="brand" href="{{ url_for('dashboard.dashboard') }}">HKR HR</a>
     {% if current_user.is_authenticated %}
       <nav class="system-tabs" aria-label="{{ t('nav.primary') }}">
-        <a class="system-tab {% if endpoint == 'dashboard.dashboard' %}active{% endif %}"
+        <a class="system-tab {% if endpoint in ('dashboard.dashboard', 'dashboard.workbench_preview') %}active{% endif %}"
            href="{{ url_for('dashboard.dashboard') }}"
-           {% if endpoint == 'dashboard.dashboard' %}aria-current="page"{% endif %}>
-          {{ t("nav.dashboard") }}
+           {% if endpoint in ('dashboard.dashboard', 'dashboard.workbench_preview') %}aria-current="page"{% endif %}>
+          {{ t("workbench.title") }}
         </a>
         <a class="system-tab {% if module in ['employees', 'documents'] %}active{% endif %}"
-           href="{{ url_for('employees.list_employees') }}"
+           href="{{ url_for('employees.list_employees',month=operating_month) }}"
            {% if module in ['employees', 'documents'] %}aria-current="page"{% endif %}>
-          {{ t("nav.employees") }}
+          {{ t("workbench.files") }}
         </a>
         <a class="system-tab {% if module == 'leave' %}active{% endif %}"
            href="{{ url_for('leave.leave_home') }}"
            {% if module == 'leave' %}aria-current="page"{% endif %}>
-          {{ t("nav.leave") }}
+          {{ t("workbench.leave") }}
         </a>
         <a class="system-tab {% if module == 'attendance' %}active{% endif %}"
            href="{{ url_for('attendance.attendance_home', month=operating_month) }}"
            {% if module == 'attendance' %}aria-current="page"{% endif %}>
-          {{ t("nav.attendance_payroll") }}
+          {{ t("workbench.att") }}
         </a>
         <a class="system-tab {% if module == 'payroll' %}active{% endif %}"
            href="{{ url_for('payroll.attendance_payroll', year_month=operating_month) }}"
            {% if module == 'payroll' %}aria-current="page"{% endif %}>
-          {{ t("nav.exports") }}
+          {{ t("workbench.pay") }}
         </a>
-        <a class="system-tab {% if module in ['references', 'exports'] %}active{% endif %}"
-           href="{{ url_for('references.references_home') }}"
-           {% if module in ['references', 'exports'] %}aria-current="page"{% endif %}>
-          {{ t("nav.settings") }}
-        </a>
+
       </nav>
     {% else %}
       <span class="topbar-spacer"></span>
@@ -59,6 +56,11 @@
            href="{{ lang_url(code) }}" title="{{ full_label }}">{{ short_label }}</a>
       {% endfor %}
       {% if current_user.is_authenticated %}
+        <a class="guide-link {% if module in ['references', 'exports'] %}active{% endif %}"
+           href="{{ url_for('references.references_home') }}"
+           {% if module in ['references', 'exports'] %}aria-current="page"{% endif %}>
+          {{ t("nav.settings") }}
+        </a>
         <a class="guide-link" href="{{ url_for('dashboard.guide') }}">{{ t("nav.guide") }}</a>
         <a class="version-link" href="{{ url_for('dashboard.updates') }}">{{ current_version }}</a>
         {% if current_user.role == "admin" %}
@@ -102,14 +104,6 @@
                 <span>{{ t("attendance.long_term_policy_nav_hint") }}</span>
               </a>
             </section>
-          {% elif employee_list_mode %}
-            <section class="context-nav-group">
-              <div class="context-nav-title">{{ t("nav.section.employees") }}</div>
-              <a class="context-nav-item active" href="{{ url_for('employees.list_employees') }}" aria-current="page">
-                <strong>{{ t("employees.title") }}</strong>
-                <span>{{ t("employees.workspace_hint") }}</span>
-              </a>
-            </section>
           {% elif module == "leave" %}
             <section class="context-nav-group">
               <div class="context-nav-title">{{ t("nav.section.leave") }}</div>
@@ -125,7 +119,7 @@
           {% elif module == "payroll" %}
             <section class="context-nav-group">
               <div class="context-nav-title">{{ t("nav.section.payroll_exports") }}</div>
-              <a class="context-nav-item {% if endpoint.startswith('salary_records.') %}active{% endif %}" href="{{ url_for('salary_records.index') }}">
+              <a class="context-nav-item {% if endpoint.startswith('salary_records.') %}active{% endif %}" href="{{ url_for('salary_records.index', entity_id=request.args.get('payroll_entity_id') or request.args.get('entity_id')) }}">
                 <strong>{{ t('salary_record.title') }}</strong><span>{{ t('salary_record.subtitle') }}</span>
               </a>
               <a class="context-nav-item {% if endpoint == 'payroll.attendance_payroll' %}active{% endif %}"
@@ -202,6 +196,7 @@
           </div>
         {% endif %}
       {% endwith %}
+
       {% block content %}{% endblock %}
     </main>
   </div>
@@ -359,6 +354,14 @@
     document.querySelectorAll("[data-dialog-open]").forEach((button) => {
       button.addEventListener("click", () => openAppDialog(button));
     });
+    document.querySelectorAll('input[name="start_date"], input[name="end_date"]').forEach(input => {
+      const label = input.closest('label'), form = input.form;
+      const sessionName = input.name.replace('_date', '_session');
+      const sessionLabel = form?.querySelector('[name="' + sessionName + '"]')?.closest('label');
+      if (!label || !sessionLabel) return;
+      const row=document.createElement('div'); row.className='leave-date-session';
+      label.before(row); row.append(label,sessionLabel);
+    });
     document.querySelectorAll('input[type="file"]').forEach((input) => {
       if (!input.accept) input.accept = '.pdf,.jpg,.jpeg,.png,.docx,.xlsx';
       input.tabIndex = -1;
@@ -369,7 +372,7 @@
       const button = document.createElement('button'); button.type = 'button'; button.className = 'mini-btn';
       button.textContent = {{ t('profile.select_file')|tojson }};
       const name = document.createElement('span'); name.setAttribute('aria-live', 'polite'); name.textContent = {{ t('profile.no_file')|tojson }};
-      const hint = document.createElement('small'); hint.className = 'form-note'; hint.textContent = {{ t('profile.file_hint')|tojson }};
+      const hint = document.createElement('small'); hint.className = 'form-note'; hint.textContent = input.accept ? ({{ t('workflow.accepted_files')|tojson }} + ' ' + input.accept + ' · ' + {{ t('workflow.file_size')|tojson }}) : {{ t('profile.file_hint')|tojson }};
       input.before(picker); picker.append(input, button, name); picker.after(hint);
       button.addEventListener('click', () => input.click());
       input.addEventListener('change', () => { name.textContent = Array.from(input.files || []).map(file => file.name).join(', ') || {{ t('profile.no_file')|tojson }}; });
@@ -407,6 +410,7 @@
       }, 4000);
     });
   </script>
+  <script src="{{ url_for('static', filename='js/leave-entry.js', v=current_version) }}"></script>
   <script>
     document.querySelectorAll('[data-leave-days]').forEach((output) => {
       const form = output.closest('form');
@@ -445,8 +449,11 @@
           if (context) context.textContent = result.context_text;
           if (!end) return;
           output.value = result.days;
+          if (form.elements.leave_type?.value === "annual" && !form.action.includes("/annual-leave/")) {
+            feedback.textContent = {{ t('workflow.leave_projection')|tojson }}.replace("{available}", result.available).replace("{remaining}", result.projected) + " · " + result.deductions.join(" → ");
+          }
           if (Number(result.days) === 0) feedback.textContent = {{ t('leave.zero_days')|tojson }};
-          else if (result.excluded.length) feedback.textContent = {{ t('leave.excluded_dates')|tojson }} + result.excluded.join('、');
+          else if (result.excluded.length) feedback.textContent +=  {{ t('leave.excluded_dates')|tojson }} + result.excluded.join('、');
         } catch (_) {
           if (current === sequence) {
             feedback.textContent = {{ t('leave.preview_failed')|tojson }};
@@ -457,10 +464,12 @@
       ['start_date', 'end_date', 'start_session', 'end_session'].forEach((name) => {
         form.elements[name].addEventListener('change', update);
       });
+      form.elements.leave_type?.addEventListener('change', update);
       update();
     });
   </script>
-  {% block scripts %}{% endblock %}
+  <script src="{{ url_for('static', filename='js/workflow-forms.js', v=current_version) }}" defer></script>
+{% block scripts %}{% endblock %}
   {% if request.endpoint in ('employees.new_employee', 'employees.view_employee', 'documents.new_document', 'documents.review_document', 'leave.leave_home') %}
     {% include 'employees/_workspace_behaviour.html' %}
   {% endif %}

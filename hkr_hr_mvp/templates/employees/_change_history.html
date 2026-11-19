@@ -107,7 +107,7 @@
 
         {% if item.status == "active" and entry.kind == "employment" %}
           <dialog class="app-dialog record-editor-dialog" id="employment-editor-{{ item.id }}">
-            <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.correct_assignment', assignment_id=item.id) }}" enctype="multipart/form-data" data-assignment-form>
+            <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.correct_assignment', assignment_id=item.id) }}" enctype="multipart/form-data" data-assignment-form>{% include 'employees/_payroll_origin.html' %}
               <div class="section-head record-editor-head"><div><h2>{{ t("common.correct") }} · {{ t("employee.employment") }}</h2><p>{{ fmt_date(item.effective_from) }}</p></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
               <div class="record-editor-body">
                 <label><span>{{ t("employee.effective_date") }}</span><input type="date" name="effective_from" value="{{ item.effective_from.isoformat() }}" required></label>

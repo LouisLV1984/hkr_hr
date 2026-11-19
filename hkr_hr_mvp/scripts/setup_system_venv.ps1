@@ -34,7 +34,7 @@ if ((Test-Path -LiteralPath $ReadyMarker) -and
     (Test-Path -LiteralPath $Python)) {
     $ExistingHash = (Get-Content -LiteralPath $HashMarker -Raw).Trim()
     if ($ExistingHash -eq $RequirementsHash) {
-        & $Python -c "import flask, flask_login, flask_sqlalchemy, docxtpl, openpyxl, psycopg, waitress, pytesseract, pdf2image; import PIL; print('HR venv import check passed')"
+        & $Python -c "import flask, flask_login, flask_sqlalchemy, docxtpl, openpyxl, psycopg, waitress, pypdf; import PIL; print('HR venv import check passed')"
         if ($LASTEXITCODE -eq 0) {
             Write-Host "HR venv is already ready and requirements are current: $VenvRoot"
             exit 0
@@ -102,17 +102,16 @@ if (-not (Test-Path -LiteralPath $Python)) {
     Write-Host "Using existing HR venv: $VenvRoot"
 }
 
-& $Python -m pip install --upgrade pip
+$Wheelhouse = Join-Path $Root "_system\wheelhouse"
+if (-not (Test-Path -LiteralPath $Wheelhouse)) {
+    throw "Offline dependency package missing: $Wheelhouse. Prepare it on the development PC with build_offline_wheels.ps1 and copy it here."
+}
+& $Python -m pip install --no-index --find-links $Wheelhouse --only-binary=:all: -r $Requirements
 if ($LASTEXITCODE -ne 0) {
-    throw "pip upgrade failed."
+    throw "Offline requirements install failed. Use a wheelhouse built for this Python version and Windows architecture."
 }
 
-& $Python -m pip install --only-binary=:all: -r $Requirements
-if ($LASTEXITCODE -ne 0) {
-    throw "requirements install failed."
-}
-
-& $Python -c "import flask, flask_login, flask_sqlalchemy, docxtpl, openpyxl, psycopg, waitress, pytesseract, pdf2image; import PIL; print('HR venv import check passed')"
+& $Python -c "import flask, flask_login, flask_sqlalchemy, docxtpl, openpyxl, psycopg, waitress, pypdf; import PIL; print('HR venv import check passed')"
 if ($LASTEXITCODE -ne 0) {
     throw "HR venv import check failed."
 }

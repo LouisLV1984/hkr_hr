@@ -3277,3 +3277,172 @@ details[open] > summary .when-closed { display: none; }
 .monthly-allocation-row { display:grid; grid-template-columns:minmax(160px,2fr) repeat(2,minmax(135px,1fr)) auto; align-items:end; gap:10px; margin:10px 0; }
 .monthly-project-allocation [hidden] { display:none !important; }
 @media(max-width:700px) { .monthly-allocation-row { grid-template-columns:1fr 1fr; } }
+
+/* Keep wide payroll tables inside their own scroller on narrow screens. */
+.payroll-main > *, .payroll-project-summary, .payroll-project-summary .table-wrap { min-width: 0; max-width: 100%; }
+.payroll-summary-grid strong > span { display: block; font: inherit; color: inherit; overflow-wrap: anywhere; }
+@media (max-width: 620px) {
+  .payroll-main .section-head { flex-wrap: wrap; }
+  .payroll-main .section-head > *, .payroll-main .panel > * { min-width: 0; max-width: 100%; }
+  .payroll-main input, .payroll-main select, .payroll-main button { min-width: 0; max-width: 100%; }
+}
+
+@media (max-width: 620px) {
+  .completion-workbench { min-width: 0; }
+  .completion-workbench-head { flex-wrap: wrap; }
+  .completion-impact-grid, .system-status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .completion-impact-card { min-width: 0; overflow-wrap: anywhere; }
+}
+
+/* Three-operator workflow: visible tasks, compact optional detail. */
+.month-workbench { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-bottom:18px; padding:10px 12px; background:#eef3f8; border-radius:10px; }
+.month-workbench strong { margin-right:8px; }
+.month-workbench a { padding:7px 10px; border-radius:7px; text-decoration:none; }
+.month-workbench a.active { background:#163d62; color:white; }
+.employee-readiness-table { min-width:0!important; width:100%; table-layout:auto; }
+.employee-readiness-table td { white-space:normal; overflow-wrap:anywhere; vertical-align:top; }
+.employee-readiness-table .readiness-employee { min-width:160px; }
+.employee-readiness-table td:nth-child(5) { min-width:180px; }
+.document-missing { background:#f1f3f5!important; color:#596674!important; border-color:#dde2e7!important; }
+.file-completeness summary { cursor:pointer; color:#596674; }
+.file-completeness .readiness-strip { margin-top:8px; }
+.completion-impact-card:last-child { background:#f2f4f6; color:#596674; }
+.leave-date-session { display:grid; grid-template-columns:minmax(145px,1fr) minmax(80px,.6fr); gap:8px; min-width:0; }
+.rate-allocation { grid-column:1/-1; border:1px solid #c4d0dd; border-radius:8px; margin:12px 0; padding:12px; }
+.rate-allocation legend { font-weight:600; }
+.rate-allocation-row { display:grid; grid-template-columns:minmax(200px,2fr) repeat(4,minmax(75px,1fr)); gap:8px; align-items:end; padding:8px 0; }
+.rate-allocation-row input { width:100%; min-width:0; }
+.upload-file-queue { list-style:none; padding:0; font-size:12px; overflow-wrap:anywhere; }
+.upload-file-queue li { padding:6px 0; border-bottom:1px solid #ddd; }
+.initial-setup summary { font-weight:700; cursor:pointer; }
+.initial-setup form { margin-top:14px; }
+.leave-availability h2 { margin:12px 0 6px; }
+@media(max-width:1100px) { .rate-allocation-row {grid-template-columns:repeat(2,minmax(0,1fr));} .rate-allocation-row strong{grid-column:1/-1;} .employee-readiness-table td,.employee-readiness-table th{padding:8px;} }
+
+/* Shared offline PDF preview: no browser PDF plugin required. */
+.pdf-viewer { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; min-width: 0; overflow: hidden; background: #e6e9eb; }
+.pdf-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding: 8px 10px; color: #25343b; background: #f4f6f7; border-bottom: 1px solid #c7d0d5; }
+.pdf-controls label { display: flex; align-items: center; gap: 5px; }
+.pdf-controls button, .pdf-controls select, .pdf-controls input { width: auto; min-height: 32px; padding: 4px 8px; border: 1px solid #aab8c0; border-radius: 4px; background: #fff; color: #17242b; font: inherit; }
+.pdf-controls input { width: 56px; }
+.pdf-controls button { cursor: pointer; }
+.pdf-controls button:disabled { opacity: .4; cursor: default; }
+.pdf-viewport { overflow: auto; min-height: 0; padding: 12px; scrollbar-gutter: stable; }
+.pdf-viewport canvas { display: block; margin: 0 auto; background: #fff; box-shadow: 0 1px 5px #0003; }
+.pdf-viewport canvas[hidden], .pdf-viewport [hidden] { display: none; }
+.pdf-viewport [data-pdf-status] { color: #27353c; padding: 12px; background: white; }
+.pdf-document-page { height: 100dvh; margin: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.pdf-document-page .preview-toolbar strong { overflow-wrap: anywhere; }
+
+@media (min-width: 1181px) {
+  .attendance-detail-page { height: calc(100dvh - 58px); display: flex; flex-direction: column; min-height: 520px; }
+  .attendance-detail-page .attendance-workbench { flex: 1; height: auto; min-height: 0; }
+  .attendance-detail-page .attendance-detail-context { flex: none; }
+}
+
+.leave-page .leave-detail-head { flex-direction: row; align-items: flex-start; flex-wrap: wrap; }
+.leave-page .leave-page-head { gap: 10px; }
+.leave-availability { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px 16px; }
+.leave-availability > form { grid-column: 2; grid-row: 1 / span 2; }
+.leave-availability > h2, .leave-availability > p { grid-column: 1; margin: 0; }
+.completion-impact-card:last-child strong { color: var(--muted); }
+@media (min-width: 1181px) { .completion-impact-grid { grid-template-columns: repeat(4, minmax(150px, 1fr)); } }
+@media (max-width: 700px) { .leave-availability { display: block; } .leave-availability > form { margin-bottom: 12px; } }
+
+
+/* Past attendance shares the platform's deep green header and mint action area. */
+.corr-dialog {
+  --corr-ink: #123f37;
+  --corr-line: #d1dfd8;
+  width: min(1060px, calc(100vw - 40px)); max-width: none;
+  max-height: min(92dvh, 960px); overflow: auto;
+  border: 1px solid #92ada3; border-radius: 13px; background: white; color: var(--corr-ink);
+}
+.corr-dialog::backdrop { background: rgb(15 42 39 / 56%); }
+.corr-header, .corr-context, .corr-footer, .corr-actions, .corr-files { display: flex; align-items: center; }
+.corr-header { gap: 16px; padding: 21px 26px; background: #104d46; color: #fff; }
+.corr-header h2 { margin: 0; color: inherit; font-size: 1.38rem; line-height: 1.3; }
+.corr-person { padding-left: 16px; border-left: 1px solid #74a59c; font-weight: 600; }
+.corr-dialog .corr-close { margin-left: auto; padding: 0; width: 34px; height: 34px; font-size: 27px; line-height: 1; color: #fff; border: 0; background: transparent; cursor: pointer; }
+.corr-close:hover { outline: 1px solid #b3d5cb; }
+.corr-calendar { position: relative; width: 20px; height: 20px; border: 2px solid currentColor; border-radius: 4px; flex: none; }
+.corr-calendar::before { content: ''; position: absolute; inset: 4px 0 auto; border-top: 2px solid currentColor; }
+.corr-calendar::after { content: ''; position: absolute; width: 3px; height: 3px; top: 9px; left: 3px; background: currentColor; box-shadow: 6px 0, 0 4px, 6px 4px; }
+.corr-context { margin: 18px 24px 0; gap: 17px; padding: 10px 15px; flex-wrap: wrap; border-radius: 7px; background: #eef6f1; }
+.corr-context label, .corr-context > div { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0; font-weight: 600; }
+.corr-context > div + div { margin-left: auto; }
+.corr-dialog [data-corr-month] { width: auto; min-width: 0; margin: 0; background: #fff; }
+.corr-dialog a { color: #155d4e; text-underline-offset: 3px; }
+.corr-content { padding: 12px 24px 18px; }
+.corr-original { color: #435e54; font-size: .85rem; margin: 0 0 12px; }
+.corr-original summary, .corr-history summary { cursor: pointer; }
+.corr-row, .corr-headings { display: grid; align-items: center; gap: 9px; grid-template-columns: minmax(140px,1.25fr) minmax(128px,1.18fr) minmax(75px,.7fr) minmax(62px,.55fr) minmax(140px,1.4fr) minmax(118px,1fr) 28px; }
+.corr-headings { padding: 9px 8px; background: #e0eee7; border-radius: 6px; font-weight: 700; font-size: .81rem; }
+.corr-headings span:nth-child(6) { text-align: right; }
+.corr-row { padding: 8px; border-bottom: 1px solid #e3ebe6; }
+.corr-row label { margin: 0; min-width: 0; }
+.corr-row input, .corr-row select, .corr-context input { border: 1px solid #afc3b9; border-radius: 5px; margin: 0; min-width: 0; width: 100%; color: #1f392e; background-color: #fff; height: 35px; font: inherit; }
+.corr-field-label { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.corr-row output { display: block; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.corr-row output small { display: block; color: #526557; font-weight: 500; font-size: .75rem; }
+.corr-row .mini-btn { padding: 2px; min-height: 26px; color: #5a6c61; }
+.corr-row [data-tail-choice] { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.corr-row [data-tail-choice] select { width: auto; }
+.corr-row [hidden] { display: none; }
+.corr-content [data-corr-add] { margin: 10px 0 16px; border-color: #74a394; color: var(--corr-ink); }
+.corr-files { gap: 14px; flex-wrap: wrap; padding-top: 14px; border-top: 1px solid var(--corr-line); }
+.corr-attach { position: relative; display: inline-flex; align-items: center; gap: 9px; width: fit-content; padding: 8px 12px; background: white; border: 1px solid #78a496; border-radius: 6px; font-weight: 650; color: #164d40; overflow: hidden; }
+.corr-attach:focus-within { outline: 2px solid #146b5a; outline-offset: 2px; }
+.corr-attach input { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
+.corr-clip { display: inline-block; border: 1.8px solid currentColor; border-radius: 6px; width: 7px; height: 16px; transform: rotate(38deg); }
+.corr-file-list { flex: 1; min-width: 130px; overflow-wrap: anywhere; }
+.corr-file-list small { color: #536a5e; }
+.corr-file-list a, [data-corr-files] span { display: inline-block; margin-right: 9px; }
+.corr-footer { position: sticky; bottom: 0; z-index: 1; gap: 16px; justify-content: space-between; background: #e2f2e9; border-top: 1px solid #b5d4c7; padding: 14px 24px; }
+.corr-total-label { font-weight: 650; }
+.corr-footer strong { display: inline-block; margin-left: 12px; font-size: 1.3rem; color: #103f32; font-variant-numeric: tabular-nums; }
+.corr-footer strong[data-state="pending"] { font-size: .9rem; font-weight: 500; }
+.corr-footer [data-corr-units] { margin-top: 3px; font-size: .77rem; color: #466050; }
+.corr-actions { flex: none; gap: 8px; }
+.corr-actions .primary-btn { background: #105549; color: white; }
+.corr-actions [disabled] { opacity: .55; cursor: default; }
+.corr-history { white-space: normal; text-align: left; max-width: 55rem; }
+.corr-history summary { color: #175e52; }
+.corr-history ul { padding-inline-start: 1.3rem; }
+@media (max-width: 900px) {
+  .corr-dialog { width: calc(100vw - 18px); max-height: 94dvh; }
+  .corr-headings { display: none; }
+  .corr-row { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 12px 0; }
+  .corr-field-label { position: static; display: block; width: auto; height: auto; clip-path: none; font-size: .76rem; color: #486257; margin-bottom: 3px; }
+  .corr-row [data-corr-remove] { justify-self: end; }
+}
+@media (max-width: 580px) {
+  .corr-header { padding: 14px; flex-wrap: wrap; gap: 8px; }
+  .corr-header h2 { font-size: 1.1rem; }
+  .corr-person { order: 3; width: 100%; border: 0; padding: 0; font-size: .85rem; }
+  .corr-context { margin: 12px 12px 0; gap: 7px 16px; }
+  .corr-context > div + div { margin-left: 0; }
+  .corr-content { padding: 10px 14px; }
+  .corr-row { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .corr-footer { align-items: stretch; flex-direction: column; gap: 8px; padding: 10px 14px; }
+  .corr-footer strong { font-size: 1.06rem; }
+  .corr-actions { justify-content: flex-end; }
+}
+
+.attendance-reference summary { cursor: pointer; }
+.attendance-reference[open] > div { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; }
+.attendance-context-actions .attendance-jump { display: none; }
+@media (max-width: 880px) {
+  .attendance-context-actions .attendance-jump { display: inline-flex; }
+  .attendance-detail-page .attendance-context-actions { flex-wrap: wrap; }
+  #attendance-input, #attendance-pdf { scroll-margin-top: 12px; }
+}
+
+.attendance-identity-section .attendance-replacement-notice {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 3px solid #986600;
+  background: #fff5d9;
+  color: #493608;
+}

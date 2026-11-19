@@ -1,3 +1,4 @@
+from tools.profile_revision import profile_revision
 import io
 import json
 import re
@@ -110,14 +111,20 @@ from tools.security import (
 APP_ROOT = Path(__file__).resolve().parents[1]
 
 
+def current_profile_revision(app, employee_id, scope="all"):
+    with app.app_context():
+        return profile_revision(db.session.get(Employee, employee_id), scope)
+
+
+
 def pdf_bytes(label):
-    return (
-        b"%PDF-1.4\n"
-        b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
-        b"2 0 obj<</Type/Pages/Count 0/Kids[]>>endobj\n"
-        + f"% {label}\n".encode("ascii")
-        + b"%%EOF\n"
-    )
+    from pypdf import PdfWriter
+    writer = PdfWriter()
+    writer.add_blank_page(width=595, height=842)
+    writer.add_metadata({"/Title": label})
+    content = io.BytesIO()
+    writer.write(content)
+    return content.getvalue()
 
 
 class V1WorkflowTests(unittest.TestCase):
@@ -271,6 +278,7 @@ class V1WorkflowTests(unittest.TestCase):
         response = self.client.post(
             f"/employees/{employee_id}/personal",
             data={
+                "profile_revision": current_profile_revision(self.app, employee_id, "all"),
                 "gender": "male",
                 "date_of_birth": birth_date,
                 "mobile_region_code": "+852",
@@ -373,7 +381,8 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertNotIn('class="context-nav"', batch_page)
         self.assertNotIn('class="attendance-rail"', batch_page)
         self.assertIn("attendance-detail-page", batch_page)
-        self.assertIn("navpanes=0&pagemode=none", batch_page)
+        self.assertIn("data-pdf-viewer data-source=", batch_page)
+        self.assertIn("<canvas data-pdf-canvas", batch_page)
         self.assertIn("退出詳情", batch_page)
         self.assertIn("attendance-detail-context", batch_page)
         self.assertIn('class="attendance-context-exit"', batch_page)
@@ -398,7 +407,7 @@ class V1WorkflowTests(unittest.TestCase):
             item_ids = [item.id for item in items]
             batch_id = batch.id
         details_page = self.client.get(
-            "/attendance?month=2026-07"
+            "/attendance?month=2026-07&view=details"
         ).get_data(as_text=True)
         self.assertIn("考勤詳情", details_page)
         self.assertIn('class="attendance-stats"', details_page)
@@ -407,6 +416,7 @@ class V1WorkflowTests(unittest.TestCase):
             f"/attendance?month=2026-07&view=collection&batch_id={batch_id}"
         ).get_data(as_text=True)
         self.assertIn('class="context-panel attendance-upload-panel"', collection_page)
+        self.assertIn('class="intake-resume"', collection_page)
         self.assertIn('class="attendance-pdf-card"', collection_page)
         self.assertNotIn('class="attendance-workbench"', collection_page)
         policies_page = self.client.get(
@@ -866,6 +876,9 @@ class V1WorkflowTests(unittest.TestCase):
             certificate_sheet["H19"].value,
         )
 
+        with self.app.app_context():
+            period = db.session.get(Employee, monthly_id).current_period
+            signed_notice = (period.notice_period_value, period.notice_period_unit)
         response = self.client.post(
             f"/employees/{monthly_id}/contracts/generate",
             data={
@@ -899,8 +912,7 @@ class V1WorkflowTests(unittest.TestCase):
             contract = GeneratedContract.query.one()
             self.assertEqual(float(contract.annual_leave_days), 10.0)
             employee = db.session.get(Employee, monthly_id)
-            self.assertEqual(float(employee.current_period.notice_period_value), 7.0)
-            self.assertEqual(employee.current_period.notice_period_unit, "day")
+            self.assertEqual((employee.current_period.notice_period_value, employee.current_period.notice_period_unit), signed_notice)
         for template_name, annual_count, notice_count in (
             ("HKR_SITE_Employment_Contract_Template.docx", 1, 2),
             ("HKR_OFFICE_Employment_Contract_Template.docx", 1, 1),
@@ -962,9 +974,8 @@ class V1WorkflowTests(unittest.TestCase):
             follow_redirects=True,
         )
         self.assertEqual(report_payroll.status_code, 200)
-        self.assertEqual(report_payroll.mimetype, "application/zip")
-        with zipfile.ZipFile(io.BytesIO(report_payroll.data)) as archive:
-            self.assertEqual(len(archive.namelist()), 3)
+        self.assertEqual(report_payroll.request.path, "/attendance-payroll")
+        self.assertEqual(report_payroll.mimetype, "text/html")
 
         delete_id, delete_no = self.create_employee(
             "TE",
@@ -1174,16 +1185,19 @@ class V1WorkflowTests(unittest.TestCase):
             "61110001",
         )
 
-        page = self.client.get("/attendance?month=2026-07&lang=en").get_data(
+        landing = self.client.get("/attendance?month=2026-07&lang=en").get_data(as_text=True)
+        self.assertIn('class="intake-resume"', landing)
+        self.assertIn('data-attendance-upload-form>', landing)
+        page = self.client.get("/attendance?month=2026-07&view=details&lang=en").get_data(
             as_text=True
         )
-        self.assertNotIn(employee_no, page)
+        self.assertIn(employee_no, page)
         self.assertNotIn('data-attendance-requirement="not_required"', page)
         self.assertIn('href="/attendance?month=2026-07&amp;view=details&amp;status=expected"', page)
         self.assertIn('href="/attendance?month=2026-07&amp;view=details&amp;status=missing"', page)
         self.assertIn('href="/attendance?month=2026-07&amp;view=details&amp;status=received"', page)
         self.assertNotIn('id="expected"', page)
-        self.assertNotIn('id="missing"', page)
+        self.assertIn('id="missing"', page)
         self.assertNotIn('id="received"', page)
         self.assertIn("Current attendance month", page)
         self.assertIn("2026-07", page)
@@ -1240,7 +1254,7 @@ class V1WorkflowTests(unittest.TestCase):
         dashboard_page = self.client.get(
             "/dashboard?month=2026-07"
         ).get_data(as_text=True)
-        self.assertIn("0 / 0", dashboard_page)
+        self.assertRegex(dashboard_page, r"0(?:<small>)? / 0")
         english_payroll = self.client.get(
             "/attendance-payroll?year_month=2026-07&payroll_group=site_monthly&lang=en"
         ).get_data(as_text=True)
@@ -1494,6 +1508,7 @@ class V1WorkflowTests(unittest.TestCase):
                 real_work_payroll_row["gross_amount"],
                 Decimal("65000"),
             )
+            saved_summary_id = summary.id
 
         profile_page = self.client.get(
             f"/employees/{employee_id}?lang=zh-Hant"
@@ -1502,10 +1517,10 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertIn("只記錄真正額外工作", profile_page)
 
         entry_page = self.client.get(
-            "/attendance?month=2026-08&lang=zh-Hant"
+            f"/attendance?month=2026-08&summary_id={saved_summary_id}&lang=zh-Hant"
         ).get_data(as_text=True)
-        self.assertIn("真正發生的額外工作", entry_page)
-        self.assertIn("不是該期間內星期日", entry_page)
+        self.assertIn("選擇真正有工作的日期", entry_page)
+        self.assertIn("系統自動合計日數", entry_page)
 
     def test_attendance_employee_search_excludes_departed_and_blocks_wheel_changes(self):
         active_id, active_no = self.create_employee(
@@ -2789,14 +2804,14 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertNotIn('class="app-shell"', dashboard)
         self.assertNotIn('class="context-nav"', dashboard)
         self.assertIn("考勤錄入", dashboard)
-        self.assertIn("薪酬統計與匯出", dashboard)
+        self.assertIn("出糧", dashboard)
         self.assertIn('aria-current="page"', dashboard)
         attendance = self.client.get("/attendance").get_data(as_text=True)
         self.assertIn('class="app-layout"', attendance)
         self.assertIn('class="app-shell"', attendance)
         self.assertIn('class="context-nav"', attendance)
         self.assertIn("考勤詳情", attendance)
-        self.assertNotIn("拖放 PDF 到此或點擊選擇", attendance)
+        self.assertIn("拖放 PDF 到此或點擊選擇", attendance)
         attendance_collection = self.client.get(
             "/attendance?view=collection"
         ).get_data(as_text=True)
@@ -2819,7 +2834,7 @@ class V1WorkflowTests(unittest.TestCase):
         ).get_data(as_text=True)
         self.assertIn("Create employee file", english)
         self.assertIn("Site workers (daily)", english)
-        self.assertIn("Payroll Analytics &amp; Export", english)
+        self.assertIn("HR workbench", english)
         self.assertNotIn("建立員工檔案", english)
         english_references = self.client.get(
             "/references?list=education_level&lang=en"
@@ -2853,9 +2868,9 @@ class V1WorkflowTests(unittest.TestCase):
         simplified = self.client.get(
             "/employees?lang=zh-Hans"
         ).get_data(as_text=True)
-        self.assertIn("员工总览", simplified)
+        self.assertIn("员工档案", simplified)
         self.assertIn("考勤录入", simplified)
-        self.assertIn("薪酬统计与导出", simplified)
+        self.assertIn("每月工资表", simplified)
         self.assertNotIn("員工總覽", simplified)
         self.assertIn("退出登录", simplified)
 
@@ -3104,11 +3119,20 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertIn('autocomplete="current-password"', login_source)
 
     def test_user_guide_page_and_release_alignment(self):
-        self.assertEqual(CURRENT_VERSION, "V0.5.6")
-        self.assertEqual(NEXT_VERSION, "V0.5.7")
+        self.assertEqual(CURRENT_VERSION, "V0.7.3")
+        self.assertEqual(NEXT_VERSION, "V0.7.4")
         self.assertEqual(
             [(release["version"], release["date"]) for release in RELEASES],
             [
+                ("V0.7.3", "2026-11-18"),
+                ("V0.7.2", "2026-11-18"),
+                ("V0.7.1", "2026-11-18"),
+                ("V0.7.0", "2026-11-18"),
+                ("V0.6.0", "2026-11-04"),
+                ("V0.5.10", "2026-10-09"),
+                ("V0.5.9", "2026-10-09"),
+                ("V0.5.8", "2026-10-09"),
+                ("V0.5.7", "2026-09-24"),
                 ("V0.5.6", "2026-09-16"),
                 ("V0.5.5", "2026-09-10"),
                 ("V0.5.4", "2026-09-09"),
@@ -3287,6 +3311,7 @@ class V1WorkflowTests(unittest.TestCase):
         response = self.client.post(
             f"/employees/{employee_id}/personal",
             data={
+                "profile_revision": current_profile_revision(self.app, employee_id, "profile"),
                 "form_scope": "profile",
                 "gender": "male",
                 "mobile_region_code": "+852",
@@ -3312,6 +3337,7 @@ class V1WorkflowTests(unittest.TestCase):
         response = self.client.post(
             f"/employees/{employee_id}/personal",
             data={
+                "profile_revision": current_profile_revision(self.app, employee_id, "education"),
                 "form_scope": "education",
                 "education_level": "Master",
                 "major": "Construction",
@@ -3606,6 +3632,7 @@ class V1WorkflowTests(unittest.TestCase):
         saved = self.client.post(
             f"/employees/{employee_id}/personal",
             data={
+                "profile_revision": current_profile_revision(self.app, employee_id, "all"),
                 "mobile_region_code": "+852",
                 "mobile_number": "61234567",
                 "bank_name": "BANK OF CHINA (HONG KONG) LIMITED",
@@ -3713,11 +3740,11 @@ class V1WorkflowTests(unittest.TestCase):
             "/dashboard?month=2026-08&lang=en"
         ).get_data(as_text=True)
         self.assertNotIn('class="readiness-employee"', dashboard)
-        self.assertIn("Needs attention this month", dashboard)
-        self.assertIn("Employee file", dashboard)
-        self.assertIn("Monthly attendance", dashboard)
+        self.assertIn("Needs attention", dashboard)
+        self.assertIn("Employee files", dashboard)
+        self.assertIn("Attendance and payroll", dashboard)
         self.assertIn("Payroll status", dashboard)
-        self.assertNotIn(employee_no, dashboard)
+        self.assertIn(employee_no, dashboard)
 
         register = self.client.get(
             "/employees?month=2026-08&readiness=needs_action&status=all&lang=en"
@@ -3865,7 +3892,8 @@ class V1WorkflowTests(unittest.TestCase):
         dashboard = self.client.get(
             "/dashboard?month=2026-08&panel=confirmation&lang=en"
         ).get_data(as_text=True)
-        self.assertIn("Confirmation due in 30 days", dashboard)
+        dashboard = dashboard.split('id="confirmation-alerts"', 1)[1].split('</details>', 1)[0]
+        self.assertIn("open", dashboard.split(">", 1)[0])
         self.assertIn("Employee confirmation reminders (2)", dashboard)
         self.assertIn(due_no, dashboard)
         self.assertIn(overdue_no, dashboard)
@@ -4168,6 +4196,7 @@ class V1WorkflowTests(unittest.TestCase):
                 "year_month": "2026-07",
                 "payroll_group": "site_daily",
             },
+            follow_redirects=True,
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
@@ -4452,6 +4481,7 @@ class V1WorkflowTests(unittest.TestCase):
                 "payroll_group": "all",
                 "scope": "ready",
             },
+            follow_redirects=True,
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.mimetype, "application/zip")
@@ -4470,6 +4500,7 @@ class V1WorkflowTests(unittest.TestCase):
                 "scope": "selected",
                 "employee_ids": [daily_id],
             },
+            follow_redirects=True,
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
@@ -4491,6 +4522,7 @@ class V1WorkflowTests(unittest.TestCase):
                 "scope": "selected",
                 "employee_ids": [daily_id, monthly_id],
             },
+            follow_redirects=True,
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.mimetype, "application/zip")
@@ -4678,7 +4710,7 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertIn(employee_no, leave_page)
         self.assertIn('value="8.5"', leave_page)
 
-    def test_effective_records_and_adjustments_can_be_corrected_or_withdrawn(
+    def test_effective_records_can_be_corrected_or_withdrawn(
         self,
     ):
         employee_id, _ = self.create_employee(
@@ -4747,37 +4779,6 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("薪酬記錄已更正", response.get_data(as_text=True))
 
-        response = self.client.post(
-            f"/employees/{employee_id}/payroll-adjustments",
-            data={
-                "year_month": "2026-07",
-                "label": "項目津貼",
-                "amount": "1,000.00",
-                "project_id": alternate_project_id,
-            },
-            follow_redirects=True,
-        )
-        self.assertEqual(response.status_code, 200)
-        with self.app.app_context():
-            adjustment_id = PayrollAdjustment.query.filter_by(
-                employee_id=employee_id
-            ).one().id
-        response = self.client.post(
-            f"/payroll-adjustments/{adjustment_id}/correct",
-            data={
-                "year_month": "2026-08",
-                "label": "更正後項目津貼",
-                "amount": "1,200.00",
-                "project_id": original_project_id,
-                "remarks": "更正月份、項目及金額",
-            },
-            follow_redirects=True,
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(
-            "Payroll 調整項目已更正",
-            response.get_data(as_text=True),
-        )
         with self.app.app_context():
             employee = db.session.get(Employee, employee_id)
             assignment = db.session.get(
@@ -4785,22 +4786,15 @@ class V1WorkflowTests(unittest.TestCase):
                 assignment_id,
             )
             salary = db.session.get(type(employee.salaries[0]), salary_id)
-            adjustment = db.session.get(PayrollAdjustment, adjustment_id)
             self.assertEqual(assignment.effective_from, date(2026, 2, 15))
             self.assertEqual(assignment.project_id, alternate_project_id)
             self.assertEqual(salary.effective_from, date(2026, 2, 15))
             self.assertEqual(salary.amount, Decimal("32000.00"))
-            self.assertEqual(adjustment.year_month, "2026-08")
-            self.assertEqual(adjustment.project_id, original_project_id)
-            self.assertEqual(adjustment.amount, Decimal("1200.00"))
             assignment_audit = AuditLog.query.filter_by(
                 action="assignment_corrected"
             ).one()
             salary_audit = AuditLog.query.filter_by(
                 action="salary_corrected"
-            ).one()
-            adjustment_audit = AuditLog.query.filter_by(
-                action="payroll_adjustment_corrected"
             ).one()
             self.assertEqual(
                 assignment_audit.before_json["project_id"],
@@ -4818,14 +4812,6 @@ class V1WorkflowTests(unittest.TestCase):
                 salary_audit.after_json["amount"],
                 "32000.00",
             )
-            self.assertEqual(
-                adjustment_audit.before_json["year_month"],
-                "2026-07",
-            )
-            self.assertEqual(
-                adjustment_audit.after_json["year_month"],
-                "2026-08",
-            )
         employment_page = self.client.get(
             f"/employees/{employee_id}?tab=employment"
         ).get_data(as_text=True)
@@ -4836,12 +4822,6 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertIn("30000.00", employment_page)
         self.assertIn("32000.00", employment_page)
 
-        response = self.client.post(
-            f"/payroll-adjustments/{adjustment_id}/withdraw",
-            data={"reason": "整筆調整不應存在"},
-            follow_redirects=True,
-        )
-        self.assertEqual(response.status_code, 200)
         response = self.client.post(
             f"/salaries/{salary_id}/withdraw",
             data={"reason": "整筆薪酬記錄不應存在"},
@@ -4859,10 +4839,6 @@ class V1WorkflowTests(unittest.TestCase):
             self.assertIsNone(employee.current_assignment)
             self.assertIsNone(employee.current_salary)
             self.assertEqual(
-                db.session.get(PayrollAdjustment, adjustment_id).status,
-                "voided",
-            )
-            self.assertEqual(
                 AuditLog.query.filter_by(
                     action="assignment_withdrawn"
                 ).count(),
@@ -4870,12 +4846,6 @@ class V1WorkflowTests(unittest.TestCase):
             )
             self.assertEqual(
                 AuditLog.query.filter_by(action="salary_withdrawn").count(),
-                1,
-            )
-            self.assertEqual(
-                AuditLog.query.filter_by(
-                    action="payroll_adjustment_withdrawn"
-                ).count(),
                 1,
             )
 
@@ -4903,6 +4873,7 @@ class V1WorkflowTests(unittest.TestCase):
                 "year_month": "2026-07",
                 "payroll_group": "site_daily",
             },
+            follow_redirects=True,
         )
         self.assertEqual(response.status_code, 200)
         with self.app.app_context():
@@ -5481,8 +5452,8 @@ class V1WorkflowTests(unittest.TestCase):
                 "employee_id": sick_employee_id,
             },
         ).get_data(as_text=True)
-        self.assertIn("工資更正與一次性調整", payroll_page)
-        self.assertIn("替班津貼請在考勤錄入的實際項目行填寫", payroll_page)
+        self.assertNotIn("工資更正與一次性調整", payroll_page)
+        self.assertNotIn('action="/payroll/adjustments"', payroll_page)
         self.assertIn("離職當月的工資只由離職 Payroll", payroll_page)
 
     def test_attendance_special_dates_generate_and_void_comp_leave(self):
@@ -6439,6 +6410,7 @@ class V1WorkflowTests(unittest.TestCase):
                 "scope": "selected",
                 "employee_ids": [post_id],
             },
+            follow_redirects=True,
         )
         self.assertEqual(response.status_code, 200)
         workbook = load_workbook(io.BytesIO(response.data), data_only=False)

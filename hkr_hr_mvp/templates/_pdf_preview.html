@@ -1,0 +1,13 @@
+{% macro pdf_preview(source, title) %}
+<div class="pdf-viewer" data-pdf-viewer data-source="{{ source }}" data-loading="{{ t('pdf.loading') }}" data-error="{{ t('pdf.error') }}">
+  <div class="pdf-controls" role="toolbar" aria-label="{{ t('pdf.controls') }}">
+    <button type="button" data-pdf-prev aria-label="{{ t('pdf.previous') }}" disabled>←</button>
+    <label>{{ t('pdf.page') }} <input data-pdf-page type="number" min="1" value="1" aria-label="{{ t('pdf.page') }}" disabled></label><span data-pdf-count>/ —</span>
+    <button type="button" data-pdf-next aria-label="{{ t('pdf.next') }}" disabled>→</button>
+    <select data-pdf-zoom aria-label="{{ t('pdf.zoom') }}" disabled><option value="fit">{{ t('pdf.fit') }}</option><option value="1">100%</option><option value="1.5">150%</option><option value="2">200%</option></select>
+    <button type="button" data-pdf-rotate disabled>{{ t('pdf.rotate') }}</button>
+  </div>
+  <div class="pdf-viewport" tabindex="0" aria-label="{{ title }}"><p data-pdf-status role="status">{{ t('pdf.loading') }}</p><canvas data-pdf-canvas role="img" aria-label="{{ title }}" hidden></canvas></div>
+</div>
+<script type="module" src="{{ url_for('static', filename='js/pdf-preview.mjs', v=current_version) }}"></script>
+{% endmacro %}

@@ -30,7 +30,7 @@ class LeaveReviewTests(unittest.TestCase):
 
     def token(self, eid=None):
         with self.app.app_context():
-            return review_token(review_rows(eid)[0], User.query.first().id)
+            return review_token(review_rows(eid)[0], User.query.filter_by(username="admin").one().id)
 
     def submit(self, ids, token=None, eid=None, **extra):
         form = dict(record_ids=[str(i) for i in ids], review_token=token or self.token(eid), acknowledge="on")
@@ -50,7 +50,7 @@ class LeaveReviewTests(unittest.TestCase):
             db.session.flush()
             result = calculate_employee(employee,month)
             self.assertFalse(result["blockers"], result["blockers"])
-            run = snapshot_payroll(month,"management",[result],User.query.first().id)
+            run = snapshot_payroll(month,"management",[result],User.query.filter_by(username="admin").one().id)
             return run.id
 
     def test_selected_only_preserves_fields_repeat_and_stale_rejected(self):

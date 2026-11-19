@@ -1,0 +1,3 @@
+{% set fx = hkd_summary(fx_items) %}
+{% if fx.missing %}<p class="muted">{{ t("review.fx_missing") }} {{ fx.missing|join('、') }}</p>
+{% elif fx.totals %}<p>{{ t("review.fx_total") }} — {{ t("payroll.gross") }} {{ fmt_money(fx.totals.gross) }} · {{ t("payroll.net") }} {{ fmt_money(fx.totals.net) }}</p>{% endif %}

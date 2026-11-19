@@ -47,6 +47,28 @@
     } catch(error) { message.textContent = error.message || labels.failed; message.classList.add('danger-text'); }
     finally { busy = false; buttons.forEach(b => b.disabled = false); }
   }
+  form.querySelector('[data-prefill-all]')?.addEventListener('click', async event => {
+    const button = event.currentTarget; button.disabled = true;
+    let filled = 0, skipped = 0;
+    try {
+      for (const row of form.querySelectorAll('[data-salary-row]')) {
+        if ([...row.querySelectorAll('[data-money]')].some(i => i.value.trim() !== '')) { skipped++; continue; }
+        const source = row.querySelector('[data-prefill]');
+        const response = await fetch(source.dataset.prefill);
+        if (!response.ok) { skipped++; continue; }
+        const data = await response.json();
+        const currency = row.querySelector('select[name$=".currency"]');
+        if (![...currency.options].some(o => o.value === data.values.currency)) { skipped++; continue; }
+        Object.entries(data.values).forEach(([key, value]) => {
+          const input = row.querySelector('[name="' + row.dataset.employeeId + '.' + key + '"]');
+          input.value = value; if (input.matches('[data-money]')) formatInput(input);
+        });
+        row.dataset.netManual = '1'; dirty = true; refresh(row); filled++;
+      }
+      message.textContent = labels.batch_prefilled.replace('{filled}', filled).replace('{skipped}', skipped);
+    } catch (_) { message.textContent = labels.failed; }
+    finally { button.disabled = false; }
+  });
   form.addEventListener('submit', event => { event.preventDefault(); post(form.action, new FormData(form)); });
   form.addEventListener('click', async event => {
     const prefill = event.target.closest('[data-prefill]'), withdraw = event.target.closest('[data-withdraw]');

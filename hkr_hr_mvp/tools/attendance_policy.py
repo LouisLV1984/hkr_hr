@@ -50,6 +50,9 @@ def _employee_holidays(employee, start_date, end_date, calendar_kind=None):
     result = {}
     day = start_date
     while day <= end_date:
+        if not employee.is_active_on(day):
+            day += timedelta(days=1)
+            continue
         assignment = current_assignment_on(employee, day)
         if assignment and assignment.region_id:
             item = indexed.get((assignment.region_id, day))
@@ -221,8 +224,23 @@ def policy_on(employee_id, year_month):
     )
 
 
-def attendance_required(employee, year_month, summary=None):
-    if summary is None:
+_UNSET_SUMMARY = object()
+
+
+def injury_covers_month(employee, month_start, month_end):
+    return any(
+        row.status == "active"
+        and row.payroll_start_date <= month_start
+        and (
+            row.payroll_end_date is None
+            or row.payroll_end_date >= month_end
+        )
+        for row in employee.work_injury_periods
+    )
+
+
+def attendance_required(employee, year_month, summary=_UNSET_SUMMARY):
+    if summary is _UNSET_SUMMARY:
         summary = AttendanceMonthlySummary.query.filter_by(
             employee_id=employee.id,
             year_month=year_month,
@@ -232,7 +250,12 @@ def attendance_required(employee, year_month, summary=None):
             return True
         if summary.status == "not_required":
             return False
-    policy = policy_on(employee.id, year_month)
+    if injury_covers_month(employee, *parse_year_month(year_month)):
+        return False
+    policy = max(
+        (item for item in employee.attendance_policies if item.effective_from_month <= year_month),
+        key=lambda item: (item.effective_from_month, item.id or 0), default=None,
+    )
     return policy.requires_attendance if policy else True
 
 
@@ -284,7 +307,7 @@ def set_long_term_attendance_policy(
     return policy
 
 
-def automatic_attendance_rows(employee, start_date, end_date):
+def automatic_attendance_rows(employee, start_date, end_date, *, split_rates=True):
     holiday_dates = employee_payroll_holidays(
         employee, start_date, end_date
     )
@@ -300,6 +323,9 @@ def automatic_attendance_rows(employee, start_date, end_date):
         }
     )
     while day <= end_date:
+        if not employee.is_active_on(day):
+            day += timedelta(days=1)
+            continue
         assignment = current_assignment_on(employee, day)
         salary = current_salary_on(employee, day)
         project_id = assignment.project_id if assignment else None
@@ -329,11 +355,23 @@ def automatic_attendance_rows(employee, start_date, end_date):
             if not is_attendance_prorated:
                 row["working_days"] += work_units
         day += timedelta(days=1)
-    return [
-        row
-        for row in rows.values()
-        if row["working_days"] or row["sunday_holiday_days"]
-    ]
+    result = [row for row in rows.values() if row["working_days"] or row["sunday_holiday_days"]]
+    if split_rates:
+        from tools.attendance_rates import rate_windows
+        windows = rate_windows(employee, start_date, end_date)
+        if len(windows) > 1:
+            for row in result:
+                row["rate_allocations"] = []
+            for window in windows:
+                split = {r["project_id"]: r for r in automatic_attendance_rows(
+                    employee, date.fromisoformat(window["start"]), date.fromisoformat(window["end"]), split_rates=False)}
+                for row in result:
+                    part = split.get(row["project_id"], {})
+                    row["rate_allocations"].append({**window,
+                        "working_days": str(part.get("working_days", 0)),
+                        "sunday_holiday_days": str(part.get("sunday_holiday_days", 0)),
+                        "ot_hours": "0", "large_ecall_count": "0"})
+    return result
 
 
 def attendance_period_ranges(year_month):
@@ -437,6 +475,7 @@ def _segments_from_rows(summary, period_kind, rows):
             AttendanceSegment(
                 period_kind=period_kind,
                 project_id=row.get("project_id"),
+                rate_allocations=row.get("rate_allocations"),
                 working_days=row.get("working_days", 0),
                 ot_hours=0,
                 sunday_holiday_days=row.get("sunday_holiday_days", 0),

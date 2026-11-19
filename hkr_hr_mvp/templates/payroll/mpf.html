@@ -11,6 +11,7 @@
 </section>
 {% endblock %}
 {% block content %}
+{% if export_review %}<p class="flag danger" role="alert">{{ t("review.export_blocked") }} {{ export_review }}</p>{% endif %}
 <section class="period-context-bar payroll-period-context payroll-centered-context" aria-label="{{ t('payroll.current_payroll_month') }}">
   <div class="payroll-context-month"><span>{{ t("payroll.current_payroll_month") }}</span><strong>{{ month_t(year_month) }}</strong></div>
 </section>

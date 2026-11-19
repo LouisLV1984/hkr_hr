@@ -2,6 +2,7 @@
 {% block title %}{{ t("common.open") }} - {{ document.original_filename }}{% endblock %}
 {% block page_class %}wide-page{% endblock %}
 {% block content %}
+{% from '_pdf_preview.html' import pdf_preview with context %}
 <section class="page-head compact">
   <div><h1>{{ document.title or document.original_filename }}</h1><p>{{ employee.employee_no }} · {{ employee.display_name }} · {{ t("documents.preview_hint") }}</p></div>
   <a class="ghost-btn" href="{{ url_for('employees.view_employee', employee_id=employee.id) }}">{{ t("common.back") }}</a>
@@ -10,7 +11,7 @@
   <article class="document-preview-panel">
     <div class="preview-toolbar"><strong>{{ document.original_filename }}</strong><a href="{{ url_for('documents.download_document', document_id=document.id) }}">{{ t("common.download") }}</a></div>
     {% if document.file_ext == ".pdf" %}
-      <iframe title="{{ document.original_filename }}" src="{{ url_for('documents.open_document', document_id=document.id) }}"></iframe>
+      {{ pdf_preview(url_for('documents.open_document', document_id=document.id, raw=1), document.original_filename) }}
     {% elif document.file_ext in [".jpg", ".jpeg", ".png"] %}
       <img src="{{ url_for('documents.open_document', document_id=document.id) }}" alt="{{ document.original_filename }}">
     {% else %}
@@ -19,6 +20,7 @@
   </article>
   <aside class="document-review-form">
     <form class="stack-form" method="post">
+      {% if document.category == 'staff_record' %}{% set hire_employee = employee %}{% include 'leave/_date_choice.html' %}{% endif %}
       <section>
         <h2>{{ t("common.details") }}</h2>
         <label><span>{{ t("common.details") }}</span><input name="title" value="{{ request.form.get('title', document.title or '') }}"></label>
@@ -72,6 +74,7 @@
       {% elif document.category == "qualification" %}
         <section><h2>{{ t("employee.credentials") }}</h2><select name="qualification_category"><option value="degree">{{ t("documents.qualification_degree") }}</option><option value="skill">{{ t("documents.qualification_skill") }}</option></select><input name="qualification_name" placeholder="{{ t('documents.qualification_name') }}"><input name="qualification_no" placeholder="{{ t('employee.certificate_no') }}"><div class="two-inputs"><input type="date" name="qualification_issue_date"><input type="date" name="qualification_expiry_date"></div></section>
       {% elif document.category == "signed_contract" %}
+        <p class="form-note">{{ t('leave.contract_check') }} {{ employee.current_period.contract_annual_leave_days if employee.current_period and employee.current_period.contract_annual_leave_days is not none else '—' }}</p>
         <section><h2>{{ t("employee.contract") }}</h2><label class="check-line"><input type="checkbox" name="apply_contract_terms"><span>{{ t('profile.apply_contract_terms') }}</span></label><small class="wide form-note">{{ t('profile.contract_preserve') }}</small><label><span>{{ t("contract.effective_date") }}</span><input type="date" name="contract_effective_date" value="{{ request.form.get('contract_effective_date', document.document_date.isoformat() if document.document_date else '') }}"></label><label><span>{{ t("contract.annual_leave") }}</span><input type="number" min="0" step="0.5" name="contract_annual_leave_days" value="{{ request.form.get('contract_annual_leave_days', employee.current_period.contract_annual_leave_days if employee.current_period and employee.current_period.contract_annual_leave_days is not none else '') }}"></label>{% if employee.payroll_group == "management" %}<label><span>{{ t("employee.probation_end") }}</span><input type="date" name="probation_end_date" value="{{ request.form.get('probation_end_date', employee.current_period.probation_end_date.isoformat() if employee.current_period and employee.current_period.probation_end_date else '') }}"></label>{% endif %}</section>
       {% endif %}
       <label><span>{{ t("common.remarks") }}</span><textarea name="remarks">{{ document.remarks or '' }}</textarea></label>
@@ -79,4 +82,7 @@
     </form>
   </aside>
 </section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/annual_leave_setup.js', v=current_version) }}" defer></script>
 {% endblock %}

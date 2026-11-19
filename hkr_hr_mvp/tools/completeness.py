@@ -1,3 +1,4 @@
+from tools.payroll_export_policy import export_issues, policy_text
 from models import AttendanceMonthlySummary
 from tools.attendance_policy import attendance_required
 from tools.hr_core import current_mpf_on, parse_year_month
@@ -113,8 +114,11 @@ def missing_employee_data_labels(employee):
     ]
 
 
-def attendance_item(employee, year_month, summary=None):
-    if summary is None:
+_UNSET_SUMMARY = object()
+
+
+def attendance_item(employee, year_month, summary=_UNSET_SUMMARY):
+    if summary is _UNSET_SUMMARY:
         summary = AttendanceMonthlySummary.query.filter_by(
             employee_id=employee.id,
             year_month=year_month,
@@ -139,7 +143,9 @@ def attendance_item(employee, year_month, summary=None):
 
 
 def payroll_items(payroll_row):
-    blockers = list((payroll_row or {}).get("blockers") or [])
+    if payroll_row is None:
+        return [{"ok": False, "code": "not_calculated", "label_key": "readiness.not_calculated", "label": None}]
+    blockers = list(payroll_row.get("blockers") or []) + [policy_text(key) for key in export_issues(payroll_row)]
     if not blockers:
         return [
             {
@@ -164,9 +170,14 @@ def employee_readiness(
     employee,
     year_month,
     payroll_row=None,
-    summary=None,
+    summary=_UNSET_SUMMARY,
     in_scope=True,
 ):
+    if in_scope and payroll_row is None:
+        from tools.final_payment import calculate_final_payment
+        from tools.payroll_engine import calculate_employee
+        periods = [p for p in employee.employment_periods if p.end_date and p.end_date.strftime("%Y-%m") == year_month]
+        payroll_row = calculate_final_payment(periods[-1]) if periods else calculate_employee(employee, year_month)
     data_items = employee_data_items(employee)
     if in_scope:
         month_end = parse_year_month(year_month)[1]

@@ -13,9 +13,7 @@ Write-Host "Port: $Port"
 Write-Host "Database: PostgreSQL local hkr_hr_db"
 Write-Host ""
 
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $ScriptRoot "setup_system_venv.ps1") -Root $Root
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
+# Bootstrap already prepares the offline Python environment.
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $ScriptRoot "init_hkr_hr_database.ps1") -Root $Root -Username "admin"
 if ($LASTEXITCODE -eq 20) {
     Write-Host ""

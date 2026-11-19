@@ -1,3 +1,4 @@
+const {pdfBytes} = require('./pdf_fixture.cjs');
 /* Run against tests/profile_workspace_preview.py only. Synthetic localhost fixtures. */
 const {chromium} = require('playwright');
 const assert = require('node:assert/strict');
@@ -49,7 +50,7 @@ const base = 'http://127.0.0.1:8766';
       assert.equal(await personal.locator('[name=residential_address]').inputValue(), 'Saved QA address');
       await page.unroute('**' + endpoint);
       await Promise.all([page.waitForNavigation(), personal.locator('button[type=submit]').click()]);
-      assert.ok(await page.locator('.flash-success').count());
+      await page.locator('.flash-success').waitFor({timeout: 10000});
       await page.locator('[data-dialog-open=edit-personal-dialog]').first().click();
       assert.equal(await personal.locator('[name=residential_address]').inputValue(), 'Saved QA address');
       await personal.locator('[data-dialog-close]').last().click();
@@ -83,7 +84,7 @@ const base = 'http://127.0.0.1:8766';
       await dialog.locator('[data-dialog-close]').last().click();
     });
     await check('money formatting without a value change does not trigger discard', async () => {
-      await page.locator('[data-tab=employment_status]').click();
+      await page.locator('[href="#employment-status"]').click();
       await page.locator('[data-dialog-open=termination-editor-dialog]').first().click();
       const dialog = page.locator('#termination-editor-dialog');
       const count = dialogs;
@@ -144,7 +145,7 @@ const base = 'http://127.0.0.1:8766';
       await dialog.locator('[data-save-error]').waitFor();
       assert.equal(await dialog.locator('[name=start_date]').inputValue(), '2026-09-22');
       assert.equal(await dialog.locator('[name=evidence]').evaluate(e => e.files[0].name), 'bad.pdf');
-      await dialog.locator('[name=evidence]').setInputFiles({name: 'recovered.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n%%EOF\n')});
+      await dialog.locator('[name=evidence]').setInputFiles({name: 'recovered.pdf', mimeType: 'application/pdf', buffer: pdfBytes('QA')});
       await Promise.all([page.waitForNavigation(), dialog.locator('button[type=submit]').click()]);
       assert.equal(await page.locator('dialog[open]').count(), 0);
       assert.equal(await page.locator('.leave-history-table tbody tr').filter({hasText: 'recovered.pdf'}).count(), 1);
@@ -152,7 +153,7 @@ const base = 'http://127.0.0.1:8766';
     await check('file error and uncertain response retain selected attachment', async () => {
       await page.goto(base + '/employees/1/documents/new?upload_type=cv');
       const form = page.locator('main form[method=post]');
-      await form.locator('[name=file]').setInputFiles({name: 'qa.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n%%EOF')});
+      await form.locator('[name=file]').setInputFiles({name: 'qa.pdf', mimeType: 'application/pdf', buffer: pdfBytes('QA')});
       await form.locator('[name=title]').fill('QA retained title');
       const mask = '**/employees/1/documents/new?upload_type=cv';
       await page.route(mask, route => route.request().method() === 'POST' ? route.fulfill({status: 400, contentType: 'text/html', body: '<div class="flash flash-error">Invalid QA file</div>'}) : route.continue());
@@ -180,12 +181,12 @@ const base = 'http://127.0.0.1:8766';
       assert.ok(await lib.locator('[data-library-empty]').isVisible());
       await lib.locator('[data-document-filter=""]').click();
       assert.equal(await lib.locator('.doc-card.missing').count(), 0);
-      assert.ok(await lib.locator('.document-link').isVisible());
+      assert.ok(await lib.locator('.document-link').first().isVisible());
       fs.mkdirSync('tmp', {recursive: true});
       await page.screenshot({path: 'tmp/profile-workspace-library.png', fullPage: true});
     });
     await check('identical upload uses existing confirmation and cancel does not mutate records', async () => {
-      const href = await page.locator('[data-document-library] a[href$="/download"]').first().getAttribute('href');
+      const href = await page.locator('[data-document-library] tr[data-document-category=staff_record] a[href$="/download"]').first().getAttribute('href');
       const response = await page.request.get(base + href);
       const buffer = await response.body();
       await page.goto(base + '/employees/1/documents/new?upload_type=staff_record');

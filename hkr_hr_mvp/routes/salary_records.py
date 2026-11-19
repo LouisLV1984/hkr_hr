@@ -26,10 +26,10 @@ def private_response(response):
 
 
 @salary_records_bp.app_template_filter('hong_kong_datetime')
-def display_time(value):
+def display_time(value, fmt='%Y-%m-%d %H:%M'):
     from tools.datetime_utils import hong_kong_datetime
     local = hong_kong_datetime(value)
-    return local.strftime('%Y-%m-%d %H:%M') if local else '—'
+    return local.strftime(fmt) if local else '—'
 
 
 def t(key, **values):
@@ -67,10 +67,21 @@ def selected_entity(raw, required=False):
 @login_required
 def index():
     try:
-        month = checked_month(request.args.get("month") or date.today().strftime("%Y-%m"))
-        entity_id = selected_entity(request.args.get("entity_id"))
+        requested_month = request.args.get("month")
+        if requested_month:
+            month = checked_month(requested_month)
+        else:
+            month = session.get("operating_month") or date.today().strftime("%Y-%m")
+            try:
+                month = checked_month(month)
+            except ValueError:
+                month = date.today().strftime("%Y-%m")
+                flash(t("hr.salary_record_month", month=month), "info")
+        entity_id = selected_entity(request.args.get("entity_id", session.get("operating_entity_id")))
     except ValueError as exc:
         abort(400, description=t(str(exc)))
+    session["operating_month"] = month
+    session["operating_entity_id"] = entity_id or ""
     rows = monthly_rows(month, entity_id, request.args.get("employee_id", type=int), request.args.get("q", "")) if entity_id else []
     token = serializer().dumps(dict(user=current_user.id, month=month, entity=entity_id,
         rows={str(r["employee"].id): dict(identity=identity(r["record"]), values=r["values"]) for r in rows}))
@@ -88,7 +99,7 @@ def index():
 def save():
     created_paths = []
     try:
-        data = serializer().loads(request.form.get("editor_token", ""), max_age=3600)
+        data = serializer().loads(request.form.get("editor_token", ""))
         if data["user"] != current_user.id:
             raise ValueError("salary_record.stale")
         month = checked_month(data["month"])

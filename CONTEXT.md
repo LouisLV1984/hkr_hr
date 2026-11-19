@@ -1,6 +1,6 @@
 # HKR HR Context
 
-Updated: 2026-09-01
+Updated: 2026-11-18
 
 This file records stable vocabulary, current architecture, and operational facts. It does not record task progress or deployment status. Executable rules live in [`AGENTS.md`](AGENTS.md) and [`hkr_hr_mvp/AGENTS.md`](hkr_hr_mvp/AGENTS.md); design rationale lives in the [`ADR index`](hkr_hr_mvp/docs/adr/README.md).
 
@@ -31,6 +31,10 @@ HKR HR may adapt useful interaction patterns observed in TMC, but it does not sh
 
 GitHub source control contains application source and current project documentation only. Employee, attendance, payroll, contract, credential, runtime, generated, backup, and local verification data remain outside version control.
 
+## Small-Team Operating Model
+
+Approximately three operators use this internal system. Shared monthly context, one-save initial setup, actionable exception lists and reusable source editors are the normal workflow. No new approval hierarchy is required. New contract drafts and Payroll snapshots preserve their own historical facts; they do not alter formal terms or prove payment. Runtime dependency maintenance uses a local wheelhouse, and work calendars support local CSV. See ADR-0026 for the current decision and precise legacy limits.
+
 ## Employee Vocabulary
 
 - Employee status displayed by the application is derived from effective-dated employment periods. A future last working day remains `active` until that date; after the period ends it becomes `departed`.
@@ -59,12 +63,13 @@ Document capture must not create a parallel employee-onboarding path. [ADR-0002]
 
 Primary navigation is organized by HR outcomes:
 
-1. Dashboard;
-2. Employee Overview;
+1. Employee Workbench (expiry, confirmations, leave, attendance and payroll by employee);
+2. Employee Files (browse name and staff-number cards by department or primary position, search, or create an employee);
 3. Leave & Work Injury;
-4. Attendance Entry;
-5. Payroll Analytics & Export;
-6. Data Settings & Export.
+4. Attendance Entry (PDF batch intake and resume);
+5. Payroll.
+
+Data Settings & Export is a utility in the header. See [ADR-0029](hkr_hr_mvp/docs/adr/0029-employee-workbench-and-task-pages.md).
 
 Attendance Entry handles PDF collection, Payroll-group-specific fields and the Sunday/statutory-holiday Payroll/Comp Leave decision. Monthly Payroll, Monthly MPF Contributions and Departure Payroll live under Payroll Analytics & Export. The departure workbook retains the formal English label Final Payment. Employee-record exports and attachment bundles live under Data Settings & Export. Admin tools remain separate.
 
@@ -98,7 +103,7 @@ Current intake document type codes are:
 V1 does not use OCR. HR previews the source document and enters or corrects the relevant structured data manually.
 Staff Record review captures contact, residential address, emergency-contact, education, employment-start and bank facts. Bank details create or update the employee's effective-dated bank-account history and link the Staff Record as evidence without replacing an identical dedicated bank proof.
 
-Contracts & Attachments provides one employee-profile document gateway. Three Treasures, Staff Record, signed Employment Contract, CV, and general attachments can be uploaded and reviewed there. Bank, identity/credential, employment/pay, probation, leave, work-injury, attendance, termination, and name-change evidence is routed to the owning structured record so an attachment cannot exist without the business fact it supports. System document purposes are fixed; only general-attachment subtypes are maintained in Data Options. See ADR-0024.
+The Credentials and Files tab contains the credential cards and the Contracts & Attachments library. The library provides one employee-profile document gateway. Three Treasures, Staff Record, signed Employment Contract, CV, and general attachments can be uploaded and reviewed there. Bank, identity/credential, employment/pay, probation, leave, work-injury, attendance, termination, and name-change evidence is routed to the owning structured record so an attachment cannot exist without the business fact it supports. System document purposes are fixed; only general-attachment subtypes are maintained in Data Options. See ADR-0024.
 
 Annual leave is deducted once in this order: compensation leave, the 2023-and-earlier balance, then the oldest valid 2024+ balance. Calendar-year leave taken and usage of a specific entitlement bucket are separate measures; one leave record must never be counted against two balances.
 
@@ -117,8 +122,8 @@ Replacing a document updates linked identity, certificate, VISA, qualification, 
 - Attendance expected/missing lists follow employment-period overlap with the selected month: the departure month remains in scope, while later months do not.
 - The signed attendance PDF is stored as an employee document.
 - Daily attendance records ordinary paid workdays. Monthly and OFFICE salary history defaults to `full_month`, so ordinary-workday counts do not determine base salary. A contractually explicit `attendance_days` exception instead records actual paid calendar attendance days; Saturday, Sunday and statutory-holiday work is included directly and receives no additional Sunday/statutory-holiday work payment. The exception is effective-dated with salary history and forecasts zero unless HR has a confirmed arrangement. See ADR-0020.
-- Monthly and OFFICE assignments carry an effective-dated `workweek_days` value of 5, 5.5 or 6. Existing Monthly assignments default to 6 and existing Management/OFFICE assignments default to 5. Forecasts count Monday-Friday for 5 days, add Saturday morning as 0.5 for 5.5 days, or count Monday-Saturday for 6 days. Site Daily and Site Monthly then exclude the employee's regional statutory holidays; Management and Head Office exclude regional general holidays. Hong Kong statutory and general-holiday dates can be imported together from official sources; the statutory Winter Solstice/Christmas choice is fixed to Christmas Day under company policy. The main import action automatically prepares the next calendar year and becomes check-and-complete when records already exist. Payroll itself has no live internet dependency.
-- HR enters the total work genuinely outside the employee's workweek first, then selects each date. Sunday/statutory-holiday and 5-day Saturday work count as one day; 5.5-day Saturday afternoon counts as 0.5 day without a separate session selector. One monthly attendance record applies one treatment: `pay` or `comp_leave`; paid days add one applicable daily rate while comp leave adds an auditable no-expiry credit with no extra work pay.
+- Monthly and OFFICE assignments carry an effective-dated `workweek_days` value of 5, 5.5 or 6. Existing Monthly assignments default to 6 and existing Management/OFFICE assignments default to 5. Forecasts count Monday-Friday for 5 days, add Saturday morning as 0.5 for 5.5 days, or count Monday-Saturday for 6 days. Site Daily and Site Monthly then exclude the employee's regional statutory holidays; Management and Head Office exclude regional general holidays. Hong Kong statutory and general-holiday dates can be imported together from official sources; the statutory Winter Solstice/Christmas choice is fixed to Christmas Day under company policy. The primary workflow imports a local CSV; optional online import can prepare the next calendar year when connectivity is available. Payroll itself has no live internet dependency.
+- HR selects each date genuinely worked outside the employee's workweek; the system derives the total. Sunday/statutory-holiday and 5-day Saturday work count as one day; 5.5-day Saturday afternoon counts as 0.5 day without a separate session selector. One monthly attendance record applies one treatment: `pay` or `comp_leave`; paid days add one applicable daily rate while comp leave adds an auditable no-expiry credit with no extra work pay.
 - Company policy pays a daily worker one normal daily rate for each regional statutory holiday from the employment start date even when no work is performed. Daily ordinary attendance includes every non-statutory-holiday date actually worked, including Sunday; an unworked Sunday is unpaid. Unsaved daily attendance prefills Monday-Saturday only and excludes statutory holidays plus recorded leave/work injury, after which HR adds confirmed Sunday or statutory-holiday work from the PDF. If the employee works a statutory holiday, `pay` adds another one daily rate while `comp_leave` keeps the automatic holiday pay and adds one comp-leave day. Sunday is never entered in the statutory-holiday work field.
 - Annual, sick and unpaid leave are effective dated leave records in 0.5-day units and are read-only in Attendance. Annual leave is paid and consumes comp leave, then 2023-and-earlier leave, then the earliest valid 2024+ balance. For daily workers, HR-entered actual paid workdays are the sole wage basis, so linked unpaid-leave records are for reconciliation and are not deducted again. For Monthly and OFFICE staff, unpaid leave is deducted once from monthly salary at the calendar-day rate. After probation, sick leave pays the first aggregate day in a calendar month in full and later days at four-fifths; before probation it pays four-fifths from day one. Missing sick evidence is a non-blocking red warning.
 - Work injury is not an employee status. It is maintained only in the Work Injury card under Leave & Work Injury; the employee profile shows a read-only summary/history link. Each period uses HR-verified monthly earnings at the accident and explicitly selects four-fifths work-injury pay or full pay. Covered dates are attendance-exempt. Monthly follow-up/medical reimbursement exports to the workbook's Work Injury Compensation / Medical Expenses column (AM on Daily; AN on Monthly and OFFICE), increases net pay, and is excluded from MPF relevant income. See ADR-0018.
@@ -132,7 +137,7 @@ Replacing a document updates linked identity, certificate, VISA, qualification, 
 - One payroll group exports one XLSX; all groups export a ZIP containing three XLSX files.
 - Daily-worker OT divisor is 10 for TMC046/HA projects and 9 for other daily projects.
 - Standard Monthly and OFFICE contract salary is allocated by calendar day. Weekday after-hours OT is 1.5 times the hourly rate; genuine work beyond the effective 5/5.5/6-day workweek uses `pay` at an additional 1 times the daily rate or `comp_leave` with no extra work pay. Saturday afternoon counts as 0.5 day under a 5.5-day workweek. The `attendance_days` exception instead pays base salary by actual paid calendar attendance days and does not add a separate Sunday/statutory-holiday work payment.
-- Effective-dated meal, transport and special allowances are maintained as Fixed Allowances in Employment & Salary. Meal/transport export to `Traffic Allowance / Meal Allowance`; special allowance exports to `Bonus / Fixed Allowance`. Substitute-shift other allowance is entered only on actual Attendance project rows and exports to `Other Payment`; wage corrections and other one-off adjustments have one maintenance entry on the selected employee/month in Monthly Payroll and also export to `Other Payment`.
+- Effective-dated meal, transport and special allowances are maintained as Fixed Allowances in Employment & Salary. Meal/transport export to `Traffic Allowance / Meal Allowance`; special allowance exports to `Bonus / Fixed Allowance`. Substitute-shift other allowance is entered only on actual Attendance project rows and exports to `Other Payment`; historical manual amounts remain readable. Dated ordinary-attendance and OT corrections are entered from the current employee’s Attendance PDF, retain the source month, settlement month and shared evidence, and feed Other Payment. See ADR-0027.
 - Casual construction-worker MPF uses the MPFA daily relevant-income contribution scale. Regular MPF and casual MPF both follow the four-part payroll reconciliation; employees aged 65 or above have no mandatory contribution.
 - MPF scheme and Member Account No. are effective-dated employee records. The system derives the current record and automatically closes the prior record when a later scheme starts.
 - Four seeded company MPF schemes hold the employer account and payroll group identifiers. MPF reports use the same monthly Payroll results, export one XLSX per scheme or a ZIP for all schemes, and retain zero-income or exempt employees.
@@ -162,7 +167,7 @@ Replacing a document updates linked identity, certificate, VISA, qualification, 
 ## Readiness And Production Safety
 
 - One shared readiness service derives Employee File, selected-month Attendance, and selected-month Payroll Status. Employee Management is the full status matrix; Work Overview shows only a compact action summary linking to the filtered employee list. Neither maintains separate progress states or notes.
-- List and management workspaces use the left rail for the active submodule, month/year, filters and current selection; the right pane displays filtered results and performs actions. Work Overview has no left rail, and focused preview/form workbenches retain task-specific layouts.
+- List and management workspaces use the left rail for the active submodule, month/year, filters and current selection; the right pane displays filtered results and performs actions. Work Overview and the grouped card directory have no left rail, and focused preview/form workbenches retain task-specific layouts.
 - Attendance Management includes Attendance Details, Attendance Collection, Specific-month Attendance Exemption, and Long-term Attendance Exemption. A specific-month exemption applies only to the selected month and automatically returns to attendance-required afterwards.
 - Payroll bank details (bank name and account number) are required Payroll facts. Bank account proof is an optional attachment and does not block Payroll.
 - HR-facing status wording states the actual condition: filled/not filled, created or configured/not created or configured, filed/not filed, attendance received/not received/exempt, and Payroll ready/not ready with a specific reason.
@@ -172,6 +177,8 @@ Replacing a document updates linked identity, certificate, VISA, qualification, 
 - Production requires CSRF protection, login throttling, local post-login redirects, a non-placeholder secret key, server-side upload validation and friendly HTTP error pages. These controls must not add approval steps to ordinary HR work.
 
 ## Current Scope Boundaries
+
+- Company calendar-year advance annual leave is activated by HR confirmation of actual employment start and initial contract leave. Current-year corrections preserve historical accounts and year-specific manual overrides; later years are persisted on first authenticated use after rollover. See ADR-0025. The permanent 2023-and-earlier card remains visible and manually maintained.
 
 - Salary Records (`employee_salary_records`, `/salary-records`) is an independent manual register from 2026-04. It records gross pay, employee MPF actually deducted (including catch-up deductions in the deduction month), net payment, currency, entity, remarks and evidence. It never feeds Payroll/MPF calculations, leave/final-payment averages or payment execution. Explicit saved-Payroll prefill is read-only until HR saves a separate record.
 - One employee/month/payroll-entity record is revisioned with audit and withdrawal. The central monthly table is the only editor; employee profiles display read-only records. April–March summaries separate currency and entity, include departed workers and flag missing employment months through the current month. Export is reconciliation material, not a statutory tax return.
@@ -185,3 +192,5 @@ Not part of the current core:
 - Fully automated legal decisions for every termination or MPF edge case.
 
 These are scope facts, not a commitment to implement them later.
+
+PDF previews use bundled Mozilla PDF.js assets (including fonts, CMaps and WASM) and existing authenticated file routes. No browser PDF plugin or runtime CDN is required; original-byte download remains available.

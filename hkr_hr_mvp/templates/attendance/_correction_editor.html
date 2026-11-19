@@ -1,0 +1,34 @@
+{% macro fields(line={}) %}
+<div data-corr-row class="corr-row">
+  <label><span class="corr-field-label">{{ t('common.date') }}</span><input name="work_date" type="date" required min="{{ source }}-01" max="{{ source_end }}" value="{{ line.date|default('') }}"></label>
+  <label><span class="corr-field-label">{{ t('corr.kind') }}</span><select name="kind">{% for key in ['ot','day'] %}<option value="{{ key }}" {% if line.kind == key %}selected{% endif %}>{{ t('corr.' + key) }}</option>{% endfor %}</select></label>
+  <label><span class="corr-field-label">{{ t('corr.direction') }}</span><select name="direction">{% for key in ['add','deduct'] %}<option value="{{ key }}" {% if line.direction == key %}selected{% endif %}>{{ t('corr.' + key) }}</option>{% endfor %}</select></label>
+  <label><span class="corr-field-label">{{ t('corr.quantity') }}</span><input type="number" name="quantity" min=".5" step=".5" required value="{{ line.quantity|default('') }}"></label>
+  <label class="corr-project"><span class="corr-field-label">{{ t('common.project') }}</span><select name="project"><option value="">{{ t('corr.auto') }}</option>{% for p in projects %}<option value="{{ p.id }}" {% if line.chosen_project == p.id|string %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label>
+  <output data-corr-amount>—</output><button type="button" data-corr-remove class="mini-btn" aria-label="{{ t('corr.remove') }}">×</button>
+  <label data-tail-choice hidden>{{ t('corr.tail') }}<select name="tail"><option value="">—</option>{% for key in ['included','extra'] %}<option value="{{ key }}" {% if line.tail == key %}selected{% endif %}>{{ t('corr.' + key) }}</option>{% endfor %}</select></label>
+</div>
+{% endmacro %}
+<form data-corr-form action="{{ url_for('corrections.editor',employee_id=employee.id,pay_month=pay,source_month=source) }}" method="post" enctype="multipart/form-data">
+  <input type="hidden" name="revision" value="{{ record.revision if record else 0 }}">
+  <span data-corr-source>{% if summary and summary.document %}<a target="_blank" rel="noopener" href="{{ url_for('documents.open_document',document_id=summary.document.id) }}">{{ t('corr.oldpdf') }}</a>{% else %}<small>{{ t('corr.nopdf') }}</small>{% endif %}</span>
+  <div class="corr-content">
+  {% if summary %}<details class="corr-original"><summary>{{ t('corr.before') }}</summary>{% for s in summary.segments if s.period_kind in ['current_1_20','current_21_end_forecast'] %}<div>{{ attendance_period_t(source,s.period_kind) }} · {{ project_t(s.project) }} · {{ t('corr.day') }} {{ s.working_days }} · OT {{ s.ot_hours }}</div>{% endfor %}</details>{% endif %}
+  {% if prior %}<section><strong>{{ t('corr.prior') }}</strong>{% with records=prior %}{% include 'attendance/_correction_history.html' %}{% endwith %}</section>{% endif %}
+  <div class="corr-headings" aria-hidden="true">{% for key in ['common.date','corr.kind','corr.direction','corr.quantity','common.project','corr.amount'] %}<span>{{ t(key) }}</span>{% endfor %}</div>
+  <div data-corr-rows>{% for line in (record.lines if record else []) %}{{ fields(line) }}{% else %}{{ fields() }}{% endfor %}</div>
+  <template data-corr-blank>{{ fields() }}</template>
+  <button type="button" class="mini-btn" data-corr-add>＋ {{ t('corr.more') }}</button>
+  <div class="corr-files">
+    <label class="corr-attach"><span aria-hidden="true" class="corr-clip"></span>{{ t('corr.files') }}<input type="file" name="evidence" multiple accept=".pdf,.png,.jpg,.jpeg"></label>
+    <div class="corr-file-list"><small>{{ t('corr.filehint') }}</small>
+      <div data-corr-files></div>
+      {% if record %}{% for doc in record.documents %}<a target="_blank" rel="noopener" href="{{ url_for('documents.open_document',document_id=doc.id) }}">{{ doc.original_filename }}</a> {% endfor %}{% endif %}
+    </div>
+  </div>
+  </div>
+  <footer class="corr-footer">
+    <div><span class="corr-total-label">{{ t('corr.total') }}</span><strong data-corr-total aria-live="polite">{{ t('corr.pending') }}</strong><div data-corr-units></div></div>
+    <div class="corr-actions"><button class="ghost-btn" type="button" data-corr-close>{{ t('corr.cancel') }}</button><button class="primary-btn" type="submit">{{ t('corr.save') }}</button></div>
+  </footer>
+</form>

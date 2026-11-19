@@ -10,3 +10,5 @@ waitress==3.0.2
 Markdown==3.10.2
 opencc-python-reimplemented==0.1.7
 Pillow==12.3.0
+
+pypdf==6.19.0

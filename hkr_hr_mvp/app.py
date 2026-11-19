@@ -1,17 +1,20 @@
 from datetime import datetime, timedelta
+import re
 from urllib.parse import urlencode
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, abort, jsonify, redirect, render_template, request, session, url_for
 from flask_login import current_user
 
 
 load_dotenv()
 
 from config import Config
+from tools.payroll_exchange import hkd_summary
 from models import db, login_manager
 from routes.admin import admin_bp
 from routes.attendance import attendance_bp
+from routes.attendance_corrections import bp as attendance_corrections_bp
 from routes.auth import auth_bp
 from routes.dashboard import dashboard_bp
 from routes.documents import documents_bp
@@ -36,7 +39,8 @@ from tools.i18n import (
     translate_system_message,
 )
 from tools.releases import CURRENT_VERSION
-from tools.security import UploadValidationError, get_csrf_token, protect_csrf
+from tools.security import UploadValidationError, get_csrf_token, protect_csrf, document_file_issue
+from tools.profile_revision import profile_revision
 
 
 WEAK_PRODUCTION_SECRETS = {
@@ -70,6 +74,7 @@ def create_app(config_overrides=None):
     app.register_blueprint(documents_bp)
     app.register_blueprint(leave_bp)
     app.register_blueprint(attendance_bp)
+    app.register_blueprint(attendance_corrections_bp)
     app.register_blueprint(payroll_bp)
     app.register_blueprint(salary_records_bp)
     app.register_blueprint(exports_bp)
@@ -81,7 +86,7 @@ def create_app(config_overrides=None):
         # Enhanced employee editors retain their DOM (including selected files)
         # after validation errors. Native submissions and unrelated flows are unchanged.
         if (request.method == "POST" and request.headers.get("X-HKR-Profile-Editor") == "1"
-                and request.blueprint in {"employees", "documents", "leave"}
+                and request.blueprint in {"employees", "documents", "leave", "attendance", "payroll"}
                 and response.status_code in {302, 303}):
             flashes = session.get("_flashes", [])
             errors = [message for category, message in flashes if category in {"error", "danger"}]
@@ -111,6 +116,12 @@ def create_app(config_overrides=None):
             protect_csrf()
 
     @app.before_request
+    def annual_leave_rollover():
+        if current_user.is_authenticated and request.endpoint != "static" and request.method == "GET":
+            from tools.annual_leave_policy import rollover
+            rollover()
+
+    @app.before_request
     def record_recent_user_activity():
         if not current_user.is_authenticated or request.endpoint == "static":
             return
@@ -121,6 +132,20 @@ def create_app(config_overrides=None):
         ):
             current_user.last_seen_at = now
             db.session.commit()
+
+    @app.before_request
+    def validate_calendar_inputs():
+        # Reject boundary years before previous-month/year calculations run.
+        for values in (request.args, request.form):
+            for key in ("month", "year_month"):
+                for value in values.getlist(key):
+                    if not value:
+                        continue
+                    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", value) or not 2 <= int(value[:4]) <= 9998:
+                        abort(400, description="security.invalid_period")
+            for value in values.getlist("year"):
+                if value and (not re.fullmatch(r"\d{4}", value) or not 2 <= int(value) <= 9998):
+                    abort(400, description="security.invalid_period")
 
     @app.context_processor
     def inject_ui_helpers():
@@ -184,6 +209,7 @@ def create_app(config_overrides=None):
             "leave_date_label": lambda record: leave_date_label(record, t),
             "leave_days_match": lambda record: record.days == saved_leave_days(record),
             "t": t,
+            "hkd_summary": hkd_summary,
             "active_lang": language,
             "languages": LANGUAGE_OPTIONS,
             "lang_url": lang_url,
@@ -197,6 +223,8 @@ def create_app(config_overrides=None):
             "current_version": CURRENT_VERSION,
             "operating_month": session.get("operating_month") or current_month(),
             "csrf_token": get_csrf_token,
+            "profile_revision": profile_revision,
+            "document_file_issue": document_file_issue,
         }
 
     def render_http_error(error, status_code):

@@ -3,6 +3,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from models import (
+    AttendanceCorrection,
     AttendanceMonthlySummary,
     EmployeeFinalPaymentCase,
     EmployeeEmploymentPeriod,
@@ -30,7 +31,7 @@ from tools.payroll_engine import (
 TRANSITION_DATE = date(2025, 5, 1)
 SP_LSP_ANNUAL_CAP = Decimal("15000")
 SP_LSP_TOTAL_CAP = Decimal("390000")
-FINAL_PAYMENT_RULE_VERSION = "V1.2-2026-08-18"
+FINAL_PAYMENT_RULE_VERSION = "V1.4-2026-11-17"
 
 
 def periods_for_final_payment(
@@ -347,7 +348,8 @@ def calculate_final_payment(period):
         year_month=year_month,
         status="active",
     ).all()
-    month_adjustment = sum(
+    corrections = AttendanceCorrection.query.filter_by(employee_id=employee.id, pay_month=year_month).all()
+    month_adjustment = sum((c.amount for c in corrections), Decimal(0)) + sum(
         (decimal_value(item.amount) for item in month_adjustments),
         Decimal("0"),
     )
@@ -387,11 +389,31 @@ def calculate_final_payment(period):
         if case and case.holiday_daily_rate_override is not None
         else rates["holiday_rate"] if rates else Decimal("0")
     )
+    rate_start = max(month_start, period.start_date)
+    from tools.attendance_rates import active_allocations, allocation_issue, rate_windows
+    from types import SimpleNamespace
+    rate_windows_for_month = rate_windows(employee, rate_start, period.end_date)
+    rate_totals = SimpleNamespace(working_days=working_days, ot_hours=ot_hours, sunday_holiday_days=holiday_days, large_ecall_count=large_ecall_count, rate_allocations=case.rate_allocations if case else None)
+    rate_issue = allocation_issue(employee, rate_totals, rate_start, period.end_date)
+    if rate_issue:
+        blockers.append(rate_issue)
     base_amount = base_rate * working_days
     ot_amount = ot_rate * ot_hours
     holiday_amount = holiday_rate * holiday_days
     ecall_amount = base_rate * large_ecall_count + ECALL_FLAT_AMOUNT * ecall_count
 
+    if len(rate_windows_for_month) > 1 and not rate_issue and case and case.rate_allocations:
+        base_amount = ot_amount = holiday_amount = Decimal("0")
+        ecall_amount = ECALL_FLAT_AMOUNT * ecall_count
+        for part in active_allocations(case.rate_allocations, rate_windows_for_month):
+            applicable = salary_rate_for_date(employee, date.fromisoformat(part["start"]), project)
+            if not applicable:
+                continue
+            base_amount += applicable["base_rate"] * decimal_value(part.get("working_days"))
+            ot_amount += applicable["ot_rate"] * decimal_value(part.get("ot_hours"))
+            part_holiday_rate = holiday_rate if case.holiday_daily_rate_override is not None else applicable["holiday_rate"]
+            holiday_amount += part_holiday_rate * decimal_value(part.get("sunday_holiday_days"))
+            ecall_amount += applicable["base_rate"] * decimal_value(part.get("large_ecall_count"))
     manual_allowance = decimal_value(case.allowance_amount if case else 0)
     manual_other_payment = decimal_value(case.other_payment if case else 0)
     attendance_other_allowance = decimal_value(
@@ -437,15 +459,20 @@ def calculate_final_payment(period):
     else:
         leave_rate = Decimal("0")
         leave_rate_source = "missing"
-        if legacy_days + regular_days > 0:
+        if legacy_days + regular_days > 0 or leave_overused_days > 0:
             blockers.append("缺前 12 個月工資合計或年假補薪日薪率")
 
     annual_leave_pay = (legacy_days + regular_days) * leave_rate
+    if leave_overused_days > 0 and leave_rate <= 0:
+        blockers.append("超用年假追扣缺有效日薪基準，請 HR 核實")
     annual_leave_overuse_deduction = leave_overused_days * leave_rate
     statutory_holiday_pay = statutory_days * holiday_rate
     benefit = calculate_benefit(period, case, benefit_defaults, group)
     blockers.extend(benefit["blockers"])
+    from tools.absence_integrity import absences_changed_since_attendance
     warnings = []
+    if absences_changed_since_attendance(employee, attendance["summary"], month_start, period.end_date):
+        warnings.append("leave.attendance_recheck")
     if any(not item.evidence_document_id for item in month_adjustments):
         warnings.append("指定月份調整憑證待補")
     if any(not item.evidence_document_id for item in medical_expenses):
@@ -506,6 +533,7 @@ def calculate_final_payment(period):
         "attendance": attendance,
         "confirmed": confirmed,
         "working_days": working_days,
+        "rate_windows": rate_windows_for_month,
         "ot_hours": ot_hours,
         "holiday_days": holiday_days,
         "large_ecall_count": large_ecall_count,
@@ -526,6 +554,7 @@ def calculate_final_payment(period):
         "manual_allowance_amount": rounded(manual_allowance),
         "other_payment": rounded(other_payment),
         "manual_other_payment": rounded(manual_other_payment),
+        "attendance_corrections": [entry for c in corrections for entry in c.lines],
         "month_adjustment_amount": rounded(month_adjustment),
         "attendance_other_allowance_amount": rounded(
             attendance_other_allowance

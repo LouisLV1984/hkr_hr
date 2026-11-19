@@ -1,5 +1,5 @@
+from tools.employee_loading import workbench_options
 from datetime import date, timedelta
-from decimal import Decimal
 from pathlib import Path
 
 from flask import (
@@ -8,6 +8,7 @@ from flask import (
     current_app,
     render_template,
     request,
+    session,
 )
 from flask_login import login_required
 from markdown import Markdown
@@ -15,14 +16,13 @@ from markupsafe import Markup
 from models import (
     AttendanceMonthlySummary,
     Employee,
-    EmployeeCertificate,
-    EmployeeIdentity,
-    EmployeeVisa,
 )
+from tools.leave_outlook import leave_outlook
 from tools.completeness import employee_readiness
 from tools.profile_integrity import credential_alerts
 from tools.hr_core import current_month, parse_year_month
-from tools.payroll_engine import calculate_payroll
+from tools.payroll_engine import calculate_payroll, currency_summary
+from tools.payroll_export_policy import is_payroll_ready
 from tools.releases import RELEASES
 
 
@@ -52,32 +52,27 @@ def guide():
     return render_template("guide.html", guide_html=guide_html)
 
 
+@dashboard_bp.route("/workbench-preview", endpoint="workbench_preview")
 @dashboard_bp.route("/dashboard")
 @login_required
 def dashboard():
-    year_month = request.args.get("month") or current_month()
+    year_month = request.args.get("month") or session.get("operating_month") or current_month()
+    session["operating_month"] = year_month
     month_start, month_end = parse_year_month(year_month)
+    employees = Employee.query.options(*workbench_options()).all()
     active_employees = [
         employee
-        for employee in Employee.query.all()
+        for employee in employees
         if employee.is_active_on(date.today())
     ]
 
     payroll_rows = calculate_payroll(year_month, "all")
-    estimated_payroll = sum(
-        (
-            Decimal(str(row.get("net_amount", 0)))
-            for row in payroll_rows
-            if not row.get("blockers")
-        ),
-        Decimal("0"),
-    )
-    payroll_unready_count = sum(
-        1 for row in payroll_rows if row.get("blockers")
-    )
+    ready_rows = [row for row in payroll_rows if is_payroll_ready(row)]
+    estimated_payroll = currency_summary(ready_rows)
+    payroll_unready_count = len(payroll_rows) - len(ready_rows)
     month_employees = [
         employee
-        for employee in Employee.query.all()
+        for employee in employees
         if employee.employed_during(month_start, month_end)
     ]
     summaries = AttendanceMonthlySummary.query.filter_by(
@@ -97,36 +92,13 @@ def dashboard():
         )
         for employee in month_employees
     ]
-    readiness_rows = [row for row in all_readiness_rows if row["has_issue"]]
-    readiness_total_count = len(readiness_rows)
-    employee_data_issue_count = sum(
-        1
-        for row in all_readiness_rows
-        if any(not item["ok"] for item in row["employee_data"])
-    )
-    attendance_issue_count = sum(
-        1 for row in all_readiness_rows if not row["attendance"]["ok"]
-    )
-    payroll_issue_count = sum(
-        1
-        for row in all_readiness_rows
-        if any(not item["ok"] for item in row["payroll"])
-    )
-
     expected = [
         row["employee"]
         for row in all_readiness_rows
         if row["attendance"]["code"] != "not_required"
     ]
-    received_ids = {
-        row.employee_id
-        for row in AttendanceMonthlySummary.query.filter_by(
-            year_month=year_month,
-            status="received",
-        ).all()
-    }
+    received_ids = {row.employee_id for row in summaries if row.status == "received"}
 
-    threshold = date.today() + timedelta(days=60)
     expiry_alerts = credential_alerts()
     today = date.today()
     for alert in expiry_alerts:
@@ -169,18 +141,32 @@ def dashboard():
         )
     confirmation_alerts.sort(key=lambda item: item["date"])
 
+    alerts_by_employee = {}
+    for alert in expiry_alerts:
+        alerts_by_employee.setdefault(alert["employee"].id, []).append(alert)
+    readiness = {row["employee"].id: row for row in all_readiness_rows}
+    staff = sorted({e.id: e for e in active_employees + month_employees}.values(),
+                   key=lambda e: e.employee_no)
+    outlook = leave_outlook(active_employees, today)
+    people = []
+    for employee in staff:
+        absences = outlook["by_employee"].get(employee.id, [])
+        row = readiness.get(employee.id)
+        alerts = alerts_by_employee.get(employee.id, [])
+        people.append(dict(employee=employee, row=row, alerts=alerts, absences=sorted(absences),
+                           final_payment=row is not None and employee.id not in payroll_by_employee,
+                           summary=summaries_by_employee.get(employee.id),
+                           pending=bool(alerts or row and (not row["attendance"]["ok"] or any(not p["ok"] for p in row["payroll"])))))
     return render_template(
         "dashboard.html",
+        people=people, alerts=expiry_alerts, outlook=outlook,
+        ready_count=len(ready_rows), blocked_count=payroll_unready_count,
         year_month=year_month,
-        active_count=len(active_employees),
+        today=today,
         estimated_payroll=estimated_payroll,
         payroll_unready_count=payroll_unready_count,
         attendance_expected=len(expected),
         attendance_received=len(received_ids.intersection({item.id for item in expected})),
-        readiness_total_count=readiness_total_count,
-        employee_data_issue_count=employee_data_issue_count,
-        attendance_issue_count=attendance_issue_count,
-        payroll_issue_count=payroll_issue_count,
         expiry_alerts=expiry_alerts,
         confirmation_alerts=confirmation_alerts,
         open_panel=request.args.get("panel", ""),

@@ -5,7 +5,7 @@ from datetime import date, timedelta
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from test_profile_integrity import ProfileIntegrityTests
-from models import db, EmployeeCertificate, EmployeeAnnualLeaveRecord, EmployeeSalary
+from models import db, EmployeeCertificate, EmployeeAnnualLeaveRecord, EmployeeSalary, EmployeeAssignment
 from tools.hr_core import reference_by_code
 
 
@@ -16,6 +16,9 @@ def main():
         eid = fixture.employee("介面驗證")
         did = fixture.document(eid, "staff_record")
         with fixture.app.app_context():
+            db.session.add(EmployeeAssignment(employee_id=eid, effective_from=date(2026, 1, 1),
+                payroll_group="management", workweek_days=5,
+                region_id=reference_by_code("work_region", "HK").id))
             db.session.add_all([
                 EmployeeSalary(employee_id=eid, effective_from=date(2022, 9, 19),
                     effective_to=date(2025, 12, 31), salary_basis="monthly", currency="HKD",

@@ -345,12 +345,13 @@ def parse_date(value):
 
 def parse_decimal(value, default=None):
     if isinstance(value, Decimal):
-        return value
+        return value if value.is_finite() else default
     text = str(value or "").replace(",", "").strip()
     if not text:
         return default
     try:
-        return Decimal(text)
+        parsed = Decimal(text)
+        return parsed if parsed.is_finite() else default
     except InvalidOperation:
         return default
 
@@ -360,6 +361,11 @@ def money(value):
         Decimal("0.01"),
         rounding=ROUND_HALF_UP,
     )
+
+
+def valid_salary_amount(value):
+    amount = parse_decimal(value)
+    return amount is not None and Decimal("0") <= amount <= Decimal("9999999999.99")
 
 
 def format_money(value):
@@ -880,6 +886,8 @@ def create_salary(
     evidence_document_id=None,
     remarks=None,
 ):
+    if not valid_salary_amount(amount):
+        raise ValueError("Invalid salary amount")
     salary = EmployeeSalary(
         employee=employee,
         effective_from=effective_from,
@@ -948,11 +956,13 @@ def ensure_annual_leave_balance(employee, year):
         if year >= 2024:
             balance.expiry_date = date(year + 1, 3, 31)
         db.session.add(balance)
+        from tools.annual_leave_policy import freeze_balance
+        freeze_balance(employee, balance)
         db.session.flush()
     return balance
 
 
-def annual_leave_allocated_days(balance):
+def annual_leave_allocated_days(balance, records=None):
     allocations = [
         item
         for item in balance.allocations
@@ -962,12 +972,11 @@ def annual_leave_allocated_days(balance):
         (Decimal(str(item.days)) for item in allocations),
         Decimal("0"),
     )
-    legacy_records = EmployeeAnnualLeaveRecord.query.filter_by(
-        employee_id=balance.employee_id,
-        entitlement_year=balance.year,
-        leave_type="annual",
-        status="active",
-    ).all()
+    legacy_records = ([item for item in records if item.entitlement_year == balance.year
+                       and item.leave_type == "annual" and item.status == "active"]
+                      if records is not None else EmployeeAnnualLeaveRecord.query.filter_by(
+                          employee_id=balance.employee_id, entitlement_year=balance.year,
+                          leave_type="annual", status="active").all())
     fallback = sum(
         (
             max(
@@ -1009,7 +1018,7 @@ def annual_leave_taken_days(employee, year):
     )
 
 
-def annual_leave_bucket(employee, balance, as_of=None, prorate_current=False):
+def annual_leave_bucket(employee, balance, as_of=None, prorate_current=False, records=None):
     as_of = as_of or date.today()
     year = balance.year
     period = employee.current_period
@@ -1021,6 +1030,13 @@ def annual_leave_bucket(employee, balance, as_of=None, prorate_current=False):
         else Decimal("0")
     )
     calculated = max(statutory, contract)
+    from tools.annual_leave_policy import active_for, entitlement, annual_rate
+    company_policy = active_for(period, year) and year >= 2026
+    if balance.calculated_entitled_days is not None:
+        calculated = Decimal(str(balance.calculated_entitled_days))
+        company_policy = True
+    elif company_policy:
+        calculated = entitlement(start_date, period.contract_annual_leave_days, year) or Decimal("0")
     override = (
         Decimal(str(balance.entitled_days_override))
         if balance.entitled_days_override is not None
@@ -1034,10 +1050,21 @@ def annual_leave_bucket(employee, balance, as_of=None, prorate_current=False):
         employed_from = max(start_date, year_start)
         employed_days = max(0, (as_of - employed_from).days + 1)
         days_in_year = Decimal("366" if calendar.isleap(year) else "365")
-        entitled = entitled * Decimal(employed_days) / days_in_year
+        if company_policy and override is None:
+            rate = (Decimal(str(balance.calculated_annual_rate))
+                    if balance.calculated_annual_rate is not None
+                    else annual_rate(start_date, period.contract_annual_leave_days, year) or Decimal("0"))
+            earning_start = max(balance.calculation_start_date or start_date, year_start)
+            entitled = rate * Decimal(max(0, (as_of - earning_start).days + 1)) / days_in_year
+        elif company_policy:
+            scheduled_start = max(balance.calculation_start_date or start_date, year_start)
+            scheduled_days = max(1, (date(year, 12, 31) - scheduled_start).days + 1)
+            entitled = entitled * Decimal(max(0, (as_of - scheduled_start).days + 1)) / Decimal(scheduled_days)
+        else:
+            entitled = entitled * Decimal(employed_days) / days_in_year
     carried = Decimal(str(balance.carried_from_previous_days or 0))
     manual = Decimal(str(balance.manual_adjustment_days or 0))
-    used = annual_leave_allocated_days(balance)
+    used = annual_leave_allocated_days(balance, records=records)
     expiry = annual_leave_expiry(balance)
     expired = bool(expiry and expiry < as_of)
     total = entitled + carried + manual
@@ -1048,6 +1075,8 @@ def annual_leave_bucket(employee, balance, as_of=None, prorate_current=False):
         "statutory": statutory,
         "contract": contract,
         "calculated_entitled": calculated,
+        "company_policy": company_policy,
+        "calculation_pending": bool(year >= 2026 and (not period or period.contract_annual_leave_days is None or not active_for(period, year)) and balance.calculated_entitled_days is None),
         "entitled_override": override,
         "entitled": entitled,
         "carried": carried,
@@ -1262,12 +1291,11 @@ def allocate_annual_leave_with_comp(record, as_of=None):
         )
 
 
-def annual_leave_summary(employee, year=None):
+def annual_leave_summary(employee, year=None, preloaded=False):
     year = year or date.today().year
-    balance = EmployeeAnnualLeaveBalance.query.filter_by(
-        employee_id=employee.id,
-        year=year,
-    ).first()
+    records = employee.annual_leave_records if preloaded else None
+    balance = (next((item for item in employee.annual_leave_balances if item.year == year), None)
+               if preloaded else EmployeeAnnualLeaveBalance.query.filter_by(employee_id=employee.id, year=year).first())
     if not balance:
         balance = EmployeeAnnualLeaveBalance(employee_id=employee.id, year=year)
         if year >= 2024:
@@ -1284,17 +1312,19 @@ def annual_leave_summary(employee, year=None):
         balance,
         as_of=as_of,
         prorate_current=bool(termination_date),
+        records=records,
     )
     current["bucket_used"] = current["used"]
-    current["used"] = annual_leave_taken_days(employee, year)
+    current["used"] = (sum((Decimal(str(item.days or 0)) for item in records
+                            if item.entitlement_year == year and item.leave_type == "annual"
+                            and item.status == "active"), Decimal("0"))
+                       if preloaded else annual_leave_taken_days(employee, year))
     current["termination_prorated"] = bool(termination_date)
     current["termination_date"] = termination_date
-    legacy_balance = EmployeeAnnualLeaveBalance.query.filter_by(
-        employee_id=employee.id,
-        year=2023,
-    ).first()
+    legacy_balance = (next((item for item in employee.annual_leave_balances if item.year == 2023), None)
+                      if preloaded else EmployeeAnnualLeaveBalance.query.filter_by(employee_id=employee.id, year=2023).first())
     legacy = (
-        annual_leave_bucket(employee, legacy_balance, as_of=date.today())
+        annual_leave_bucket(employee, legacy_balance, as_of=date.today(), records=records)
         if legacy_balance
         else None
     )

@@ -15,6 +15,7 @@
 <form id="salary-record-editor" method="post" action="{{ url_for('salary_records.save') }}" enctype="multipart/form-data" autocomplete="off">
   <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="editor_token" value="{{ editor_token }}">
   <input type="hidden" name="extra_employee_id" value="{{ request.args.get('employee_id','') }}"><input type="hidden" name="search" value="{{ request.args.get('q','') }}">
+  <button class="secondary-btn" type="button" data-prefill-all>{{ t('salary_record.prefill_all') }}</button><p class="form-note">{{ t('salary_record.prefill_all_hint') }}</p>
   <div class="section-head"><p id="salary-record-message" role="status" aria-live="polite"></p><button class="primary-btn" type="submit">{{ t('salary_record.save') }}</button></div>
   <div class="table-wrap"><table class="dense-table salary-record-table"><thead><tr><th>{{ t('salary_record.employee') }}</th><th>{{ t('salary_record.currency') }}</th>{% for field in money_fields %}<th>{{ t('salary_record.'~field) }}</th>{% endfor %}<th>{{ t('salary_record.details') }}</th></tr></thead><tbody>
   {% for row in rows %}{% set eid=row.employee.id %}{% set record=row.record %}
@@ -40,6 +41,6 @@
 {% for label, values in [(t('salary_record.before'),audit.before_json),(t('salary_record.after'),audit.after_json)] %}<p><strong>{{ label }}</strong> {% if values %}{{ values.currency }} · {% for field in money_fields %}{{ t('salary_record.'~field) }} {{ fmt_money(values[field]) }}{% if not loop.last %} / {% endif %}{% endfor %}<br>{{ values.remarks or '' }}{% if values.evidence_document_id %} · <a target="_blank" href="{{ url_for('documents.open_document', document_id=values.evidence_document_id) }}">{{ t('salary_record.evidence') }}</a>{% endif %}{% else %}—{% endif %}</p>{% endfor %}{{ audit.detail or '' }}</details></td><td>{{ audit.user.username if audit.user else '—' }}</td></tr>{% else %}<tr><td colspan="4">{{ t('salary_record.no_history') }}</td></tr>{% endfor %}
 </tbody></table></div></section>
 {% endif %}
-<script id="salary-record-labels" type="application/json">{{ {'invalid_currency':t('salary_record.invalid_currency'),'difference':t('salary_record.difference'),'negative':t('salary_record.negative'),'prefill_confirm':t('salary_record.prefill_confirm'),'withdraw_reason':t('salary_record.reason_required'),'failed':t('salary_record.failed'),'unsaved':t('salary_record.unsaved'),'discard':t('salary_record.discard')}|tojson }}</script>
+<script id="salary-record-labels" type="application/json">{{ {'invalid_currency':t('salary_record.invalid_currency'),'difference':t('salary_record.difference'),'negative':t('salary_record.negative'),'prefill_confirm':t('salary_record.prefill_confirm'),'withdraw_reason':t('salary_record.reason_required'),'batch_prefilled':t('salary_record.batch_prefilled'),'failed':t('salary_record.failed'),'unsaved':t('salary_record.unsaved'),'discard':t('salary_record.discard')}|tojson }}</script>
 <script src="{{ url_for('static',filename='js/salary_records.js',v=current_version~'-money-1') }}" defer></script>
 {% endblock %}

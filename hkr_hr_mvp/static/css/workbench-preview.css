@@ -1,0 +1,450 @@
+* {
+    box-sizing:border-box;
+}
+
+body {
+    margin:0;
+    background:#f4f6f2;
+    color:#182f26;
+    font:15px/1.55 "Segoe UI","Microsoft JhengHei",sans-serif;
+}
+
+a {
+    color:inherit;
+    text-decoration:none;
+}
+
+a:hover {
+    text-decoration:underline;
+    text-underline-offset:3px;
+}
+
+button,input {
+    font:inherit;
+    color:inherit;
+}
+
+a:focus-visible,input:focus-visible,button:focus-visible {
+    outline:3px solid #078565;
+    outline-offset:3px;
+}
+
+.wrap {
+    max-width:1512px;
+    margin:auto;
+    padding:0 clamp(18px,3.5vw,62px);
+}
+
+header {
+    background:#fff;
+    border-bottom:1px solid #dce3da;
+}
+
+.bar,.intro,.title,.actions,.table-head,.tools,.metrics,.line,.period {
+    display:flex;
+    align-items:center;
+}
+
+.bar {
+    min-height:64px;
+    gap:38px;
+}
+
+.brand {
+    display:flex;
+    align-items:center;
+    gap:5px;
+    font-size:21px;
+    font-weight:750;
+    white-space:nowrap;
+}
+
+.brand b {
+    font-weight:450;
+    color:#66786b;
+}
+
+.brand i {
+    background:#1a503c;
+    color:white;
+    font:italic 750 22px/31px Georgia;
+    text-align:center;
+    display:inline-block;
+    width:31px;
+    border-radius:7px;
+    margin-right:5px;
+}
+
+nav {
+    display:flex;
+    align-self:stretch;
+    gap:26px;
+    overflow:auto;
+}
+
+nav a,.settings {
+    white-space:nowrap;
+    font-weight:550;
+    font-size:14px;
+}
+
+nav a {
+    align-content:center;
+    border-bottom:3px solid transparent;
+    padding:2px 1px 0;
+}
+
+nav [aria-current] {
+    border-color:#276448;
+    color:#276448;
+}
+
+.settings {
+    margin-left:auto;
+}
+
+.intro {
+    justify-content:space-between;
+    gap:12px;
+    margin:31px 0 23px;
+}
+
+.date,.tile small,.muted,.employee small {
+    color:#677669;
+}
+
+.date {
+    margin:0 0 2px;
+    font:600 12px/1.5 "Segoe UI",sans-serif;
+    letter-spacing:.12em;
+}
+
+h1 {
+    font-size:clamp(30px,3vw,43px);
+    line-height:1.2;
+    margin:0;
+    letter-spacing:-.05em;
+}
+
+h2 {
+    font-size:19px;
+    margin:0;
+    line-height:1.4;
+}
+
+.period,.tools {
+    gap:10px;
+}
+
+.period label,.tools label {
+    font-size:13px;
+    white-space:nowrap;
+}
+
+.period input,button,.tools input[type=search] {
+    border:1px solid #c6d1c7;
+    border-radius:6px;
+    background:white;
+    padding:7px 10px;
+}
+
+button {
+    cursor:pointer;
+}
+
+.overview {
+    display:grid;
+    grid-template-columns:1fr 1fr 1.15fr;
+    gap:14px;
+}
+
+.tile,.directory {
+    border:1px solid #d9e1d8;
+    border-radius:11px;
+    background:#fff;
+}
+
+.tile {
+    padding:19px 21px;
+    min-width:0;
+}
+
+.title,.table-head,.actions {
+    justify-content:space-between;
+    gap:10px;
+}
+
+.title a,.actions a {
+    font-size:13px;
+    font-weight:600;
+}
+
+.title {
+    margin-bottom:11px;
+}
+
+.big {
+    font-size:32px;
+    font-weight:650;
+    line-height:1.1;
+}
+
+.big small {
+    font-size:13px;
+}
+
+.line {
+    gap:7px;
+    justify-content:space-between;
+    padding:6px 0;
+    border-bottom:1px solid #edf0eb;
+    font-size:13px;
+}
+
+.line:last-child {
+    border-bottom:0;
+}
+
+.line em {
+    font-size:12px;
+    font-style:normal;
+    white-space:nowrap;
+}
+
+.amber,.highlight {
+    color:#7c530b;
+}
+
+.red {
+    color:#9c3838;
+}
+
+.leave-names {
+    margin-left:auto;
+    color:#4d6755;
+}
+
+.accent {
+    background:#174935;
+    color:white;
+    border-color:#174935;
+}
+
+.accent small {
+    color:#d1e4d4;
+}
+
+.metrics {
+    gap:10px;
+    justify-content:space-between;
+}
+
+.metrics a {
+    display:grid;
+    font-size:12px;
+    color:#d9e7d9;
+}
+
+.metrics strong {
+    font-size:31px;
+    color:#fff;
+    line-height:1.25;
+}
+
+.metrics strong small {
+    font-size:16px;
+}
+
+.actions {
+    border-top:1px solid #436951;
+    padding-top:13px;
+    margin-top:13px;
+    flex-wrap:wrap;
+}
+
+.upload {
+    background:#e3efc2;
+    color:#173b25;
+    padding:6px 10px;
+    border-radius:5px;
+}
+
+.directory {
+    margin:22px 0 50px;
+    overflow:hidden;
+}
+
+.table-head {
+    padding:16px 21px;
+}
+
+.table-head h2 small {
+    font-size:14px;
+    color:#66796c;
+    margin-left:5px;
+}
+
+.tools input[type=checkbox] {
+    accent-color:#24593e;
+    vertical-align:middle;
+}
+
+.scroll {
+    overflow:auto;
+}
+
+table {
+    width:100%;
+    border-collapse:collapse;
+    text-align:left;
+    white-space:nowrap;
+}
+
+th {
+    font-size:12px;
+    letter-spacing:.025em;
+    color:#526559;
+    background:#f2f5ee;
+}
+
+td,th {
+    padding:10px 16px;
+    border-top:1px solid #e4e9e2;
+}
+
+th:first-child,td:first-child {
+    padding-left:21px;
+}
+
+tbody tr:hover {
+    background:#fafcf8;
+}
+
+.employee strong,.employee small {
+    display:block;
+}
+
+.employee small {
+    font-size:11px;
+    letter-spacing:.025em;
+}
+
+.status {
+    display:inline-block;
+    padding:2px 8px;
+    border-radius:4px;
+    font-size:12px;
+}
+
+.ok {
+    background:#e9f2e8;
+    color:#286140;
+}
+
+.warn {
+    background:#fff0d7;
+    color:#79530d;
+}
+
+.neutral {
+    color:#58655d;
+    background:#f1f3ef;
+}
+
+.absence {
+    display:block;
+}
+
+.muted,#empty {
+    font-size:13px;
+}
+
+#empty {
+    margin:20px;
+}
+
+.period input {
+    margin-left:5px;
+}
+
+td {
+    font-size:14px;
+}
+
+@media(max-width:950px) {
+    .overview {
+        grid-template-columns:1fr 1fr;
+    }
+
+    .accent {
+        grid-column:1/-1;
+    }
+
+    .metrics {
+        justify-content:flex-start;
+        gap:35px;
+    }
+
+    .bar {
+        gap:20px;
+    }
+
+    nav {
+        gap:15px;
+    }
+
+}
+
+@media(max-width:640px) {
+    .bar {
+        flex-wrap:wrap;
+        gap:0;
+        padding-top:8px;
+    }
+
+    .bar nav {
+        order:3;
+        width:100%;
+        height:42px;
+        gap:18px;
+    }
+
+    .intro,.table-head {
+        align-items:flex-start;
+        flex-direction:column;
+    }
+
+    .overview {
+        grid-template-columns:1fr;
+    }
+
+    .accent {
+        grid-column:auto;
+    }
+
+    .intro {
+        margin:22px 0 15px;
+    }
+
+    .tools {
+        flex-wrap:wrap;
+    }
+
+    .tile {
+        padding:15px 17px;
+    }
+
+    .table-head {
+        gap:12px;
+    }
+
+    .period label {
+        font-size:12px;
+    }
+
+    .directory {
+        margin-top:14px;
+    }
+
+}
+

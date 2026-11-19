@@ -1,0 +1,98 @@
+/* Shared task navigation and the three desks used during a payroll month. */
+.workbench-alert-lists, .hr-outlook, .intake-desk {
+  display: grid;
+  gap: 14px;
+  margin: 18px 0;
+}
+.workbench-alert-lists, .intake-desk { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.workbench-alert-lists { align-items: start; }
+.workbench-alert-lists details:only-child { grid-column: 1 / -1; }
+.workbench-alert-lists details[open] { grid-column: 1 / -1; }
+.workbench-net, .hr-outlook article > div, .hr-inline-form, .payroll-desk {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.workbench-net { padding: 12px 0 0; }
+.workbench-net a { margin-left: auto; }
+.hr-outlook { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.hr-outlook article, .intake-resume, .intake-desk .attendance-upload-panel {
+  padding: 20px;
+  border: 1px solid #d3ded5;
+  border-radius: 10px;
+  background: white;
+}
+.hr-outlook h2, .intake-resume h2 { margin: 0; font-size: 17px; }
+.hr-outlook article > div { justify-content: space-between; border-bottom: 1px solid #e1e8e1; padding-bottom: 8px; margin-bottom: 8px; }
+.hr-outlook article strong { font-size: 24px; color: #245940; }
+.hr-outlook article a { display: inline-block; margin: 0 10px 3px 0; }
+.intake-desk { align-items: stretch; }
+.intake-desk .attendance-upload-panel { margin: 0; }
+.intake-resume { background: #edf5eb; }
+.intake-resume > strong { font-size: 20px; }
+.intake-missing { display: block; margin-top: 18px; }
+.payroll-desk { align-items: end; justify-content: space-between; padding: 16px 20px; margin-bottom: 12px; }
+.payroll-desk .hr-inline-form { flex: 1 1 500px; align-items: start; }
+.hr-inline-form label { display: grid; gap: 5px; flex: 1 1 145px; min-width: 120px; }
+.hr-inline-form select, .hr-inline-form input { width: 100%; min-height: 36px; }
+.payroll-desk p { margin: 0; }
+.payroll-desk > p { width: 100%; }
+.credential-current-grid .current-state-card { box-shadow: none; background: #fff; border: 1px solid #d5e0d5; }
+.credential-current-grid .credential-record { background: transparent; border: 0; border-top: 1px solid #e0e7e0; border-radius: 0; box-shadow: none; padding: 12px 0; }
+.credential-record-main strong { color: #204c39; }
+.profile-credential-history { margin: 18px 0; border-top: 1px solid #d5e0d5; padding: 12px 0; }
+.profile-credential-history summary { cursor: pointer; font-weight: 600; }
+.hr-back { display: inline-block; margin: 8px 0; }
+.staff-workbench tr:target { background: #e5f1dc; }
+@media(max-width:760px) {
+  .workbench-alert-lists, .hr-outlook, .intake-desk { grid-template-columns: 1fr; }
+  .payroll-desk, .hr-inline-form { align-items: stretch; }
+}
+
+.hr-advanced { border-top: 1px solid #dde6dd; padding-top: 8px; }
+.hr-advanced > summary { color: #345a49; cursor: pointer; }
+.hr-advanced[open] > label { display: grid; margin: 9px 0; }
+.staff-workbench .tools label, .staff-workbench .period label { display: inline-flex; align-items: center; gap: 6px; }
+.staff-workbench .tools input[type=checkbox] { width: 16px; height: 16px; min-height: 0; margin: 0; }
+.system-tabs .system-tab.active { color: #1d5641; background: #ebf3ec; box-shadow: inset 0 -3px #377756; }
+
+/* Employee directory */
+.directory-filters { display:flex; flex-wrap:wrap; align-items:end; gap:12px; padding:16px 0; border-block:1px solid #d9e3dd; }
+.directory-filters label { display:grid; gap:4px; font-size:.84rem; }
+.directory-filters label:has(input[type=search]) { flex:1 1 220px; }
+.directory-filters :is(input,select) { min-height:36px; }
+.directory-filters details[open] { flex-basis:100%; }
+.directory-filters details[open] label { display:inline-grid; margin:8px 12px 0 0; }
+.directory-group { margin:24px 0; }
+.directory-group h2 { display:flex; gap:9px; align-items:baseline; margin:0 0 10px; font-size:1.05rem; color:#174b40; }
+.directory-group h2 small { color:#5d726b; font-weight:400; }
+.directory-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,210px),1fr)); gap:8px; }
+.directory-person { min-width:0; background:white; border:1px solid #cfdfd6; border-radius:7px; }
+.directory-person:focus-within,.directory-person:hover { border-color:#4c8572; background:#f4faf6; }
+.directory-person-link { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:2px 8px; padding:11px 13px; color:#173e36; text-decoration:none; }
+.directory-person-link strong { overflow-wrap:anywhere; }
+.directory-person-link small { grid-column:1/-1; color:#54685e; }
+.directory-number { color:#486657; font-size:.8rem; letter-spacing:.03em; align-self:center; }
+.directory-missing { padding:0 12px 8px; display:flex; flex-wrap:wrap; gap:5px; font-size:.8rem; }
+.pay-review { min-width:180px; }
+.review-task,.pay-review small { display:block; margin:4px 0; }
+.review-task,.pay-breakdown summary { font-weight:650; color:#155b48; }
+.review-notes { font-size:.8rem; margin-top:6px; }
+.review-notes summary,.pay-breakdown summary { cursor:pointer; }
+.pay-breakdown dl { margin:8px 0; }
+.pay-breakdown dl div { display:flex; justify-content:space-between; gap:12px; padding:4px 0; }
+.pay-breakdown dd { margin:0; font-variant-numeric:tabular-nums; }
+.pay-net-total { border-top:1px solid #bacfc1; font-weight:700; }
+.profile-subsection { display:grid; gap:12px; }
+.profile-subsection,[id^=missing-],[id^=adjustment-],#pay-mpf,#pay-allowances,#pay-attendance-policy { scroll-margin-top:100px; }
+.attendance-status-row:target { outline:2px solid #277555; background:#eaf5eb; }
+
+.directory-file-detail { margin:0 12px 7px; font-size:.76rem; color:#526b60; }
+.directory-file-detail summary { cursor:pointer; }
+.directory-file-detail .directory-missing { padding:4px 0; }
+.directory-file-detail[open] small { display:block; margin:5px 0; }
+
+.page-head.directory-title { display:flex; flex-direction:row; justify-content:space-between; align-items:center; }
+.directory-filters label:has(input[type=search]) { max-width:28rem; }
+.directory-person-link strong { font-size:1rem; }

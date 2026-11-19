@@ -324,7 +324,11 @@ ZH_HANT = {
     "dashboard.title": "Dashboard",
     "dashboard.subtitle": "員工檔案、考勤、出糧與到期提醒的工作入口。",
     "dashboard.active_count": "在職人數",
-    "dashboard.estimated_payroll": "本月預計出糧",
+    "payroll.download_saved": "下載原表",
+    "payroll.saved_time": "保存時間",
+    "payroll.saved_tables": "當月已保存工資表（全部發薪單位）",
+    "attendance.injury_exempt": "整月工傷免交",
+    "dashboard.estimated_payroll": "可出糧員工實發合計",
     "dashboard.attendance_received": "考勤已收 / 應收",
     "dashboard.expiry": "60 日內到期",
     "dashboard.tasks": "待辦事項",
@@ -745,7 +749,11 @@ ZH_HANS = {
     "common.row": "行",
     "dashboard.subtitle": "员工档案、考勤、出粮与到期提醒的工作入口。",
     "dashboard.active_count": "在职人数",
-    "dashboard.estimated_payroll": "本月预计出粮",
+    "payroll.download_saved": "下载原表",
+    "payroll.saved_time": "保存时间",
+    "payroll.saved_tables": "当月已保存工资表（全部发薪单位）",
+    "attendance.injury_exempt": "整月工伤免交",
+    "dashboard.estimated_payroll": "可出粮员工实发合计",
     "dashboard.attendance_received": "考勤已收 / 应收",
     "dashboard.expiry": "60 日内到期",
     "dashboard.tasks": "待办事项",
@@ -1160,7 +1168,11 @@ EN.update(
         "dashboard.title": "Dashboard",
         "dashboard.subtitle": "Daily access to employee files, attendance, payroll and expiry alerts.",
         "dashboard.active_count": "Active employees",
-        "dashboard.estimated_payroll": "Estimated payroll",
+    "payroll.download_saved": "Download saved workbook",
+    "payroll.saved_time": "Saved at",
+    "payroll.saved_tables": "Saved payroll for this month (all entities)",
+    "attendance.injury_exempt": "Full month of work injury",
+        "dashboard.estimated_payroll": "Net pay for ready employees",
         "dashboard.attendance_received": "Attendance received / expected",
         "dashboard.expiry": "Due within 60 days",
         "dashboard.tasks": "Tasks",
@@ -4966,3 +4978,300 @@ def translate_system_message(value, translate):
     if text.startswith("附件："):
         return translate("system.attachment_event", name=text[3:])
     return text
+
+
+# Review hardening messages share the existing UI translation system.
+for _language, _messages in {
+    "zh-Hant": {
+        "review.profile_conflict": "此表單資料已被更新，或頁面版本已過期。請保留正在輸入的內容，重新開啟員工檔案核對後再保存。",
+        "review.net_formula": "實發 = 應發 − 員工 MPF + 工傷醫療報銷。醫療報銷合計：",
+        "security.invalid_period": "請輸入有效的月份（YYYY-MM）或年份；支援年份 0002 至 9998。",
+    },
+    "zh-Hans": {
+        "review.profile_conflict": "此表单资料已被更新，或页面版本已过期。请保留正在输入的内容，重新打开员工档案核对后再保存。",
+        "review.net_formula": "实发 = 应发 − 员工 MPF + 工伤医疗报销。医疗报销合计：",
+        "security.invalid_period": "请输入有效的月份（YYYY-MM）或年份；支持年份 0002 至 9998。",
+    },
+    "en": {
+        "review.profile_conflict": "This form has changed or expired. Keep your draft, reopen the employee profile and review the latest values before saving.",
+        "review.net_formula": "Net = gross - employee MPF + work injury medical reimbursement. Medical reimbursement totals:",
+        "security.invalid_period": "Enter a valid month (YYYY-MM) or year between 0002 and 9998.",
+    },
+}.items():
+    TRANSLATIONS[_language].update(_messages)
+
+TRANSLATIONS["zh-Hant"]["review.file_unavailable"] = "檔案不存在或無法讀取；請核對原件。"
+TRANSLATIONS["zh-Hans"]["review.file_unavailable"] = "文件不存在或无法读取；请核对原件。"
+TRANSLATIONS["en"]["review.file_unavailable"] = "File missing or inaccessible; check the original."
+
+for _language, _values in {
+    "zh-Hant": ("可計算，待覆核", "實發為負數：請核對補差或扣回依據。", "可計算", "可計算人數", "可計算或可匯出不代表已批准付款；請先覆核警告及原始憑證。"),
+    "zh-Hans": ("可计算，待复核", "实发为负数：请核对补差或扣回依据。", "可计算", "可计算人数", "可计算或可导出不代表已批准付款；请先复核警告及原始凭证。"),
+    "en": ("Calculable; review required", "Negative net: verify the adjustment or recovery basis.", "Calculable", "Calculable employees", "Calculation and export do not approve payment. Review warnings and source evidence first."),
+}.items():
+    TRANSLATIONS[_language].update(dict(zip(("review.payroll_check", "review.negative_net", "review.calculable", "review.calculable_count", "review.export_not_approval"), _values)))
+
+for _language, _values in {
+    "zh-Hant": ("部分驗證，需完整還原演練", "無法讀取驗證記錄", "已有記錄僅涵蓋 dump／模板檢查或資料庫還原，未證明附件完整恢復。"),
+    "zh-Hans": ("部分验证，需完整还原演练", "无法读取验证记录", "已有记录仅涵盖 dump／模板检查或数据库还原，未证明附件完整恢复。"),
+    "en": ("Partial verification; full recovery drill needed", "Verification log unreadable", "Existing logs cover dump/template checks or database restoration, not complete attachment recovery."),
+}.items():
+    TRANSLATIONS[_language].update(dict(zip(("review.restore_partial", "review.log_unreadable", "review.restore_scope"), _values)))
+
+for _language, _values in {
+    "zh-Hant": ("禁止匯出：", "HR 匯率", "填寫 1 單位外幣等於多少 HKD。用於摘要總額；留空表示未設定。", "未填匯率，不能顯示 HKD 總額：", "折合 HKD", "禁止匯出，待覆核"),
+    "zh-Hans": ("禁止导出：", "HR 汇率", "填写 1 单位外币等于多少 HKD。用于摘要总额；留空表示未设置。", "未填汇率，不能显示 HKD 总额：", "折合 HKD", "禁止导出，待复核"),
+    "en": ("Export blocked:", "HR exchange rates", "Enter HKD per unit of foreign currency for summary totals. Leave blank if unset.", "HKD total unavailable; missing rates:", "HKD equivalent", "Export blocked; review required"),
+}.items():
+    TRANSLATIONS[_language].update(dict(zip(("review.export_blocked", "review.fx_title", "review.fx_hint", "review.fx_missing", "review.fx_total", "review.payroll_check"), _values)))
+
+for _language, _values in {
+    "zh-Hant": ("{currency} 匯率必須是大於 0、最多 1,000,000 的有效數字。", "匯率已保存。"),
+    "zh-Hans": ("{currency} 汇率必须是大于 0、最多 1,000,000 的有效数字。", "汇率已保存。"),
+    "en": ("{currency} rate must be a valid number greater than zero and at most 1,000,000.", "Exchange rates saved."),
+}.items():
+    TRANSLATIONS[_language].update(dict(zip(("review.fx_invalid", "review.fx_saved"), _values)))
+
+# Calendar-year advance annual leave.
+TRANSLATIONS['zh-Hant'].update({'leave.setup_title': '設定年假計算', 'leave.initial_days': '合約初始年假（天／年）', 'leave.initial_hint': '預填 7 天，請按合約核對。修改後只重算本年度，過往帳戶保留。', 'leave.setup_pending': '計算依據待 HR 確認；請設定入職日期及初始年假。', 'leave.setup_invalid': '請填寫有效入職日期及 7 至 14 天初始年假（半天單位）。', 'leave.setup_stale': '資料已更新，請重新開啟表單核對後保存。', 'leave.setup_overlap': '入職日期與另一任職期間重疊，請先核對任職記錄。', 'leave.setup_saved': '本年度年假計算設定及額度已保存。若影響已存 Payroll／離職結算，請核對後重新匯出。', 'leave.setup_override': '已有本年度人工額度', 'leave.setup_keep': '保留人工額度', 'leave.setup_replace': '採用系統計算', 'leave.setup_preview': '{year} 年：原額度 {old} → 計算額度 {new}；已扣 {used}，保存後剩餘 {remaining}。', 'leave.setup_scope': '只保存本年度；往後年度按此設定自動計算。人工額度只影響指定年度。舊年假仍在原卡片補齊。', 'leave.setup_list': '本年度年假核對及修正清單', 'leave.setup_list_hint': '點員工補齊依據並預覽保存；不會批量覆寫。已有人工額度預設保留。修正記錄列出原額度及保存後額度。', 'leave.setup_old': '目前應享', 'leave.setup_new': '計算應享', 'leave.setup_used': '本帳戶已扣', 'leave.setup_remaining': '保存後剩餘', 'leave.setup_status': '計算狀態', 'leave.setup_history': '最近修正：前 → 後', 'leave.setup_ready': '已設定', 'leave.departure_preview': '離職年假：應享 {entitled} 日，本年帳戶已扣 {used} 日，其他有效年假抵扣 {offset} 日，仍超用 {overused} 日；預計追扣 {amount}。', 'leave.departure_missing': '日薪基準待補，請到離職結算核實；不可當作零扣款。'})
+TRANSLATIONS['zh-Hans'].update({'leave.setup_title': '设置年假计算', 'leave.initial_days': '合同初始年假（天／年）', 'leave.initial_hint': '预填 7 天，请按合同核对。修改后只重算本年度，过往账户保留。', 'leave.setup_pending': '计算依据待 HR 确认；请设置入职日期及初始年假。', 'leave.setup_invalid': '请填写有效入职日期及 7 至 14 天初始年假（半天单位）。', 'leave.setup_stale': '资料已更新，请重新打开表单核对后保存。', 'leave.setup_overlap': '入职日期与另一任职期间重叠，请先核对任职记录。', 'leave.setup_saved': '本年度年假计算设置及额度已保存。如影响已存 Payroll／离职结算，请核对后重新导出。', 'leave.setup_override': '已有本年度人工额度', 'leave.setup_keep': '保留人工额度', 'leave.setup_replace': '采用系统计算', 'leave.setup_preview': '{year} 年：原额度 {old} → 计算额度 {new}；已扣 {used}，保存后剩余 {remaining}。', 'leave.setup_scope': '只保存本年度；往后年度按此设置自动计算。人工额度只影响指定年度。旧年假仍在原卡片补齐。', 'leave.setup_list': '本年度年假核对及修正清单', 'leave.setup_list_hint': '点击员工补齐依据并预览保存；不会批量覆盖。已有人工额度默认保留。修正记录列出原额度及保存后额度。', 'leave.setup_old': '目前应享', 'leave.setup_new': '计算应享', 'leave.setup_used': '本账户已扣', 'leave.setup_remaining': '保存后剩余', 'leave.setup_status': '计算状态', 'leave.setup_history': '最近修正：前 → 后', 'leave.setup_ready': '已设置', 'leave.departure_preview': '离职年假：应享 {entitled} 日，本年账户已扣 {used} 日，其他有效年假抵扣 {offset} 日，仍超用 {overused} 日；预计追扣 {amount}。', 'leave.departure_missing': '日薪基准待补，请到离职结算核实；不可当作零扣款。'})
+TRANSLATIONS['en'].update({'leave.setup_title': 'Set annual leave calculation', 'leave.initial_days': 'Initial contract leave (days/year)', 'leave.initial_hint': 'Defaults to 7; check the contract. Recalculate this year only; retain earlier accounts.', 'leave.setup_pending': 'HR confirmation needed: set start date and initial leave.', 'leave.setup_invalid': 'Enter a valid start date and initial leave from 7 to 14 in half-day units.', 'leave.setup_stale': 'Data changed; reopen and review before saving.', 'leave.setup_overlap': 'Start date overlaps another employment period; review employment records.', 'leave.setup_saved': 'Current-year setup and entitlement saved. Review and re-export any affected Payroll or settlement.', 'leave.setup_override': 'Existing current-year override', 'leave.setup_keep': 'Keep manual entitlement', 'leave.setup_replace': 'Use calculated entitlement', 'leave.setup_preview': '{year}: old {old} → calculated {new}; used {used}, remaining after save {remaining}.', 'leave.setup_scope': 'Save this year only; later years calculate automatically. Manual overrides affect one year. Maintain legacy leave on its existing card.', 'leave.setup_list': 'Current-year entitlement review and changes', 'leave.setup_list_hint': 'Select an employee to review and save. No bulk overwrite. Preserve manual overrides by default; show saved before/after values.', 'leave.setup_old': 'Current entitlement', 'leave.setup_new': 'Calculated entitlement', 'leave.setup_used': 'Used from this account', 'leave.setup_remaining': 'Remaining after save', 'leave.setup_status': 'Calculation status', 'leave.setup_history': 'Latest saved change: before → after', 'leave.setup_ready': 'Configured', 'leave.departure_preview': 'Departure leave: earned {entitled}, used {used}, other valid leave offset {offset}, excess {overused}; estimated deduction {amount}.', 'leave.departure_missing': 'Daily rate required in settlement; do not treat missing data as zero deduction.'})
+
+TRANSLATIONS['zh-Hant']['leave.contract_check'] = '系統初始年假如下；請與合約核對。若不同，修改下方天數並明確勾選套用合約條款，更新本年度計算；已有人工額度保留。'
+TRANSLATIONS['zh-Hans']['leave.contract_check'] = '系统初始年假如下；请与合同核对。如不同，修改下方天数并明确勾选应用合同条款，更新本年度计算；已有人工额度保留。'
+TRANSLATIONS['en']['leave.contract_check'] = 'Compare the existing initial entitlement below with the contract. To correct it, enter the days and explicitly apply contract terms. Recalculate this year; preserve manual overrides.'
+TRANSLATIONS['zh-Hant'].update({'leave.contract_pending': '初始年假：待合約核實', 'leave.contract_verified': '初始年假：已核實簽署合約'})
+TRANSLATIONS['zh-Hans'].update({'leave.contract_pending': '初始年假：待合同核实', 'leave.contract_verified': '初始年假：已核实签署合同'})
+TRANSLATIONS['en'].update({'leave.contract_pending': 'Initial leave: contract verification pending', 'leave.contract_verified': 'Initial leave: signed contract verified'})
+
+for _lang, _values in {
+    'zh-Hant': ['入職日期已更改', '{year} 年目前額度 {old} 天；按新日期重算為 {new} 天。保留只適用於本年度，往後年度按新日期計算。', '按新日期重算並保存', '保留目前額度並保存', '入職日期已更改，請選擇重新計算或保留本年度額度。'],
+    'zh-Hans': ['入职日期已更改', '{year} 年目前额度 {old} 天；按新日期重算为 {new} 天。保留只适用于本年度，往后年度按新日期计算。', '按新日期重算并保存', '保留目前额度并保存', '入职日期已更改，请选择重新计算或保留本年度额度。'],
+    'en': ['Start date changed', '{year} current entitlement: {old} days; recalculated: {new} days. Keeping applies only to this year. Future years use the corrected start date.', 'Recalculate and save', 'Keep current entitlement and save', 'Start date changed. Choose whether to recalculate or keep this year’s entitlement.'],
+}.items():
+    TRANSLATIONS[_lang].update(dict(zip(['leave.date_choice_title', 'leave.date_choice_preview', 'leave.date_recalculate', 'leave.date_keep', 'leave.date_choice_required'], _values)))
+TRANSLATIONS['zh-Hant']['leave.setup_stale'] = '年假資料已變更，請刷新頁面，核對最新資料後再保存。'
+TRANSLATIONS['zh-Hans']['leave.setup_stale'] = '年假资料已变更，请刷新页面，核对最新资料后再保存。'
+TRANSLATIONS['en']['leave.setup_stale'] = 'Leave data changed. Refresh the page, review the latest values and save again.'
+
+# V0.6 workflow simplification
+TRANSLATIONS["zh-Hant"].update({"readiness.not_calculated":"尚未計算","attendance.rate_split":"此期間跨調薪日期：按下列日期填寫，合計自動更新","contract.effective_facts":"合約生效日適用資料","contract.draft_boundary":"生成草稿不會更改正式任職條款。簽署後在員工檔案更新正式資料。","workflow.adjustments":"補發／追扣","final_payment.view_sources":"查看該月考勤","workflow.month_workbench":"月份工作台","workflow.initial_setup":"一次補齊入職資料","workflow.initial_setup_hint":"共用一個生效日期，一次保存缺少的任職、薪酬、銀行及 MPF 資料。已有記錄請用原有更正入口。","workflow.full_month":"整月計薪","workflow.attendance_days":"按實際出勤日數","workflow.mpf_account":"MPF 成員帳戶","workflow.save_setup":"一次保存入職資料","workflow.accepted_files":"可選格式：","workflow.file_size":"每次請求上限 32 MB","workflow.batch_month":"這批考勤的預設月份","workflow.pending_files":"待處理 {count} 份","workflow.upload_pending":"等候上傳","workflow.upload_done":"已上傳","workflow.upload_failed":"上傳失敗，請重試此文件","workflow.retry_failed":"重試未成功文件","workflow.add_work_date":"新增工作日期","workflow.file_details":"附件與檔案明細","workflow.new_injury":"新增工傷：選擇其他員工","workflow.as_of":"查看日期","workflow.leave_available":"可安排年假（含補休）","workflow.leave_available_hint":"已扣除所有已登記請假；不包含已到期或未到年度的額度。","workflow.next_expiry":"最先到期的剩餘年假","workflow.leave_projection":"現可安排 {available} 日；新增這次後預計 {remaining} 日。扣除來源","workflow.known_sources":"1 · 已帶入的資料與來源","workflow.final_sources":"任職、薪酬、已登記假期、固定補貼及本月調整已帶入。下方只需核對實際出勤與尚未有依據的結算項目。","workflow.injury_sources":"工傷與醫療實銷","workflow.offline_calendar":"離線工作日曆","workflow.offline_calendar_hint":"CSV 欄位：date、name、scope、region_code。scope 使用 statutory、public 或 both；只補日期及適用範圍，保留已有名稱和封存狀態。","workflow.calendar_template":"下載現有日曆／CSV 格式","workflow.import_csv":"匯入 CSV","salary_record.prefill_all":"預填本頁空白員工","salary_record.prefill_all_hint":"從該月份、發薪單位的最新已存 Payroll 帶入；已有金額不覆蓋。核對後按保存才記入實發記錄。","salary_record.batch_prefilled":"已預填 {filled} 人，略過 {skipped} 人（已有金額或無快照）；尚未保存。"})
+TRANSLATIONS["zh-Hans"].update({"readiness.not_calculated":"尚未计算","attendance.rate_split":"此期间跨调薪日期：按下列日期填写，合计自动更新","contract.effective_facts":"合同生效日适用资料","contract.draft_boundary":"生成草稿不会更改正式任职条款。签署后在员工档案更新正式资料。","workflow.adjustments":"补发／追扣","final_payment.view_sources":"查看该月考勤","workflow.month_workbench":"月份工作台","workflow.initial_setup":"一次补齐入职资料","workflow.initial_setup_hint":"共用一个生效日期，一次保存缺少的任职、薪酬、银行及 MPF 资料。已有记录请用原有更正入口。","workflow.full_month":"整月计薪","workflow.attendance_days":"按实际出勤日数","workflow.mpf_account":"MPF 成员账户","workflow.save_setup":"一次保存入职资料","workflow.accepted_files":"可选格式：","workflow.file_size":"每次请求上限 32 MB","workflow.batch_month":"这批考勤的默认月份","workflow.pending_files":"待处理 {count} 份","workflow.upload_pending":"等待上传","workflow.upload_done":"已上传","workflow.upload_failed":"上传失败，请重试此文件","workflow.retry_failed":"重试未成功文件","workflow.add_work_date":"新增工作日期","workflow.file_details":"附件与档案明细","workflow.new_injury":"新增工伤：选择其他员工","workflow.as_of":"查看日期","workflow.leave_available":"可安排年假（含补休）","workflow.leave_available_hint":"已扣除所有已登记请假；不包含已到期或未到年度的额度。","workflow.next_expiry":"最先到期的剩余年假","workflow.leave_projection":"现可安排 {available} 日；新增这次后预计 {remaining} 日。扣除来源","workflow.known_sources":"1 · 已带入的资料与来源","workflow.final_sources":"任职、薪酬、已登记假期、固定补贴及本月调整已带入。下方只需核对实际出勤与尚未有依据的结算项目。","workflow.injury_sources":"工伤与医疗实销","workflow.offline_calendar":"离线工作日历","workflow.offline_calendar_hint":"CSV 字段：date、name、scope、region_code。scope 使用 statutory、public 或 both；只补日期及适用范围，保留已有名称和封存状态。","workflow.calendar_template":"下载现有日历／CSV 格式","workflow.import_csv":"导入 CSV","salary_record.prefill_all":"预填本页空白员工","salary_record.prefill_all_hint":"从该月份、发薪单位的最新已存 Payroll 带入；已有金额不覆盖。核对后按保存才记入实发记录。","salary_record.batch_prefilled":"已预填 {filled} 人，略过 {skipped} 人（已有金额或无快照）；尚未保存。"})
+TRANSLATIONS["en"].update({"readiness.not_calculated":"Not calculated","attendance.rate_split":"Pay changes in this period: enter counts for each date range; totals update automatically","contract.effective_facts":"Facts on the contract effective date","contract.draft_boundary":"Drafts do not change employment terms. Update formal records after signing.","workflow.adjustments":"Pay adjustments","final_payment.view_sources":"View attendance for this month","workflow.month_workbench":"Monthly workbench","workflow.initial_setup":"Complete initial employment setup","workflow.initial_setup_hint":"Use one effective date to fill missing employment, pay, bank and MPF records. Edit existing records through their usual editors.","workflow.full_month":"Full month","workflow.attendance_days":"Actual attendance days","workflow.mpf_account":"MPF member account","workflow.save_setup":"Save initial setup","workflow.accepted_files":"Accepted formats:","workflow.file_size":"32 MB per request","workflow.batch_month":"Default month for this batch","workflow.pending_files":"{count} pending","workflow.upload_pending":"Waiting","workflow.upload_done":"Uploaded","workflow.upload_failed":"Upload failed; retry this file","workflow.retry_failed":"Retry failed files","workflow.add_work_date":"Add work date","workflow.file_details":"Documents and profile details","workflow.new_injury":"New injury: choose another employee","workflow.as_of":"As of date","workflow.leave_available":"Available leave including time off","workflow.leave_available_hint":"After all registered leave; excludes expired and future-year balances.","workflow.next_expiry":"Next balance to expire","workflow.leave_projection":"Available {available}; after this new request {remaining}. Deduct from","workflow.known_sources":"1 · Existing facts and sources","workflow.final_sources":"Employment, pay, recorded leave, recurring allowances and monthly adjustments are included. Review actual attendance and any remaining settlement inputs below.","workflow.injury_sources":"Injury and medical expenses","workflow.offline_calendar":"Offline work calendar","workflow.offline_calendar_hint":"CSV columns: date, name, scope, region_code. Scope: statutory, public or both. Add missing dates and scopes; preserve existing names and archive status.","workflow.calendar_template":"Download calendar / CSV format","workflow.import_csv":"Import CSV","salary_record.prefill_all":"Prefill blank rows on this page","salary_record.prefill_all_hint":"Use the latest saved Payroll for this month and entity. Keep entered amounts. Review and Save to record actual pay.","salary_record.batch_prefilled":"Prefilled {filled}; skipped {skipped} (entered amounts or no snapshot). Not saved yet."})
+
+TRANSLATIONS["zh-Hant"]["workflow.review_excluded"] = "以下員工待處理，不納入「全部可出糧」匯出："
+TRANSLATIONS["zh-Hans"]["workflow.review_excluded"] = "以下员工待处理，不纳入“全部可出粮”导出："
+TRANSLATIONS["en"]["workflow.review_excluded"] = "These employees need attention and are excluded from the ready-only export:"
+
+for translations, date_hint in [(ZH_HANT, "選擇真正有工作的日期，系統自動合計日數。"), (ZH_HANS, "选择真正有工作的日期，系统自动合计日数。"), (EN, "Select the dates actually worked; days are totalled automatically.")]:
+    translations["attendance.non_normal_work_count_first"] = date_hint
+    translations["attendance.daily_statutory_work_hint"] = date_hint + " " + translations["attendance.daily_statutory_dates_hint"]
+
+ZH_HANT["workflow.legacy_work_dates"] = "舊資料記錄了 {days} 日，但未保存日期。請補回日期；如原日數錯誤，可移除此空白日期後保存更正。"
+ZH_HANS["workflow.legacy_work_dates"] = "旧资料记录了 {days} 日，但未保存日期。请补回日期；如原日数错误，可移除此空白日期后保存更正。"
+EN["workflow.legacy_work_dates"] = "The old record contains {days} days without dates. Add the dates, or remove this empty date to correct an erroneous count."
+
+ZH_HANT["workflow.online_calendar_optional"] = "連網匯入（可選）"
+ZH_HANS["workflow.online_calendar_optional"] = "联网导入（可选）"
+EN["workflow.online_calendar_optional"] = "Online import (optional)"
+
+ZH_HANT["workflow.remove_date"] = "移除此日期"
+ZH_HANS["workflow.remove_date"] = "移除此日期"
+EN["workflow.remove_date"] = "Remove date"
+
+ZH_HANT["workflow.settlement_result"] = "結算結果（保存後重新計算）"
+ZH_HANS["workflow.settlement_result"] = "结算结果（保存后重新计算）"
+EN["workflow.settlement_result"] = "Settlement result (recalculated after saving)"
+
+TRANSLATIONS["zh-Hant"].update({"pdf.controls":"PDF 預覽","pdf.previous":"上一頁","pdf.next":"下一頁","pdf.page":"頁","pdf.zoom":"縮放","pdf.fit":"符合寬度","pdf.rotate":"旋轉","pdf.loading":"正在載入 PDF…","pdf.error":"無法預覽此 PDF。請下載原檔查看。"})
+TRANSLATIONS["zh-Hans"].update({"pdf.controls":"PDF 预览","pdf.previous":"上一页","pdf.next":"下一页","pdf.page":"页","pdf.zoom":"缩放","pdf.fit":"适合宽度","pdf.rotate":"旋转","pdf.loading":"正在载入 PDF…","pdf.error":"无法预览此 PDF。请下载原文件查看。"})
+TRANSLATIONS["en"].update({"pdf.controls":"PDF preview","pdf.previous":"Previous page","pdf.next":"Next page","pdf.page":"Page","pdf.zoom":"Zoom","pdf.fit":"Fit width","pdf.rotate":"Rotate","pdf.loading":"Loading PDF…","pdf.error":"Cannot preview this PDF. Download the original file to view it."})
+
+ZH_HANT["employees.data_completion_hint"] = "先處理影響出糧、假期及 MPF 的資料；附件可稍後補齊。"
+ZH_HANS["employees.data_completion_hint"] = "先处理影响出粮、假期及 MPF 的资料；附件可稍后补齐。"
+EN["employees.data_completion_hint"] = "Resolve payroll, leave and MPF items first; complete supporting documents later."
+
+
+# Dated attendance corrections
+for _key, _labels in {
+    "open": ["更正過往考勤","更正过往考勤","Correct past attendance"],
+    "history": ["考勤更正紀錄","考勤更正记录","Attendance correction history"],
+    "pay": ["計入工資月份","计入工资月份","Payroll month"],
+    "source": ["原考勤月份","原考勤月份","Attendance month"],
+    "ot": ["OT（小時）","OT（小时）","OT (hours)"],
+    "day": ["普通出勤（天）","普通出勤（天）","Ordinary attendance (days)"],
+    "kind": ["改哪一項","改哪一项","Item"],
+    "direction": ["怎樣改","怎样改","Change"],
+    "add": ["補回","补回","Add"],
+    "deduct": ["扣回","扣回","Deduct"],
+    "quantity": ["數量","数量","Quantity"],
+    "more": ["加一行","加一行","Add a row"],
+    "remove": ["移除此行","移除此行","Remove row"],
+    "files": ["附上憑證（可多選）","附上凭证（可多选）","Attach evidence (multiple files)"],
+    "filehint": ["可選，接受圖片 JPG、PNG 或 PDF。","可选，接受图片 JPG、PNG 或 PDF。","Optional JPG, PNG or PDF files."],
+    "total": ["今期應發工資差額","今期应发工资差额","Gross pay change this month"],
+    "amount": ["差額","差额","Difference"],
+    "save": ["儲存更正","保存更正","Save correction"],
+    "auto": ["按當日任職項目","按当日任职项目","Use project on work date"],
+    "tail": ["上月尾段實際數已包括這筆？","上月尾段实际数已包括这笔？","Already in the actual prior month-end figures?"],
+    "included": ["已包括，本行另計 0","已包括，本行另计 0","Included — no extra pay"],
+    "extra": ["未包括，另計差額","未包括，另计差额","Not included — apply separately"],
+    "tail_choice": ["請核對該行是否已包括在上月尾段實際數。","请核对该行是否已包括在上月尾段实际数。","Specify whether this change is already in the prior month-end actuals."],
+    "invalid": ["請填妥日期、項目及數量；日數最多一天，數量以半小時或半天為單位。","请填妥日期、项目及数量；日数最多一天，数量以半小时或半天为单位。","Enter a valid date and quantity in half-hour or half-day increments (up to one day)."],
+    "missing_rate": ["找不到適用任職或薪酬，或兩月幣別不同。請核對員工薪酬資料。","找不到适用任职或薪酬，或两月币别不同。请核对员工薪酬资料。","Check employment, pay rate and currency for the work date and payroll month."],
+    "stale": ["紀錄已更新，請重新打開核對。","记录已更新，请重新打开核对。","This record changed. Reopen it to review."],
+    "pending": ["填妥各行即可查看差額。","填妥各行即可查看差额。","Complete each row to see the difference."],
+    "edited": ["最後更正","最后更正","Last edited"],
+    "before": ["原錄時段合計","原录时段合计","Recorded period totals"],
+    "oldpdf": ["查看原月考勤 PDF","查看原月考勤 PDF","Open original attendance PDF"],
+    "nopdf": ["原月沒有已歸檔的考勤 PDF","原月没有已归档的考勤 PDF","No archived PDF for this month"],
+    "net": ["本次合計變動","本次合计变动","Net change in this correction"],
+    "failed": ["未能完成，請重試。","未能完成，请重试。","Could not complete. Please retry."],
+    "legacy": ["以往的手填調整","以往的手填调整","Historical manual adjustments"],
+    "saved": ["已儲存更正","已保存更正","Correction saved"],
+    "fixed": ["固定月薪：普通出勤不改基本月薪","固定月薪：普通出勤不改基本月薪","Fixed monthly pay: ordinary attendance does not change base pay"],
+    "rate": ["單價","单价","Rate"],
+    "prior": ["其他月份已登記的更正","其他月份已登记的更正","Corrections recorded in other payroll months"],
+    "cancel": ["取消","取消","Cancel"],
+    "period1": ["1–20 日","1–20 日","Days 1–20"],
+    "period2": ["21 日至月底","21 日至月底","Day 21 to month end"],
+}.items():
+    for _lang, _label in zip(("zh-Hant", "zh-Hans", "en"), _labels):
+        TRANSLATIONS[_lang]["corr." + _key] = _label
+
+
+# Employee workbench preview
+for _key, _labels in {
+    "title": ('人事工作臺', '人事工作台', 'HR workbench'),
+    "preview": ('工作臺預覽', '工作台预览', 'Workbench preview'),
+    "files": ('員工檔案', '员工档案', 'Employee files'),
+    "leave": ('假期與工傷', '假期与工伤', 'Leave and injury'),
+    "att": ('考勤錄入', '考勤录入', 'Attendance'),
+    "pay": ('出糧', '发薪', 'Payroll'),
+    "expiry": ('檔案到期', '档案到期', 'Expiring documents'),
+    "exp": ('到期', '到期', 'due'),
+    "none": ('暫無到期提醒', '暂无到期提醒', 'No expiry alerts'),
+    "view": ('查看全部', '查看全部', 'View all'),
+    "today": ('今日在休', '今日在休', 'On leave today'),
+    "week": ('未來七日休假', '未来七日休假', 'Leave in next 7 days'),
+    "injury": ('工傷中', '工伤中', 'On injury leave'),
+    "annual": ('年假', '年假', 'Annual leave'),
+    "sick": ('病假', '病假', 'Sick leave'),
+    "unpaid": ('無薪假', '无薪假', 'Unpaid leave'),
+    "month": ('工作月份', '工作月份', 'Working month'),
+    "cycle": ('考勤與出糧', '考勤与发薪', 'Attendance and payroll'),
+    "review": ('出糧待處理', '发薪待处理', 'Payroll pending'),
+    "received": ('已收考勤', '已收考勤', 'Attendance received'),
+    "upload": ('批量上傳考勤 PDF', '批量上传考勤 PDF', 'Upload attendance PDFs'),
+    "list": ('員工總覽', '员工总览', 'Employee overview'),
+    "search": ('搜尋姓名或員工編號', '搜索姓名或员工编号', 'Find name or staff number'),
+    "pending": ('只看待處理', '只看待处理', 'Needs attention'),
+    "clear": ('全部員工', '全部员工', 'All employees'),
+    "staff": ('員工', '员工', 'Employee'),
+    "clearfile": ('無到期提醒', '无到期提醒', 'No expiry alert'),
+    "noleave": ('—', '—', '—'),
+    "noresults": ('沒有符合的員工', '没有符合的员工', 'No matching employees'),
+    "people": ('人', '人', 'people'),
+    "doc": ('份', '份', 'documents'),
+    "apply": ('查看月份', '查看月份', 'Show month'),
+    "openpay": ('查看工資表', '查看工资表', 'Open payroll'),
+    "asof": ('截至', '截至', 'As of'),
+    "ontime": ('可出糧', '可发薪', 'Ready for payroll'),
+    "wait": ('待補／核對', '待补／核对', 'Needs review'),
+    "inactive": ('該月未在職', '该月未在职', 'Outside employment'),
+    "settings": ('設定', '设置', 'Settings'),
+    "leaveview": ('查看假期', '查看假期', 'View leave'),
+    "batch": ('先看 PDF，再選員工錄入', '先看 PDF，再选员工录入', 'Preview each PDF, then select its employee'),
+    "more": ('另有', '另有', 'plus'),
+    "empunit": ('位員工', '位员工', 'employees'),
+    "days": ('日', '日', 'days'),
+    "expired": ('已過期', '已过期', 'expired'),
+    "due": ('日後到期', '日后到期', 'days to expiry'),
+    "readytable": ('發薪狀態', '发薪状态', 'Payroll status'),
+    "attendance": ('考勤', '考勤', 'Attendance'),
+}.items():
+    for _lang, _label in zip(("zh-Hant", "zh-Hans", "en"), _labels):
+        TRANSLATIONS[_lang]["workbench." + _key] = _label
+
+for _key, _labels in {
+    "register_leave": ('登記假期', '登记假期', 'Record leave'),
+    "annual_left": ('本年年假餘額', '本年年假余额', 'Annual leave remaining'),
+    "more_filters": ("更多篩選","更多筛选","More filters"),
+    "continue_batch": ('繼續上次批次', '继续上次批次', 'Resume a batch'),
+    "batch_counts": ('已錄 {saved} 份 · 待錄 {pending} 份', '已录 {saved} 份 · 待录 {pending} 份', '{saved} saved · {pending} pending'),
+    "continue_entry": ('繼續錄入', '继续录入', 'Continue entry'),
+    "missing_people": ('{month} 尚欠考勤表的員工 · {count} 人', '{month} 尚欠考勤表的员工 · {count} 人', '{month} staff still missing an attendance sheet · {count}'),
+    "queue_clear": ('這個批次已處理完畢', '这个批次已处理完毕', 'This batch is complete'),
+    "no_batch": ('本月未有上傳批次', '本月未有上传批次', 'No batches for this month'),
+    "check_attendance": ('開啟該月考勤核對', '打开该月考勤核对', 'Review attendance'),
+    "return_payroll": ('返回工資表', '返回工资表', 'Return to payroll'),
+    "review_exemption": ('這位員工本月免交考勤表。請按已登記的假期及工傷核對右側出勤日數，保存後仍屬免交。', '这位员工本月免交考勤表。请按已登记的假期及工伤核对右侧出勤日数，保存后仍属免交。', 'No attendance sheet is required for this employee. Check the days against recorded leave and injuries. Saving preserves the exemption.'),
+    "salary_record_month": ('原來選擇的月份超出實發紀錄範圍，已開啟 {month}。', '原来选择的月份超出实发记录范围，已打开 {month}。', 'The selected month is outside the salary record range. Showing {month}.'),
+    "bank": ('核對銀行資料', '核对银行资料', 'Check bank details'),
+    "employee_sources": ('查看員工紀錄', '查看员工记录', 'View employee records'),
+    "missing_files": ('檔案待補', '档案待补', 'Incomplete files'),
+}.items():
+    for _lang, _label in zip(("zh-Hant", "zh-Hans", "en"), _labels):
+        TRANSLATIONS[_lang]["hr." + _key] = _label
+
+for _key, _labels in {
+    "hr.fill_salary": ("補薪酬紀錄", "补薪酬记录", "Add the missing pay rate"),
+    "hr.fill_bank": ("補銀行資料", "补银行资料", "Add bank details"),
+    "hr.fill_entity": ("補發薪單位", "补发薪单位", "Set the paying entity"),
+    "hr.missing_sheet": ("未收到考勤表 · 查看待收名單", "未收到考勤表 · 查看待收名单", "Sheet not received · Open missing roster"),
+    "hr.exempt_check": ("本月免交考勤表。請按已登記的假期及工傷核對出勤日數並保存。", "本月免交考勤表。请按已登记的假期及工伤核对出勤天数并保存。", "No sheet required. Check attendance days against recorded leave and injuries, then save."),
+    "hr.sheet_check": ("假期或工傷紀錄有變。請對照考勤表核對出勤日數並保存。", "假期或工伤记录有变。请对照考勤表核对出勤天数并保存。", "Leave or injury records changed. Check the attendance sheet and save."),
+    "leave.attendance_recheck": ("假期或工傷紀錄有變，請重新核對本月出勤並保存。", "假期或工伤记录有变，请重新核对本月出勤并保存。", "Leave or injury records changed. Review this month's attendance and save."),
+    "hr.review_month": ("出糧待核對 · {month}", "发薪待核对 · {month}", "Payroll review · {month}"),
+    "hr.tail_values": ("實際計入 {actual}，原預估 {expected}。兩者相差的金額列入本月。", "实际计入 {actual}，原预估 {expected}。两者相差的金额列入本月。", "Actual {actual}, previously forecast {expected}. The difference is included this month."),
+    "hr.prior_snapshot": ("查看原月份已保存的工資紀錄", "查看原月份已保存的工资记录", "View the original saved payroll record"),
+    "hr.prior_forecast": ("月尾預估金額", "月尾预估金额", "Forecast pay for the month end"),
+    "hr.recorded_forecast": ("查看考勤表上的原預估", "查看考勤表上的原预估", "View the forecast on the attendance sheet"),
+    "hr.estimated_forecast": ("原預估由系統按當時適用的薪酬和工作日曆計算。", "原预估由系统按当时适用的薪酬和工作日历计算。", "The forecast was calculated from the applicable pay rate and work calendar."),
+    "hr.salary_dates": ("缺少生效薪酬的日期", "缺少生效薪酬的日期", "Dates with no effective pay rate"),
+    "hr.month_detail": ("查看本月計算明細", "查看本月计算明细", "View this month's calculation"),
+    "hr.other_notes": ("其他提示", "其他提示", "Other notes"),
+    "hr.holiday_pay": ("假日工資", "假日工资", "Holiday pay"),
+    "hr.sick_pay": ("病假薪金", "病假薪金", "Sick pay"),
+    "hr.injury_pay": ("工傷薪金", "工伤薪金", "Injury pay"),
+    "hr.termination_pay": ("遣散費／長期服務金", "遣散费／长期服务金", "Severance / long service"),
+    "hr.profile_files": ("證件與文件", "证件与文件", "Credentials and files"),
+    "hr.no_department": ("未填部門", "未填部门", "Department not set"),
+    "hr.no_position": ("未填職位", "未填职位", "Position not set"),
+    "hr.group_by": ("名冊分組", "名册分组", "Group staff by"),
+    "workbench.review": ("出糧待核對", "发薪待核对", "Payroll to review"),
+}.items():
+    for _lang, _label in zip(("zh-Hant", "zh-Hans", "en"), _labels):
+        TRANSLATIONS[_lang][_key] = _label
+
+for _key, _labels in {
+    'hr.already_received': ('本月已收考勤表', '本月已收考勤表', 'Attendance sheet already received for this month'),
+    'hr.reselect_or_replace': ('選錯人可改選員工。這份是新版才按「替換原表」。', '选错人可改选员工。这份是新版才按“替换原表”。', 'Choose another employee or replace the original with this revision.'),
+    'hr.replace': ('替換原表', '替换原表', 'Replace original sheet'),
+    'payroll.employee_details': ('員工工資明細', '员工工资明细', 'Employee pay details'),
+    'hr.credential_files': ('證件', '证件', 'Credentials'),
+    'hr.replaced': ('已被替換', '已被替换', 'Replaced'),
+    'hr.archived_figures': ('原表當時錄入的數字', '原表当时录入的数字', 'Figures recorded for this sheet'),
+    'hr.check_old_pdf': ('無法從舊紀錄確認這份表的數字，請查看原 PDF。', '无法从旧记录确认这份表的数字，请查看原 PDF。', 'The original figures could not be identified. Refer to the original PDF.'),
+    'hr.current_attendance': ('查看現行考勤', '查看现行考勤', 'Open current attendance'),
+    'hr.daily_reference': ('合約日薪（每工作日）', '合约日薪（每工作日）', 'Contract daily rate per working day'),
+    'hr.monthly_reference': ('意外當日的合約月薪', '意外当日的合约月薪', 'Contract monthly rate on the accident date'),
+    'hr.register_injury': ('登記工傷', '登记工伤', 'Record injury'),
+    'hr.unassigned_count': ('另有 {count} 人未分配發薪單位，未計入本表。查看名單', '另有 {count} 人未分配发薪单位，未计入本表。查看名单', 'This sheet excludes {count} employees without a paying entity. View list'),
+    'hr.unassigned_list': ('未分配發薪單位', '未分配发薪单位', 'No paying entity assigned'),
+    'payroll.entity_filter_hint': ('按所選發薪單位匯出已齊資料的員工。', '按所选发薪单位导出已齐资料的员工。', 'Exports include ready employees of the selected paying entity.'),
+    'hr.leave_span': ('休假時段', '休假时段', 'Leave duration'),
+    'hr.full': ('全日', '全日', 'Full day'),
+    'hr.am': ('上午', '上午', 'Morning'),
+    'hr.pm': ('下午', '下午', 'Afternoon'),
+    'hr.range': ('跨日', '跨日', 'Multiple dates'),
+    'hr.renew': ('續證', '续证', 'Renew'),
+    'hr.renewal_invalid': ('請核對原證、證件類型及新證生效日。', '请核对原证、证件类型及新证生效日。', 'Check the original credential, type and effective date.'),
+    'profile.credential_renewed': ('已續證', '已续证', 'Renewed'),
+    'salary_record.title': ('實際發薪紀錄', '实际发薪记录', 'Actual payments'),
+    'payroll.title': ('每月工資表', '每月工资表', 'Monthly payroll sheet'),
+    'payroll.monthly_payroll': ('每月工資表', '每月工资表', 'Monthly payroll sheet'),
+    'workbench.pay': ('每月工資表', '每月工资表', 'Monthly payroll sheet'),
+}.items():
+    for _lang, _label in zip(("zh-Hant", "zh-Hans", "en"), _labels):
+        TRANSLATIONS[_lang][_key] = _label

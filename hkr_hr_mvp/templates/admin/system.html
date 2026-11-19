@@ -22,7 +22,8 @@
   {% for title_key, status in [("admin.last_backup", backup_status), ("admin.last_restore_verification", restore_status)] %}
     <article class="panel system-status-card {{ status.state }}">
       <span>{{ t(title_key) }}</span>
-      <strong>{{ t("admin.status_ok") if status.state == "ok" else t("admin.status_attention") if status.state == "attention" else t("admin.status_not_found") }}</strong>
+      <strong>{{ t("review.restore_partial") if status.state == "partial" else t("review.log_unreadable") if status.state == "unreadable" else t("admin.status_ok") if status.state == "ok" else t("admin.status_attention") if status.state == "attention" else t("admin.status_not_found") }}</strong>
+      {% if status.state == "partial" %}<small>{{ t("review.restore_scope") }}</small>{% endif %}
       <small>{% if status.checked_at %}{{ status.checked_at.strftime("%Y-%m-%d %H:%M") }} · {{ status.filename }}{% else %}{{ t("admin.status_record_hint") }}{% endif %}</small>
     </article>
   {% endfor %}

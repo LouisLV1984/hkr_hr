@@ -85,7 +85,17 @@ class UploadErrorPageTests(unittest.TestCase):
     tearDown = workspace.ProfileWorkspaceTests.tearDown
     login = workspace.ProfileWorkspaceTests.login
     create_employee = workspace.ProfileWorkspaceTests.create_employee
-    employee = workspace.ProfileWorkspaceTests.employee
+    def employee(self):
+        from datetime import date
+        from models import EmployeeAssignment
+        from tools.hr_core import reference_by_code
+        eid = workspace.ProfileWorkspaceTests.employee(self)
+        with self.app.app_context():
+            db.session.add(EmployeeAssignment(employee_id=eid, effective_from=date(2026, 1, 1),
+                payroll_group="management", workweek_days=5,
+                region_id=reference_by_code("work_region", "HK").id))
+            db.session.commit()
+        return eid
 
     def test_leave_workspace_has_same_editor_error_recovery(self):
         eid = self.employee()

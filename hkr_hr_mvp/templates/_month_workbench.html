@@ -1,0 +1,14 @@
+{% set work_month = year_month|default(month|default(operating_month)) %}
+{% set work_entity = selected_payroll_entity_id|default(entity_id|default(session.get('operating_entity_id', ''))) %}
+<nav class="month-workbench" aria-label="{{ t('workflow.month_workbench') }}">
+<strong>{{ month_t(work_month) }}</strong>
+{% for endpoint, label, args in [
+('employees.list_employees','employees.title',{'month':work_month}),
+('attendance.attendance_home','attendance.title',{'month':work_month}),
+('payroll.attendance_payroll','payroll.title',{'year_month':work_month,'payroll_entity_id':work_entity or ''}),
+('payroll.mpf_contributions','mpf.export_title',{'year_month':work_month}),
+('payroll.final_payment','final_payment.title',{'year_month':work_month,'payroll_entity_id':work_entity or ''}),
+('salary_records.index','salary_record.title',{'month':work_month,'entity_id':work_entity or ''})] %}
+<a class="{{ 'active' if request.endpoint==endpoint else '' }}" href="{{ url_for(endpoint, **args) }}">{{ t(label) }}</a>
+{% endfor %}
+</nav>

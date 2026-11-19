@@ -1,4 +1,8 @@
 {% extends "base.html" %}
+{% macro batch_month_label(batch) -%}
+  {%- set months = batch.items|map(attribute='effective_year_month')|unique|sort|list -%}
+  {%- for month in months -%}{{ month_t(month) }}{% if not loop.last %} / {% endif %}{%- endfor -%}
+{%- endmacro %}
 {% block title %}{{ t("attendance.title") }} - HKR HR{% endblock %}
 {% block page_class %}workbench-page{% if selected_item or edit_summary_mode %} attendance-detail-page{% endif %}{% endblock %}
 {% set attendance_month_label = t("attendance.month_label", year=year_month[:4], month=(year_month[5:7]|int)) %}
@@ -23,30 +27,6 @@
   {% endif %}
 
   {% if view == "collection" %}
-  <section class="context-panel attendance-upload-panel">
-    <div class="context-panel-head">
-      <strong>{{ t("attendance.upload_batch") }}</strong>
-      <span>{{ t("attendance.upload_hint") }}</span>
-    </div>
-    <form class="stack-form" method="post" action="{{ url_for('attendance.create_batch') }}" enctype="multipart/form-data" data-attendance-upload-form>
-      <label class="attendance-drop-zone" data-attendance-drop-zone tabindex="0" role="button">
-        <span class="upload-mark" aria-hidden="true">↑</span>
-        <strong>{{ t("attendance.drop_files") }}</strong>
-        <span>{{ t("attendance.pdf_only") }}</span>
-        <input data-attendance-file-input type="file" name="files" accept=".pdf,application/pdf" multiple required>
-      </label>
-      <p class="file-selection"
-         data-attendance-file-summary
-         data-empty-label="{{ t('attendance.no_files_selected') }}"
-         data-selected-label="{{ t('attendance.files_selected', count='__COUNT__') }}">{{ t("attendance.no_files_selected") }}</p>
-      <button class="primary-btn full" type="submit">{{ t("attendance.create_batch") }}</button>
-    </form>
-    <div class="upload-progress" data-attendance-upload-progress hidden aria-live="polite">
-      <span></span>
-      <strong>{{ t("attendance.uploading") }}</strong>
-    </div>
-  </section>
-
   <section class="context-panel recent-batches-panel">
     <div class="context-panel-head">
       <strong>{{ t("attendance.recent_batches") }}</strong>
@@ -59,8 +39,8 @@
           {% set repreview_item = first_pending or (batch.items|first) %}
           <article class="recent-batch-card {% if selected_batch and selected_batch.id == batch.id %}active{% endif %}">
             <a href="{{ url_for('attendance.attendance_home', view='collection', batch_id=batch.id) }}">
-              <strong>{{ batch.batch_no }}</strong>
-              <span>{{ batch.items|length }} PDF · {{ batch_done }}/{{ batch.items|length }}</span>
+              <strong>{{ batch_month_label(batch) }} · {{ batch.created_at|hong_kong_datetime('%m/%d %H:%M') }}</strong>
+              <span>{{ batch.items|length }} PDF · {{ t('workflow.pending_files', count=batch.items|length - batch_done) }}</span>
             </a>
             <div class="recent-batch-actions">
               {% if repreview_item %}<a class="mini-btn" href="{{ url_for('attendance.attendance_home', month=repreview_item.effective_year_month, view='collection', batch_id=batch.id, item_id=repreview_item.id) }}">{{ t("attendance.repreview") }}</a>{% endif %}
@@ -78,10 +58,50 @@
 </div>
 {% endblock %}
 {% block content %}
+{% if view == 'collection' and not selected_item and not edit_summary_mode %}
+<div class="intake-desk">
+  <section class="context-panel attendance-upload-panel">
+    <div class="context-panel-head">
+      <strong>{{ t("attendance.upload_batch") }}</strong>
+      <span>{{ t("attendance.upload_hint") }}</span>
+    </div>
+    <form class="stack-form" method="post" action="{{ url_for('attendance.create_batch') }}" enctype="multipart/form-data" data-attendance-upload-form>
+      <label><span>{{ t('workflow.batch_month') }}</span><input type="month" name="year_month" value="{{ year_month }}" required></label>
+      <label class="attendance-drop-zone" data-attendance-drop-zone tabindex="0" role="button">
+        <span class="upload-mark" aria-hidden="true">↑</span>
+        <strong>{{ t("attendance.drop_files") }}</strong>
+        <span>{{ t("attendance.pdf_only") }}</span>
+        <input data-attendance-file-input type="file" name="files" accept=".pdf,application/pdf" multiple required>
+      </label>
+      <p class="file-selection"
+         data-attendance-file-summary
+         data-empty-label="{{ t('attendance.no_files_selected') }}"
+         data-selected-label="{{ t('attendance.files_selected', count='__COUNT__') }}">{{ t("attendance.no_files_selected") }}</p>
+      <button class="primary-btn full" type="submit">{{ t("attendance.create_batch") }}</button>
+    </form>
+    <div class="upload-progress" data-attendance-upload-progress hidden aria-live="polite">
+      <span></span>
+      <strong>{{ t("attendance.uploading") }}</strong>
+    </div>
+  </section>
+<section class="intake-resume"><div class="section-head"><h2>{{ t('hr.continue_batch') }}</h2></div>
+{% if resume_batch %}
+{% set pending=resume_batch.items|selectattr('status','equalto','pending')|list %}
+{% set saved=resume_batch.items|selectattr('status','equalto','saved')|list %}
+<p>{{ batch_month_label(resume_batch) }} · {{ resume_batch.items|length }} PDF</p><strong>{{ t('hr.batch_counts',saved=saved|length,pending=pending|length) }}</strong>
+{% if pending %}<p>{{ pending[0].original_filename }}</p><a class="primary-btn" href="{{ url_for('attendance.attendance_home',month=pending[0].effective_year_month,batch_id=resume_batch.id,item_id=pending[0].id,view='collection') }}">{{ t('hr.continue_entry') }} →</a>{% else %}<p>{{ t('hr.queue_clear') }}</p>{% endif %}
+{% else %}<p>{{ t('hr.no_batch') }}</p>{% endif %}
+</section></div>
+<a class="intake-missing" href="{{ url_for('attendance.attendance_home',view='details',status='missing',month=year_month) }}">{{ t('hr.missing_people', month=month_t(year_month), count=missing|length) }} →</a>
+{% endif %}
+
+{% from '_pdf_preview.html' import pdf_preview with context %}
 {% if view != "collection" or selected_item or edit_summary_mode %}
 <section class="period-context-bar attendance-period-context{% if selected_item or edit_summary_mode %} attendance-detail-context{% endif %}" aria-label="{{ t('attendance.current_attendance_month') }}">
   {% if selected_item or edit_summary_mode %}
-    {% if edit_summary_mode %}
+    {% if edit_summary_mode and originating_payroll_url %}
+      <a class="attendance-context-exit" href="{{ originating_payroll_url }}">← {{ t("hr.return_payroll") }}</a>
+    {% elif edit_summary_mode %}
       <a class="attendance-context-exit" href="{{ url_for('employees.view_employee', employee_id=selected_summary.employee_id, tab='attendance') }}">← {{ t("attendance.exit_detail") }}</a>
     {% else %}
       <a class="attendance-context-exit" href="{{ url_for('attendance.attendance_home', month=year_month, view='collection', batch_id=selected_batch.id) }}">← {{ t("attendance.exit_detail") }}</a>
@@ -96,11 +116,13 @@
   </div>
   {% if selected_item or edit_summary_mode %}
   <div class="attendance-context-actions">
+    <a class="attendance-context-action attendance-jump" href="#attendance-pdf">PDF</a>
+    <a class="attendance-context-action attendance-jump" href="#attendance-input">{{ t('attendance.start_entry') }}</a>
     {% if not edit_summary_mode and previous_item %}<a class="attendance-context-action" href="{{ url_for('attendance.attendance_home', month=previous_item.effective_year_month, view='collection', batch_id=selected_batch.id, item_id=previous_item.id) }}">← {{ t("attendance.previous") }}</a>{% endif %}
     {% if edit_summary_mode or selected_summary %}
       <button class="attendance-context-action attendance-context-action-primary" type="submit" form="attendance-review-form">{{ t("attendance.save_correction") if selected_summary else t("common.save") }}</button>
-    {% elif duplicate_document %}
-      <button class="attendance-context-action attendance-context-action-primary" type="submit" name="confirm_duplicate" value="1" form="attendance-review-form">{{ t("documents.duplicate_attendance_replace") }}</button>
+    {% elif existing_document %}
+      <button class="attendance-context-action attendance-context-action-primary" type="submit" name="replace_document_id" value="{{ existing_document.id }}" form="attendance-review-form">{{ t("hr.replace") }}</button>
     {% else %}
       <button class="attendance-context-action attendance-context-action-primary" type="submit" form="attendance-review-form">{{ t("attendance.save_next") }}</button>
     {% endif %}
@@ -112,6 +134,7 @@
       <strong>{{ t("common.employee") }}：</strong>
       <span>{% if selected_employee %}{{ selected_employee.employee_no }} · {{ selected_employee.display_name }}{% else %}{{ t("attendance.select_employee") }}{% endif %}</span>
       {% if selected_employee %}
+        <details class="attendance-reference"><summary>{{ t("attendance.payroll_category") }} · {{ t('common.project') }}</summary><div>
         {% set banner_group = selected_assignment.payroll_group if selected_assignment else selected_employee.payroll_group %}
         <strong>{{ t("attendance.payroll_category") }}：</strong><span>{{ option_t("payroll_group", banner_group, banner_group) }}</span>
         <strong>{{ t("employee.holiday_calendar") }}：</strong><span>{{ t("employee.holiday_calendar_public") if selected_holiday_calendar_kind == "public" else t("employee.holiday_calendar_statutory") }}</span>
@@ -123,6 +146,7 @@
         <strong>{{ t("common.project") }}：</strong><span class="{{ 'attendance-project-unassigned' if not selected_assignment or not selected_assignment.project else '' }}">{{ project_t(selected_assignment.project, t("common.unassigned")) if selected_assignment else t("common.unassigned") }}</span>
         {% endif %}
         <button class="attendance-project-adjust" type="button" data-cross-project-open>{{ t("attendance.adjust_project_allocation") }}</button>
+        </div></details>
       {% endif %}
     </div>
   </div>
@@ -172,6 +196,7 @@
             {% if row.monthly_status == "received" %}<span class="flag success">{{ t("attendance.received") }}</span>
             {% elif row.monthly_status == "not_required" %}<span class="flag warn">{{ t("attendance.monthly_exempt") }}</span>
             {% elif row.monthly_status == "required" %}<span class="flag info">{{ t("attendance.monthly_required") }}</span>
+            {% elif row.injury_exempt %}<span class="flag info">{{ t("attendance.injury_exempt") }}</span>
             {% elif row.requires_attendance %}<span class="flag info">{{ t("attendance.required") }}</span>
             {% else %}<span class="flag warn">{{ t("attendance.long_term_exempt") }}</span>{% endif %}
           </td>
@@ -203,21 +228,29 @@
 
 {% if selected_item or edit_summary_mode %}
 <section class="attendance-workbench">
-  <section class="workbench-preview">
+  <section class="workbench-preview" id="attendance-pdf" tabindex="-1">
     {% if selected_item %}
       <div class="preview-toolbar"><div><strong>{{ selected_item.original_filename }}</strong><span>{{ year_month }} · {{ option_t("workflow_status", selected_item.status, selected_item.status) }}</span></div><a href="{{ url_for('attendance.open_item', item_id=selected_item.id) }}" target="_blank">{{ t("common.open") }}</a></div>
-      <iframe title="{{ selected_item.original_filename }}" src="{{ url_for('attendance.open_item', item_id=selected_item.id) }}#page=1&view=FitH&navpanes=0&pagemode=none"></iframe>
+      {{ pdf_preview(url_for('attendance.open_item', item_id=selected_item.id, raw=1), selected_item.original_filename) }}
     {% elif selected_summary and selected_summary.document %}
       <div class="preview-toolbar"><div><strong>{{ selected_summary.document.original_filename }}</strong><span>{{ selected_summary.year_month }} · {{ t("attendance.correction_mode") }}</span></div><a href="{{ url_for('documents.open_document', document_id=selected_summary.document.id) }}" target="_blank">{{ t("common.open") }}</a></div>
-      <iframe title="{{ selected_summary.document.original_filename }}" src="{{ url_for('documents.open_document', document_id=selected_summary.document.id) }}#page=1&view=FitH&navpanes=0&pagemode=none"></iframe>
+      {{ pdf_preview(url_for('documents.open_document', document_id=selected_summary.document.id, raw=1), selected_summary.document.original_filename) }}
+    {% elif selected_summary and selected_summary.status == 'not_required' %}
+      <div class="empty-preview"><h2>{{ t("attendance.monthly_exempt") }}</h2><p>{{ t("hr.review_exemption") }}</p></div>
     {% else %}
       <div class="empty-preview"><h2>{{ t("attendance.upload_batch") }}</h2><p>{{ t("attendance.subtitle") }}</p></div>
     {% endif %}
   </section>
 
-  <aside class="workbench-review">
+  <aside class="workbench-review" id="attendance-input" tabindex="-1">
     {% if selected_item or edit_summary_mode %}
-      <form id="attendance-review-form" class="stack-form" method="post" action="{{ url_for('attendance.correct_summary', summary_id=selected_summary.id) if selected_summary else url_for('attendance.save_item', item_id=selected_item.id) }}" data-selected-workweek="{{ selected_workweek_days }}" data-statutory-dates='{{ selectable_statutory_holiday_dates|tojson }}'>
+      <form id="attendance-review-form" data-replace-label="{{ t('hr.replace') }}" data-existing-label="{{ t('hr.already_received') }}" class="stack-form" method="post" action="{{ url_for('attendance.correct_summary', summary_id=selected_summary.id) if selected_summary else url_for('attendance.save_item', item_id=selected_item.id) }}" data-selected-workweek="{{ selected_workweek_days }}" data-statutory-dates='{{ selectable_statutory_holiday_dates|tojson }}'>
+        {% if selected_summary %}<input type="hidden" name="editing_document_id" value="{{ selected_summary.document_id or '' }}">{% endif %}
+        {% if originating_payroll_url %}
+          {% for key in ('from_payroll', 'pay_group', 'pay_entity', 'pay_status', 'pay_q', 'pay_employee') %}
+            <input type="hidden" name="{{ key }}" value="{{ request.args.get(key, '') }}">
+          {% endfor %}
+        {% endif %}
         <section class="review-section attendance-identity-section">
           {% if selected_summary and not identity_correction_mode %}
           <div class="attendance-identity-lock">
@@ -254,24 +287,18 @@
             </div>
           </div>
           {% endif %}
-            <p class="field-hint">{{ t("leave.attendance_schedule_note") }}</p>
             <details class="attendance-payroll-context" data-attendance-payroll-context hidden>
             <summary>{{ t("attendance.calculation_rules") }}</summary>
             <div class="attendance-payroll-context-body">
+              <p class="field-hint">{{ t("leave.attendance_schedule_note") }}</p>
               <p data-payroll-rule="site_daily">{{ t("attendance.rule_site_daily") }}</p>
               <p data-payroll-rule="site_monthly">{{ t("attendance.rule_site_monthly") }}</p>
               <p data-payroll-rule="management">{{ t("attendance.rule_management") }}</p>
               <p data-pay-method-rule="attendance_days">{{ t("attendance.attendance_prorated_rule") }}</p>
             </div>
           </details>
-          {% if selected_item and duplicate_document %}
-            <div class="duplicate-warning">
-              <span class="flag warn">{{ t("documents.duplicate_badge") }}</span>
-              <h2>{{ t("documents.duplicate_title") }}</h2>
-              <p>{{ t("documents.duplicate_attendance") }}</p>
-              <p><strong>{{ duplicate_document.original_filename }}</strong></p>
-              <a class="ghost-btn" href="{{ url_for('attendance.attendance_home', month=year_month, view='collection', batch_id=selected_batch.id, item_id=selected_item.id) }}">{{ t("documents.duplicate_cancel") }}</a>
-            </div>
+          {% if existing_document %}
+          <p class="inline-alert attendance-replacement-notice" role="status">{{ t('documents.duplicate_attendance') if duplicate_document else t('hr.already_received') }} <strong>{{ existing_document.original_filename }}</strong> · {{ t('hr.reselect_or_replace') }}</p>
           {% endif %}
         </section>
         {% if linked_absences or absence_recheck or absence_issues %}
@@ -279,7 +306,7 @@
         <section class="attendance-linked-alert" aria-label="{{ t('leave.review_source') }}">
         {% if absence_recheck or absence_issues %}
         <div class="attendance-linked-recheck" role="alert">
-          {% if absence_recheck %}<strong>{{ t('leave.attendance_recheck') }}</strong>{% endif %}
+          {% if absence_recheck %}<strong>{{ t('hr.exempt_check' if selected_summary and selected_summary.status == 'not_required' else 'hr.sheet_check') }}</strong>{% endif %}
           {% for issue in absence_issues %}<p>{{ t(issue) }}</p>{% endfor %}
         </div>
         {% endif %}
@@ -332,6 +359,8 @@
             {% if group_key == "previous" %}
               <div class="section-action-stack">
                 <span class="attendance-reconciliation" data-attendance-reconciliation></span>
+                {% if selected_employee %}<button type="button" class="secondary-btn" data-corr-open>{{ t('corr.open') }}</button>
+                <div data-corr-history aria-live="polite">{% with records=corrections %}{% include "attendance/_correction_history.html" %}{% endwith %}</div>{% endif %}
                 {% if previous_summary and previous_summary.document %}
                   <a class="mini-btn" target="_blank" rel="noopener" href="{{ url_for('documents.open_document', document_id=previous_summary.document.id) }}">{{ t("attendance.open_previous_pdf", year=period_bounds["previous_21_end"][0].year, month=period_bounds["previous_21_end"][0].month) }}</a>
                 {% else %}
@@ -403,6 +432,7 @@
                     <label><span>{{ t("attendance.ecall_count") }}</span><input type="number" min="0" step="1" name="{{ kind }}_ecall_count" value="{{ segment.ecall_count if segment else 0 }}"><small data-ordinary-ecall-hint></small></label>
                     <label class="wide attendance-other-allowance-field"><span>{{ t("attendance.other_allowance") }}</span><input type="number" min="0" step="0.01" name="{{ kind }}_other_allowance_amount" value="{{ segment.other_allowance_amount if segment else 0 }}"><small>{{ t("attendance.other_allowance_hint") }}</small></label>
                   {% endif %}
+                  <input type="hidden" name="{{ kind }}_rate_allocations" value='{{ (segment.rate_allocations if segment and segment.rate_allocations else [])|tojson }}' data-rate-allocations>
                   {% if loop.index > 1 %}<button class="mini-btn danger-text remove-segment" type="button">{{ t("attendance.remove_project_allocation") }}</button>{% endif %}
                 </div>
               {% endfor %}
@@ -470,11 +500,11 @@
       <div class="attendance-batch-overview-head">
         <div>
           <span class="eyebrow">{{ t("attendance.current_batch") }}</span>
-          <h2>{{ selected_batch.batch_no }}</h2>
+          <h2>{{ batch_month_label(selected_batch) }} · {{ selected_batch.created_at|hong_kong_datetime('%m/%d') }} · {{ selected_batch.items|length }} PDF</h2>
           <p>{{ t("attendance.batch_progress", done=processed_count, total=selected_batch.items|length) }}</p>
         </div>
         <div class="button-row">
-          {% if repreview_item %}<a class="secondary-btn" href="{{ url_for('attendance.attendance_home', month=repreview_item.effective_year_month, view='collection', batch_id=selected_batch.id, item_id=repreview_item.id) }}">{{ t("attendance.repreview") }}</a>{% endif %}
+          {% if repreview_item and not first_pending %}<a class="secondary-btn" href="{{ url_for('attendance.attendance_home', month=repreview_item.effective_year_month, view='collection', batch_id=selected_batch.id, item_id=repreview_item.id) }}">{{ t("attendance.repreview") }}</a>{% endif %}
           <form method="post" action="{{ url_for('attendance.delete_batch', batch_id=selected_batch.id) }}" data-confirm="{{ t('attendance.delete_confirm') }}">
             <button class="secondary-btn danger-text" type="submit">{{ t("attendance.delete_batch") }}</button>
           </form>
@@ -489,7 +519,7 @@
               <strong>{{ item.original_filename }}</strong>
               <small>{{ loop.index }} / {{ selected_batch.items|length }}</small>
               <small>{{ month_t(item.effective_year_month) }}</small>
-              <span class="flag {% if item.status == 'saved' %}success{% elif item.status == 'skipped' %}warn{% else %}info{% endif %}">{{ option_t("workflow_status", item.status, item.status) }}</span>
+              <span class="flag {% if item.status == 'saved' %}success{% elif item.status == 'skipped' %}warn{% else %}info{% endif %}">{{ t("hr.replaced") if item.status == "replaced" else option_t("workflow_status", item.status, item.status) }}</span>
               {% if item.employee %}<small>{{ item.employee.employee_no }} · {{ item.employee.display_name }}</small>{% endif %}
             </span>
             <span class="attendance-pdf-open">{{ t("attendance.repreview") if item.status != 'pending' else t("attendance.start_entry") }} →</span>
@@ -499,17 +529,11 @@
         {% endfor %}
       </div>
     </section>
-  {% else %}
-    <section class="onboarding-empty attendance-start-empty">
-      <div>
-        <h2>{{ t("attendance.start_title") }}</h2>
-        <p>{{ t("attendance.start_hint") }}</p>
-      </div>
-    </section>
   {% endif %}
 {% endif %}
 
 {% if view == "details" and not selected_item and not edit_summary_mode and detail_status %}
+{% if originating_payroll_url %}<a class="hr-back" href="{{ originating_payroll_url }}">← {{ t('hr.return_payroll') }}</a>{% endif %}
 <section class="attendance-roster">
   {% if detail_status in ["expected", "missing"] %}
   {% set roster_employees = expected if detail_status == "expected" else missing %}
@@ -517,7 +541,7 @@
     <div class="section-head"><h2>{{ t("attendance.expected_total") if detail_status == "expected" else t("attendance.missing") }}</h2><strong>{{ roster_employees|length }}</strong></div>
     <div class="attendance-status-list">
       {% for employee in roster_employees %}
-        <div class="attendance-status-row">
+        <div class="attendance-status-row" id="missing-{{ employee.id }}">
           <a href="{{ url_for('employees.view_employee', employee_id=employee.id) }}"><strong>{{ employee.employee_no }} · {{ employee.display_name }}</strong><span>{{ t("employees.payroll_group") }}：{{ option_t("payroll_group", employee.payroll_group, employee.payroll_group) }}</span><small>{{ t("common.project") }}：{{ attendance_roster_projects.get(employee.id, [])|join("、") or t("common.not_set") }}</small></a>
         </div>
       {% else %}
@@ -544,6 +568,7 @@
     <label><span>{{ t("attendance.large_ecall_count") }}</span><input type="number" min="0" step="1" value="0" data-name="large_ecall_count"><small data-large-ecall-hint></small></label>
     <label><span>{{ t("attendance.ecall_count") }}</span><input type="number" min="0" step="1" value="0" data-name="ecall_count"><small data-ordinary-ecall-hint></small></label>
     <label class="wide attendance-other-allowance-field"><span>{{ t("attendance.other_allowance") }}</span><input type="number" min="0" step="0.01" value="0" data-name="other_allowance_amount"><small>{{ t("attendance.other_allowance_hint") }}</small></label>
+    <input type="hidden" value="[]" data-name="rate_allocations" data-rate-allocations>
     <button class="mini-btn danger-text remove-segment" type="button">{{ t("attendance.remove_project_allocation") }}</button>
   </div>
 </template>
@@ -565,6 +590,29 @@
 {% endif %}
 {% endblock %}
 {% block scripts %}
+{% if selected_employee and (selected_item or edit_summary_mode) %}
+<dialog id="past-attendance" aria-labelledby="corr-title" class="app-dialog corr-dialog" data-url="{{ url_for('corrections.editor',employee_id=selected_employee.id,pay_month=year_month,source_month='SOURCE') }}">
+<div class="corr-panel">
+  <header class="corr-header">
+    <span aria-hidden="true" class="corr-calendar"></span>
+    <h2 id="corr-title">{{ t('corr.open') }}</h2>
+    <span class="corr-person">{{ selected_employee.employee_no }} · {{ selected_employee.display_name }}</span>
+    <button type="button" class="corr-close" data-corr-close aria-label="{{ t('common.close') }}">×</button>
+  </header>
+  <div class="corr-context">
+    <label>{{ t('corr.source') }}<input type="month" required data-corr-month max="{{ period_bounds['previous_21_end'][0].strftime('%Y-%m') }}"></label>
+    <div><span>{{ t('corr.pay') }}</span><strong>{{ month_t(year_month) }}</strong></div>
+    <div data-corr-source-link></div>
+  </div>
+  <div data-corr-body></div>
+  <script type="application/json">{% set labels = namespace(d={'size': t('workflow.file_size')}) %}{% for key in ['failed','total','pending','fixed','included','ot','day','period1','period2'] %}{% set _=labels.d.update({key:t('corr.'+key)}) %}{% endfor %}{{ labels.d|tojson }}</script>
+</div></dialog><script src="{{ url_for('static',filename='js/attendance-corrections.js') }}" defer></script>
+{% endif %}
+<script id="upload-queue-labels" type="application/json">{{ {'open':t('attendance.repreview'),'pending':t('workflow.upload_pending'),'uploading':t('attendance.uploading'),'done':t('workflow.upload_done'),'failed':t('workflow.upload_failed'),'retry':t('workflow.retry_failed')}|tojson }}</script>
+<script src="{{ url_for('static', filename='js/attendance-upload.js') }}" defer></script>
+<script id="attendance-rate-labels" type="application/json">{{ {'title':t('attendance.rate_split'), 'working_days':t('attendance.ordinary_actual_days'), 'ot_hours':t('attendance.ot_hours'), 'sunday_holiday_days':t('attendance.non_normal_work_days'), 'large_ecall_count':t('attendance.large_ecall_count')}|tojson }}</script>
+<script id="attendance-rate-windows" type="application/json">{{ rate_windows_by_period|tojson }}</script>
+<script src="{{ url_for('static', filename='js/attendance-rates.js') }}" defer></script>
 <script>
 const policyCheckboxes = [...document.querySelectorAll("[data-policy-employee]")];
 const policySelectAll = document.querySelector("[data-policy-select-all]");
@@ -914,7 +962,10 @@ function serializeSpecialWorkPicker(picker) {
     days: specialWorkUnits(row.querySelector("[data-special-work-date]")?.value || "") || 0,
   }));
   const hidden = picker.querySelector("[data-special-work-entries]");
-  if (hidden) hidden.value = JSON.stringify(entries);
+  if (hidden) hidden.value = JSON.stringify(entries.filter(entry => entry.date));
+  const count = picker.closest("[data-segment-row]")?.querySelector(".actual-special-work-days-input");
+  if (count) count.value = entries.filter(entry => entry.date).reduce((sum, entry) => sum + entry.days, 0);
+  picker.closest("[data-segment-row]")?.dispatchEvent(new Event("special-dates-changed"));
   const usedDates = new Set();
   picker.querySelectorAll("[data-special-work-date]").forEach((input) => {
     const duplicate = input.value && usedDates.has(input.value);
@@ -939,31 +990,33 @@ function makeSpecialWorkDateRow(picker) {
 }
 
 function syncSpecialWorkPicker(input) {
-  const row = input.closest(".segment-row");
-  const picker = row?.querySelector("[data-special-work-picker]");
+  const picker = input.closest(".segment-row")?.querySelector("[data-special-work-picker]");
   if (!picker) return;
-  const days = Math.max(0, Math.round((Number.parseFloat(input.value) || 0) * 2) / 2);
-  input.value = days;
-  const wantedRows = Math.ceil(days);
-  const rowsRoot = picker.querySelector("[data-special-work-rows]");
-  while (rowsRoot.children.length < wantedRows) rowsRoot.append(makeSpecialWorkDateRow(picker));
-  while (rowsRoot.children.length > wantedRows) rowsRoot.lastElementChild.remove();
-  picker.hidden = wantedRows === 0;
+  input.readOnly = true;
+  picker.hidden = attendanceEmployee?.dataset.monthlyPayMethod === "attendance_days";
   serializeSpecialWorkPicker(picker);
   updateSpecialDayHandlingVisibility();
 }
-
 function bindSpecialWorkPickers(root = document) {
-  root.querySelectorAll("[data-special-work-picker]").forEach((picker) => {
-    picker.querySelectorAll("[data-special-work-date]").forEach((control) => {
-      control.addEventListener("change", () => serializeSpecialWorkPicker(picker));
-    });
+  root.querySelectorAll("[data-special-work-picker]").forEach(picker => {
+    if(picker.dataset.bound) return;
+    picker.dataset.bound="1";
+    function bindRow(row) {
+      row.querySelector("[data-special-work-date]").addEventListener("change", () => {serializeSpecialWorkPicker(picker);updateSpecialDayHandlingVisibility();});
+      const remove=document.createElement("button");remove.type="button";remove.className="mini-btn";remove.textContent={{ t('workflow.remove_date')|tojson }};
+      remove.addEventListener("click",()=>{row.remove();serializeSpecialWorkPicker(picker);updateSpecialDayHandlingVisibility();});row.append(remove);
+    }
+    const oldCount = Number(picker.closest("[data-segment-row]").querySelector(".actual-special-work-days-input")?.value || 0);
+    if (oldCount > 0 && !picker.querySelector(".special-work-date-row")) {
+      const note = document.createElement("p"); note.className = "form-note";
+      note.textContent = {{ t("workflow.legacy_work_dates")|tojson }}.replace("{days}", oldCount); picker.prepend(note);
+      picker.querySelector("[data-special-work-rows]").append(makeSpecialWorkDateRow(picker));
+    }
+    picker.querySelectorAll(".special-work-date-row").forEach(bindRow);
+    const add=document.createElement("button");add.type="button";add.className="mini-btn";add.textContent={{ t('workflow.add_work_date')|tojson }};
+    add.addEventListener("click",()=>{const row=makeSpecialWorkDateRow(picker);bindRow(row);picker.querySelector("[data-special-work-rows]").append(row);row.querySelector("input").focus();});picker.append(add);
   });
-  root.querySelectorAll(".special-work-days-input").forEach((input) => {
-    input.addEventListener("input", () => syncSpecialWorkPicker(input));
-    input.addEventListener("change", () => syncSpecialWorkPicker(input));
-    syncSpecialWorkPicker(input);
-  });
+  root.querySelectorAll(".actual-special-work-days-input").forEach(syncSpecialWorkPicker);
 }
 document.querySelectorAll(".add-segment").forEach((button) => {
   button.addEventListener("click", () => {
@@ -984,6 +1037,7 @@ document.querySelectorAll(".add-segment").forEach((button) => {
     list.append(fragment);
     applyPayrollGroupFields();
     bindSpecialWorkPickers(list.lastElementChild);
+    document.getElementById("attendance-review-form").dispatchEvent(new Event("segment-added"));
     updateProjectAllocationSummaries();
     updateAttendanceEntrySummary();
   });

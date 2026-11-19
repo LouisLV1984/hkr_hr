@@ -1,5 +1,283 @@
 RELEASES = [
 {
+    "version": "V0.7.3",
+    "date": "2026-11-18",
+    "title": {
+        "zh-Hant": "考勤換表、續證與工傷登記",
+        "zh-Hans": "考勤换表、续证与工伤登记",
+        "en": "Attendance replacements, renewals and injury entry"
+    },
+    "features": {
+        "zh-Hant": [
+            "本月已收表時請改選員工或按「替換原表」，舊批次保留原 PDF。",
+            "舊證按「續證」，新證生效後停止舊提醒。半天假只需一個日期，工傷按意外當日的薪率供核對；日工須填已核實月收入。"
+        ],
+        "zh-Hans": [
+            "本月已收表时请改选员工或点击“替换原表”，旧批次保留原 PDF。",
+            "从旧证点击“续证”，新证生效后停止旧提醒。半天假只需一个日期，工伤按意外当日的薪率供核对；日工须填已核实月收入。"
+        ],
+        "en": [
+            "Choose a different employee or explicitly replace a received sheet. The original PDF remains in the batch.",
+            "Renew a credential from its card. The earlier reminder ends when the renewal takes effect. Half-day leave uses one date. Enter verified monthly earnings for daily-paid injured staff."
+        ]
+    },
+    "improvements": {
+        "zh-Hant": [
+            "每月工資表可查看未分配發薪單位的人員。批次時間採香港時間。"
+        ],
+        "zh-Hans": [
+            "每月工资表可查看未分配发薪单位的人员。批次时间采用香港时间。"
+        ],
+        "en": [
+            "Monthly payroll links to employees without a paying entity. Batch timestamps use Hong Kong time."
+        ]
+    },
+    "limitations": {
+        "zh-Hant": [],
+        "zh-Hans": [],
+        "en": []
+    }
+},
+    {
+        "version": "V0.7.2", "date": "2026-11-18",
+        "title": {"zh-Hant": "出糧待核對與員工名冊", "zh-Hans": "发薪待核对与员工名册", "en": "Payroll review and staff directory"},
+        "features": {
+            "zh-Hant": ["從出糧待核對補薪酬、銀行及發薪單位，或打開負數工資的當月計算明細。", "按部門或職位瀏覽員工姓名及編號卡片。"],
+            "zh-Hans": ["从发薪待核对补薪酬、银行及发薪单位，或打开负数工资的当月计算明细。", "按部门或职位浏览员工姓名及编号卡片。"],
+            "en": ["Resolve missing pay rates, bank details and paying entities or open the monthly breakdown for negative net pay.", "Browse employee cards by department or position."],
+        },
+        "improvements": {
+            "zh-Hant": ["個人檔案分為五頁。證件、文件和合約集中在一起，轉正及離職在任職與薪酬辦理。", "名冊預設列出在職員工，點姓名卡片即可開啟檔案。可按姓名或編號搜尋，亦可切換至離職名單。", "從出糧待核對補好薪酬、銀行或發薪單位後，會返回原月份，並保留公司、組別和搜尋條件。"],
+            "zh-Hans": ["个人档案分为五页。证件、文件和合约集中在一起，转正及离职在任职与薪酬办理。", "名册默认列出在职员工，点击姓名卡片即可打开档案。可按姓名或编号搜索，也可切换至离职名单。", "从发薪待核对补好薪酬、银行或发薪单位后，会返回原月份，并保留公司、组别和搜索条件。"],
+            "en": ["Five profile tabs bring credentials and files together and keep employment status with employment terms.", "The directory opens with cards for current staff. Select a card, search by name or staff number, or switch to former staff.", "After saving pay rates, bank details or a paying entity from payroll review, you return to the same month, company, group and search."],
+        },
+        "limitations": {"zh-Hant": [], "zh-Hans": [], "en": []},
+    },
+{
+  "version": "V0.7.1",
+  "date": "2026-11-18",
+  "title": {
+    "zh-Hant": "人事工作臺、考勤交接與每月出糧",
+    "zh-Hans": "人事工作台、考勤交接与每月发薪",
+    "en": "HR workbench, attendance handover and monthly payroll"
+  },
+  "features": {
+    "zh-Hant": [
+      "登入後在人事工作臺查看證件到期、休假、工傷及本月出糧進度。點員工那一行可開啟相應紀錄。",
+      "在「考勤錄入」一次上傳整批 PDF，先看原表，再選員工。下一位同事按「繼續錄入」，便可從第一份待錄 PDF 接手。欠交考勤表的員工另有名單。",
+      "「假期與工傷」集中顯示今日在休、未來七日休假、工傷、年假和補休結餘。在員工那一行可直接登記假期。"
+    ],
+    "zh-Hans": [
+      "登录后在人事工作台查看证件到期、休假、工伤及本月发薪进度。点击员工所在行可打开相应记录。",
+      "在「考勤录入」一次上传整批 PDF，先看原表，再选员工。下一位同事点击「继续录入」，即可从第一份待录 PDF 接手。欠交考勤表的员工另有名单。",
+      "「假期与工伤」集中显示今日在休、未来七日休假、工伤、年假和补休结余。在员工所在行可直接登记假期。"
+    ],
+    "en": [
+      "The HR workbench shows expiring documents, leave, injuries and monthly payroll progress. Open an employee’s record from their row.",
+      "Upload a batch of attendance PDFs, review each sheet and select its employee. Continue entry opens the first pending PDF for the next operator. A separate roster lists staff who still owe a sheet.",
+      "Leave and injury shows who is away today or in the coming week, injury cases, annual leave and time-off balances. Register leave from the employee’s row."
+    ]
+  },
+  "improvements": {
+    "zh-Hant": [
+      "員工檔案的證件卡直接顯示到期日、附件和更正入口，舊資料可在變更歷史查看。",
+      "工資表集中顯示月份、發薪單位、可出糧人數及匯出按鈕。從待核對員工開啟考勤，保存後會回到原來的工資表範圍。只補交病假憑證會保留既有核對狀態。",
+      "工作臺與工資表採用同一份可出糧名單。整月工傷及月中入職按適用期間處理，已保存的工資表可重新下載。"
+    ],
+    "zh-Hans": [
+      "员工档案的证件卡直接显示到期日、附件和更正入口，旧资料可在变更历史查看。",
+      "工资表集中显示月份、发薪单位、可发薪人数及导出按钮。从待核对员工打开考勤，保存后会回到原来的工资表范围。只补交病假凭证会保留已有核对状态。",
+      "工作台与工资表采用同一份可发薪名单。整月工伤及月中入职按适用期间处理，已保存的工资表可重新下载。"
+    ],
+    "en": [
+      "Credential cards show expiry dates, attachments and an edit action. Earlier entries remain available in the change history.",
+      "Payroll brings the month, paying entity, eligible headcount and export together. Review attendance from a pending employee’s row and return to the same payroll scope after saving. Supplying sick leave evidence alone preserves the existing review status.",
+      "The workbench and payroll use the same eligible roster. Full-month injury leave and mid-month hires follow their applicable dates. Previously saved payroll tables can be downloaded again."
+    ]
+  },
+  "limitations": {
+    "zh-Hant": ["每份考勤 PDF 由同事核對及選定所屬員工。正式匯出工資表時須選擇發薪單位。"],
+    "zh-Hans": ["每份考勤 PDF 由同事核对并选定所属员工。正式导出工资表时须选择发薪单位。"],
+    "en": ["An operator reviews each PDF and selects its employee. Select a paying entity before exporting payroll."]
+  }
+},
+{
+  "version": "V0.7.0",
+  "date": "2026-11-18",
+  "title": {
+    "zh-Hant": "在考勤錄入更正過往出勤及 OT",
+    "zh-Hans": "在考勤录入更正过往出勤及 OT",
+    "en": "Correct prior attendance in the current payroll month"
+  },
+  "features": {
+    "zh-Hant": [
+      "在員工本期的考勤 PDF 詳情按「更正過往考勤」，選原月份和工作日，逐項填寫要補回或扣回的出勤及 OT。",
+      "一筆更正可用同一個按鈕選取多份 PDF 或圖片憑證，沒有附件也可保存。"
+    ],
+    "zh-Hans": [
+      "在员工本期的考勤 PDF 详情点击「更正过往考勤」，选择原月份和工作日，逐项填写要补回或扣回的出勤及 OT。",
+      "一笔更正可用同一个按钮选择多份 PDF 或图片凭证，没有附件也可保存。"
+    ],
+    "en": [
+      "From the employee's current attendance PDF, choose Correct Prior Attendance, then enter the work dates and the attendance or overtime to add or deduct.",
+      "Use one button to attach multiple supporting PDFs or images. Attachments are optional."
+    ]
+  },
+  "improvements": {
+    "zh-Hant": [
+      "按原工作日的薪酬規則自動計算差額，計入本期 Payroll。固定月薪的普通出勤只記日數；OT 按原工作日規則計算。",
+      "日工 Excel 的 AG 欄、月工及 OFFICE 的 AH 欄合併到 Other Payment，註解列明逐日差額。原月考勤和本期 Payroll 都可查看紀錄及憑證。",
+      "移除手填工資調整金額的入口，保留既有紀錄和憑證。"
+    ],
+    "zh-Hans": [
+      "按原工作日的薪酬规则自动计算差额，计入本期 Payroll。固定月薪的普通出勤只记天数；OT 按原工作日规则计算。",
+      "日工 Excel 的 AG 列、月工及 OFFICE 的 AH 列合并到 Other Payment，批注列明逐日差额。原月考勤和本期 Payroll 都可查看记录及凭证。",
+      "移除手填工资调整金额的入口，保留已有记录和凭证。"
+    ],
+    "en": [
+      "The work date's pay rules determine the difference, which is carried into the current payroll. Ordinary attendance corrections for fixed monthly pay record days only; overtime follows the work date's rules.",
+      "Excel includes the net amount in Other Payment (AG for daily workers, AH for monthly and OFFICE staff), with dated comments. View the record and attachments from original attendance or current payroll.",
+      "The manual wage adjustment entry has been removed. Existing records and supporting files remain available."
+    ]
+  },
+  "limitations": {
+    "zh-Hant": [
+      "更正上月 21 日至月底的考勤時，須核對該筆是否已計入本期的「上月尾段實際」，避免重複計薪。"
+    ],
+    "zh-Hans": [
+      "更正上月 21 日至月底的考勤时，须核对该笔是否已计入本期的「上月尾段实际」，避免重复计薪。"
+    ],
+    "en": [
+      "For dates from the 21st through the end of the previous month, check whether the correction is already included in this month's prior-period actuals to avoid double counting."
+    ]
+  }
+},
+{
+  "version": "V0.6.0",
+  "date": "2026-11-04",
+  "title": {
+    "zh-Hant": "三人工作流程整合與計薪修正",
+    "zh-Hans": "三人工作流程整合与计薪修正",
+    "en": "Small-team workflow and payroll corrections"
+  },
+  "features": {
+    "zh-Hant": [
+      "月份工作台、一次入職設定、逐檔考勤上傳及空白薪酬紀錄批量預填。",
+      "跨薪酬生效日期分段計算；離職月份共用調整入口。",
+      "離線依賴安裝及工作日曆 CSV。",
+      "內置離線 PDF 預覽，支援翻頁、縮放、旋轉及原檔下載；改善考勤與假期畫面。"
+    ],
+    "zh-Hans": [
+      "月份工作台、一次入职设置、逐份考勤上传及空白薪酬记录批量预填。",
+      "按薪酬生效日期分段计算；离职月份共用调整入口。",
+      "离线依赖安装及工作日历 CSV。",
+      "内置离线 PDF 预览，支持翻页、缩放、旋转及原文件下载；改善考勤与假期页面。"
+    ],
+    "en": [
+      "Monthly context, one-save initial setup, per-file attendance queue and blank salary-record prefill.",
+      "Date-specific attendance rates and shared departure adjustment editor.",
+      "Offline dependency installation and work-calendar CSV.",
+      "Bundled offline PDF preview with pages, zoom, rotation and original download; refined attendance and leave layouts."
+    ]
+  },
+  "improvements": {
+    "zh-Hant": [
+      "合約草稿獨立保存，按生效日帶入薪酬，保留零值且不改正式條款。",
+      "新快照保存歷史身份及項目名稱；就緒狀態與可匯出範圍一致。",
+      "考勤錯誤保留輸入；員工、假期、工傷及 Payroll 先呈現待辦。"
+    ],
+    "zh-Hans": [
+      "合同草稿独立保存，按生效日带入薪酬，保留零值且不改正式条款。",
+      "新快照保存历史身份及项目名称；就绪状态与可导出范围一致。",
+      "考勤错误保留输入；员工、假期、工伤及 Payroll 优先显示待办。"
+    ],
+    "en": [
+      "Unique dated contract drafts preserve zero terms and formal employment facts.",
+      "New snapshots freeze identifying facts; readiness and export scope agree.",
+      "Retain failed form input and prioritize operational exceptions."
+    ]
+  },
+  "limitations": {
+    "zh-Hant": [
+      "舊快照未保存的身份欄位無法還原；舊跨費率實際考勤須按原件補分段。",
+      "部署、程序重啟及現場驗證另行記錄，不由此版本列表代表。"
+    ],
+    "zh-Hans": [
+      "旧快照未保存的身份字段无法还原；旧跨费率实际考勤须按原件补分段。",
+      "部署、程序重启及现场验证另行记录。"
+    ],
+    "en": [
+      "Identity facts missing from old snapshots cannot be reconstructed; legacy mixed-rate actual totals need dated allocations.",
+      "Deployment, restart and live verification are reported separately."
+    ]
+  }
+},
+{
+ 'version': 'V0.5.10', 'date': '2026-10-09',
+ 'title': {'zh-Hant': '修正入職日期時確認年假額度', 'zh-Hans': '修正入职日期时确认年假额度', 'en': 'Confirm entitlement when correcting start dates'},
+ 'features': {
+  'zh-Hant': ['修改入職日期時，保存前列出原額度與新計算值，選擇重算或保留本年度額度。'],
+  'zh-Hans': ['修改入职日期时，保存前列出原额度与新计算值，选择重算或保留本年度额度。'],
+  'en': ['Before saving a corrected start date, compare entitlement and choose whether to recalculate or keep this year.']},
+ 'improvements': {
+  'zh-Hant': ['年假設定與 Staff Record 採用相同確認流程；保留不延續到往後年度，取消不保存。未到入職日的員工也可開啟個人年假頁。'],
+  'zh-Hans': ['年假设置与 Staff Record 采用相同确认流程；保留不延续到往后年度，取消不保存。未到入职日的员工也可打开个人年假页。'],
+  'en': ['Confirm leave setup and Staff Record corrections consistently. Future hire dates remain accessible in individual leave pages.']},
+ 'limitations': {'zh-Hant': [], 'zh-Hans': [], 'en': []}
+},
+{
+ 'version': 'V0.5.9', 'date': '2026-10-09',
+ 'title': {'zh-Hant': '年假保存衝突比對修正', 'zh-Hans': '年假保存冲突比对修正', 'en': 'Annual leave save revision correction'},
+ 'features': {'zh-Hant': [], 'zh-Hans': [], 'en': []},
+ 'improvements': {
+  'zh-Hant': ['年假資料版本比對忽略帳戶讀取順序及數字顯示精度，避免未變更資料被誤判為過期表單。', '真正資料衝突時明確提示刷新頁面；保存成功沿用關閉視窗並更新額度的流程。', '補填舊年假後，本年度修正清單仍保留該年度最近修正；人工額度調整列出保存前後額度。'],
+  'zh-Hans': ['年假资料版本比对忽略账户读取顺序及数字显示精度，避免未变更资料被误判为过期表单。', '真正资料冲突时明确提示刷新页面；保存成功沿用关闭窗口并更新额度的流程。'],
+  'en': ['Compare leave revisions independently of relationship row order and numeric display scale.', 'Refresh the page for real conflicts; successful saves close the dialog and refresh balances.']},
+ 'limitations': {'zh-Hant': ['保留真正資料變更的衝突保護；新版部署後需重啟並刷新舊頁面。'], 'zh-Hans': ['保留真正资料变更的冲突保护；新版部署后需重启并刷新旧页面。'], 'en': ['Real changes still reject stale forms. Restart after deployment and refresh existing pages.']}
+},
+{
+ 'version': 'V0.5.8', 'date': '2026-10-09',
+ 'title': {'zh-Hant': '曆年預支年假與離職追扣', 'zh-Hans': '历年预支年假与离职追扣', 'en': 'Calendar-year advance leave and departure deductions'},
+ 'features': {
+  'zh-Hant': ['HR 確認入職日期及初始年假後，保存本年度折算額度；首年取最近半天，往後依公司級距自動計算。', '新增本年度核對及修正清單，列出計算依據、待補項目及最近保存前後額度。'],
+  'zh-Hans': ['HR 确认入职日期及初始年假后，保存本年度折算额度；首年取最近半天，往后依公司级距自动计算。', '新增本年度核对及修正清单，列出计算依据、待补项目及最近保存前后额度。'],
+  'en': ['Confirm start date and initial leave to save current-year entitlement, rounded to the nearest half day for the hire year.', 'Review missing bases and saved before/after entitlement changes in one list.']},
+ 'improvements': {
+  'zh-Hant': ['跨年首次使用時補建當年帳戶，保留歷史帳戶、舊年假空卡及逐年人工額度。', '離職視窗預覽完整精度折算、超用及追扣；缺有效日薪時阻止結算匯出。簽署合約可明確修正初始年假。'],
+  'zh-Hans': ['跨年首次使用时补建当年账户，保留历史账户、旧年假空卡及逐年人工额度。', '离职窗口预览完整精度折算、超用及追扣；缺有效日薪时阻止结算导出。签署合同可明确修正初始年假。'],
+  'en': ['Persist the current-year account on first use after rollover while preserving historical balances and manual overrides.', 'Preview departure earning and excess deductions; block export without a valid daily rate. Apply reviewed signed-contract corrections explicitly.']},
+ 'limitations': {
+  'zh-Hant': ['既有員工須 HR 確認計算依據，不批量猜測或覆蓋；2023 及以前總額由 HR 核實填寫。', '只保存當年，不補建歷史年度；影響已匯出 Payroll 時須核對並重新匯出。'],
+  'zh-Hans': ['既有员工须 HR 确认计算依据，不批量猜测或覆盖；2023 及以前总额由 HR 核实填写。', '只保存当年，不补建历史年度；影响已导出 Payroll 时须核对并重新导出。'],
+  'en': ['Existing employees require HR-confirmed bases; legacy totals remain manual. No speculative bulk overwrite.', 'Only the current year is saved. Review and re-export affected Payroll snapshots.']}
+},
+{'version': 'V0.5.7',
+ 'date': '2026-09-24',
+ 'title': {'zh-Hant': '測試修正與資料保護', 'zh-Hans': '测试修正与资料保护', 'en': 'Review fixes and data protection'},
+ 'features': {'zh-Hant': ['負實發及考勤待重核禁止匯出，提示員工姓名；HR 直接保存匯率，摘要折合 HKD。'], 'zh-Hans': ['负实发及考勤待复核禁止导出，提示员工姓名；HR 直接保存汇率，摘要折合 HKD。'], 'en': ['Block negative-net and stale-attendance exports with employee names; HR-entered rates convert display totals to HKD.']},
+ 'improvements': {'zh-Hant': ['看板、每月及離職 Payroll 摘要按幣種分開，項目小計不混加幣種；列明工傷醫療報銷與實發的關係。',
+                              '阻止無效薪酬金額與過期個人資料表單覆蓋；員工 Excel 匯出把公式樣式的文字保留為文字。',
+                              '重設密碼即使既有登入失效；PDF 檢查可讀頁面結構，附件頁提示遺失及空檔。',
+                              '減少員工工作台重複查詢，修正窄螢幕橫向溢出及無效月份／年份錯誤。'],
+                  'zh-Hans': ['看板、每月及离职 Payroll 摘要按币种分开，项目小计不混加币种；列明工伤医疗报销与实发的关系。',
+                              '阻止无效薪酬金额与过期个人资料表单覆盖；员工 Excel 导出把公式样式的文字保留为文字。',
+                              '重设密码即使既有登录失效；PDF 检查可读页面结构，附件页提示遗失及空文件。',
+                              '减少员工工作台重复查询，修正窄屏横向溢出及无效月份／年份错误。'],
+                  'en': ['Separate dashboard, monthly and final Payroll totals by currency; explain medical '
+                         'reimbursement in net pay.',
+                         'Reject invalid salary amounts and stale profile submissions; keep formula-like employee '
+                         'export data as text.',
+                         'Password resets invalidate existing sessions; validate PDF page structure and flag '
+                         'missing or empty attachments.',
+                         'Batch workbench queries, constrain narrow-screen content and reject invalid calendar '
+                         'parameters.']},
+ 'limitations': {'zh-Hant': ['匯率僅換算畫面摘要，不更改已保存 Payroll、員工原幣金額或附件。', '部署後現有登入須重新登入；附件存在／大小檢查不代表內容及簽署已核實。'],
+                 'zh-Hans': ['汇率仅换算画面摘要，不更改已保存 Payroll、员工原币金额或附件。', '部署后现有登录须重新登录；附件存在／大小检查不代表内容及签署已核实。'],
+                 'en': ['Rates convert display totals only, without rewriting saved Payroll, original employee amounts or '
+                        'source attachments.',
+                        'Deployment requires users to sign in again. File availability checks do not verify '
+                        'document content or signatures.']}},
+{
     "version": "V0.5.6", "date": "2026-09-16",
     "title": {"zh-Hant":"月薪項目日期分攤與 MPF 豁免", "zh-Hans":"月薪项目日期分摊与 MPF 豁免", "en":"Monthly project dates and MPF exemptions"},
     "features": {
@@ -2269,4 +2547,4 @@ RELEASES = [
 CURRENT_VERSION = RELEASES[0]["version"]
 
 # The next published release follows the current version without skipping.
-NEXT_VERSION = "V0.5.7"
+NEXT_VERSION = "V0.7.4"

@@ -29,3 +29,5 @@ Departure-month wages also require one source. Ordinary Payroll and Final Paymen
 - Departure-month salary and MPF cannot be duplicated between ordinary Payroll and Final Payment.
 - Payroll snapshots need separate fields for attendance-derived other allowance and medical reimbursement, even though the workbook combines some outputs.
 - The permanent UI calculation notes and operator guide must change whenever these calculation rules change.
+
+The manual Payroll adjustment entry is superseded by [ADR-0027](0027-dated-attendance-corrections.md).

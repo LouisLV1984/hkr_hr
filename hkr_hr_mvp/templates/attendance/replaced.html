@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% from "_pdf_preview.html" import pdf_preview with context %}
+{% block content %}
+<section class="page-head"><div><h1>{{ item.original_filename }}</h1><p>{{ item.effective_year_month }} · {{ item.employee.display_name if item.employee else "" }} · {{ t('hr.replaced') }}</p></div>
+<a class="secondary-btn" href="{{ url_for('attendance.attendance_home', batch_id=item.batch_id, month=item.effective_year_month) }}">{{ t('attendance.title') }}</a></section>
+<section class="attendance-workbench"><div class="workbench-preview">{{ pdf_preview(url_for('attendance.open_item', item_id=item.id, raw=1), item.original_filename) }}</div>
+<div class="panel"><h2>{{ t('hr.archived_figures') }}</h2>
+{% if figures %}{% for row in figures.segments %}<section class="review-section"><strong>{{ attendance_period_t(item.effective_year_month, row.period_kind) }}{% if row.project_name %} · {{ row.project_name }}{% endif %}</strong>
+<p>{{ row.working_days }} {{ t('leave.days') }} · OT {{ row.ot_hours }} h</p>
+<p>{{ t('attendance.summary_special_days') }} {{ row.sunday_holiday_days or 0 }} · {{ t('attendance.large_ecall_count') }} {{ row.large_ecall_count or 0 }} · {{ t('attendance.ecall_count') }} {{ row.ecall_count or 0 }} · {{ t('attendance.other_allowance_short') }} {{ row.other_allowance_amount or 0 }}</p></section>{% endfor %}
+{% else %}<p>{{ t('hr.check_old_pdf') }}</p>{% endif %}
+{% if item.summary_id %}<a class="secondary-btn" href="{{ url_for('attendance.attendance_home', summary_id=item.summary_id) }}">{{ t('hr.current_attendance') }}</a>{% endif %}</div></section>
+{% endblock %}

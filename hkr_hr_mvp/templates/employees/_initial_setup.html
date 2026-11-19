@@ -1,0 +1,28 @@
+{% if not employee.employment_periods or not employee.assignments or not employee.salaries or not employee.bank_accounts or not employee.mpf_enrollments %}
+<details class="panel initial-setup" {% if not employee.assignments and not employee.salaries %}open{% endif %}><summary>{{ t('workflow.initial_setup') }}</summary>
+<p class="form-note">{{ t('workflow.initial_setup_hint') }}</p>
+<form class="form-grid" data-retain-form method="post" action="{{ url_for('employees.initial_setup', employee_id=employee.id) }}">
+<label><span>{{ t('employee.effective_date') }}</span><input type="date" name="effective_from" value="{{ period.start_date.isoformat() if period else today.isoformat() }}" required></label>
+{% if not employee.employment_periods %}<label><span>{{ t('leave.initial_days') }}</span><input type="number" min="7" max="14" step="0.5" name="initial_leave_days" value="7" required></label>{% endif %}
+{% if not employee.assignments %}
+{% for field, key, label in [('region_id','work_region','employee.work_region'),('department_id','department','common.department'),('employer_id','employer','employee.employer'),('payroll_entity_id','payroll_entity','employee.payroll_entity')] %}
+<label><span>{{ t(label) }}</span><select name="{{ field }}"><option value="">—</option>{% for item in refs.get(key,[]) %}<option value="{{ item.id }}" {% if refs.get(key,[])|length == 1 %}selected{% endif %}>{{ item.display_name }}</option>{% endfor %}</select></label>
+{% endfor %}
+<label><span>{{ t('common.project') }}</span><select name="project_id"><option value="">—</option>{% for p in projects %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></label>
+<label><span>{{ t('common.position') }}</span><select name="position_ids"><option value="">—</option>{% for p in refs.get('position',[]) %}<option value="{{ p.id }}">{{ p.display_name }}</option>{% endfor %}</select></label>
+<label><span>{{ t('employee.workweek_days') }}</span><select name="workweek_days">{% for value in ['5','5.5','6'] %}<option value="{{ value }}" {% if value|float == default_workweek_days|float %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+{% endif %}
+{% if not employee.salaries %}
+<label><span>{{ t('employee.salary_basis') }}</span><select name="salary_basis"><option value="daily" {% if default_salary_basis=='daily' %}selected{% endif %}>{{ t('employee.daily') }}</option><option value="monthly" {% if default_salary_basis=='monthly' %}selected{% endif %}>{{ t('employee.monthly') }}</option></select></label>
+<label><span>{{ t('common.currency') }}</span><select name="currency">{% for c in refs.get('currency',[]) %}<option value="{{ c.code }}" {% if c.code=='HKD' %}selected{% endif %}>{{ c.display_name }}</option>{% endfor %}</select></label>
+<label><span>{{ t('employees.salary') }}</span><input type="number" name="amount" min="0" step="0.01" required></label>
+<label><span>{{ t('employee.monthly_pay_method') }}</span><select name="monthly_pay_method"><option value="full_month">{{ t('workflow.full_month') }}</option><option value="attendance_days">{{ t('workflow.attendance_days') }}</option></select></label>
+{% endif %}
+{% if not employee.bank_accounts %}<label><span>{{ t('employee.bank') }}</span><input name="bank_name"></label><label><span>{{ t('employee.bank_account') }}</span><input name="account_no"></label>{% endif %}
+{% if not employee.mpf_enrollments %}
+<label><span>MPF</span><select name="mpf_selection"><option value="">—</option>{% for scheme in mpf_schemes %}<option value="{{ scheme.id }}">{{ scheme.name }}</option>{% endfor %}</select></label>
+<label><span>{{ t('workflow.mpf_account') }}</span><input name="member_account_no"></label>
+<label class="check-line"><input type="checkbox" name="mpf_exempt">{{ t('employee.mpf_exempt') }}</label>
+{% endif %}
+<div class="button-row wide"><button type="submit" class="primary-btn">{{ t('workflow.save_setup') }}</button></div>
+</form></details>{% endif %}

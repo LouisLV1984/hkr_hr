@@ -1,9 +1,12 @@
 import calendar
+from tools.attendance_rates import rated_segments, summary_rate_issues
+from tools.employee_loading import workbench_options
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from models import (
+    AttendanceCorrection,
     AttendanceMonthlySummary,
     Employee,
     EmployeeAnnualLeaveRecord,
@@ -26,6 +29,7 @@ from tools.hr_core import (
 )
 from tools.attendance_policy import (
     attendance_required,
+    injury_covers_month,
     default_attendance_summary,
     employee_statutory_holidays,
     is_legacy_inferred_special_day_summary,
@@ -35,7 +39,7 @@ from tools.attendance_policy import (
 from tools.project_allocation import allocation_weights, ProjectAllocationError
 
 
-RULE_VERSION = "V2.3-2026-09-16"
+RULE_VERSION = "V2.5-2026-11-17"
 PAYROLL_GROUP_CODES = ("site_daily", "site_monthly", "management")
 ECALL_FLAT_AMOUNT = Decimal("400")
 
@@ -101,7 +105,7 @@ def employees_for_payroll(
     payroll_entity_id=None,
 ):
     month_start, month_end = parse_year_month(year_month)
-    employees = Employee.query.order_by(Employee.employee_no.asc()).all()
+    employees = Employee.query.options(*workbench_options()).order_by(Employee.employee_no.asc()).all()
     rows = [
         employee
         for employee in employees
@@ -486,6 +490,7 @@ def paid_special_days(summary, segment):
         for row in summary.special_days
         if row.status == "active"
         and row.segment_id == segment.id
+        and (not hasattr(segment, "rate_start") or segment.rate_start <= row.work_date <= segment.rate_end)
     ]
     if dated:
         return sum(
@@ -514,9 +519,9 @@ def apply_actual_segments(
     ignore_special_days=False,
 ):
     total = Decimal("0")
-    for segment in segments:
+    for segment, rate_start, rate_end in rated_segments(employee, segments, start, end):
         project = segment.project
-        rates = average_rates(employee, start, end, project)
+        rates = salary_rate_for_date(employee, rate_start, project)
         if not rates:
             continue
         key = line_key(project)
@@ -610,9 +615,9 @@ def apply_forecast_segments(
 ):
     lines = lines if lines is not None else {}
     total = Decimal("0")
-    for segment in segments:
+    for segment, rate_start, rate_end in rated_segments(employee, segments, start, end):
         project = segment.project
-        rates = average_rates(employee, start, end, project)
+        rates = salary_rate_for_date(employee, rate_start, project)
         if not rates:
             continue
         working_days = decimal_value(segment.working_days)
@@ -894,7 +899,7 @@ def mpf_amounts(
     return rounded(employee_amount), rounded(employer_amount), warnings
 
 
-def prior_forecast_total(employee, year_month):
+def prior_forecast_source(employee, year_month):
     previous = previous_month(year_month)
     row = (
         PayrollEmployeeResult.query.join(PayrollRun)
@@ -908,14 +913,14 @@ def prior_forecast_total(employee, year_month):
     if row and row.calculation_json:
         value = row.calculation_json.get("forecast_tail_total")
         if value is not None:
-            return decimal_value(value)
+            return decimal_value(value), row.id
     previous_start, previous_end = parse_year_month(previous)
     return forecast_tail(
         employee,
         previous_start.replace(day=21),
         previous_end,
         {},
-    )
+    ), None
 
 
 def segment_day_total(segments):
@@ -989,23 +994,19 @@ def employee_warnings(employee):
     return warnings
 
 
-def calculate_employee(employee, year_month):
+_UNSET_SUMMARY = object()
+
+
+def calculate_employee(employee, year_month, summary=_UNSET_SUMMARY):
     from tools.absence_integrity import absence_data_issues, absences_changed_since_attendance
     month_start, month_end = parse_year_month(year_month)
-    summary = AttendanceMonthlySummary.query.filter_by(
-        employee_id=employee.id,
-        year_month=year_month,
-    ).first()
+    if summary is _UNSET_SUMMARY:
+        summary = AttendanceMonthlySummary.query.filter_by(
+            employee_id=employee.id,
+            year_month=year_month,
+        ).first()
     generated_from_policy = False
-    full_month_injury = any(
-        row.status == "active"
-        and row.payroll_start_date <= month_start
-        and (
-            row.payroll_end_date is None
-            or row.payroll_end_date >= month_end
-        )
-        for row in employee.work_injury_periods
-    )
+    full_month_injury = injury_covers_month(employee, month_start, month_end)
     if not summary and full_month_injury:
         summary = AttendanceMonthlySummary(
             employee_id=employee.id,
@@ -1013,13 +1014,13 @@ def calculate_employee(employee, year_month):
             status="not_required",
             no_attendance_reason="整月工傷期間，無需考勤",
         )
-    if not summary and not attendance_required(employee, year_month):
+    if not summary and not attendance_required(employee, year_month, summary=summary):
         summary = default_attendance_summary(employee, year_month)
         generated_from_policy = True
     legacy_inferred_special_days = is_legacy_inferred_special_day_summary(
         summary
     )
-    blockers = []
+    blockers = summary_rate_issues(employee, summary)
     warnings = employee_warnings(employee)
     review_start = parse_year_month(previous_month(year_month))[0].replace(day=21)
     blockers.extend(absence_data_issues(employee, review_start, month_end))
@@ -1055,8 +1056,6 @@ def calculate_employee(employee, year_month):
         employee.bank_name and employee.bank_account_no
     ):
         blockers.append("出糧銀行資料未填寫")
-    if not assignment or not assignment.payroll_entity_id:
-        warnings.append("發薪單位未設定；正式導出時不會納入任何發薪單位")
 
     group = group_on(employee, month_end)
     if group == "site_daily" and any(
@@ -1155,6 +1154,7 @@ def calculate_employee(employee, year_month):
         summary,
         "previous_21_end_forecast",
     )
+    forecast_snapshot_id = None
     previous_forecast_breakdown = {}
     if previous_forecast_segments:
         expected_previous_tail = apply_forecast_segments(
@@ -1168,7 +1168,7 @@ def calculate_employee(employee, year_month):
             ignore_special_days=legacy_inferred_special_days,
         )
     else:
-        expected_previous_tail = prior_forecast_total(employee, year_month)
+        expected_previous_tail, forecast_snapshot_id = prior_forecast_source(employee, year_month)
         previous_forecast_breakdown["base"] = expected_previous_tail
         previous_summary = AttendanceMonthlySummary.query.filter_by(
             employee_id=employee.id,
@@ -1385,6 +1385,14 @@ def calculate_employee(employee, year_month):
         if not adjustment.evidence_document_id:
             warnings.append(f"調整「{adjustment.label}」缺憑證")
 
+    corrections = AttendanceCorrection.query.filter_by(employee_id=employee.id, pay_month=year_month).all()
+    for correction in corrections:
+        for entry in correction.lines:
+            source_project = db.session.get(WorkProject, entry["project_id"]) if entry["project_id"] else None
+            line = lines.setdefault(line_key(source_project), empty_line(source_project))
+            line["adjustment_amount"] += Decimal(entry["amount"])
+            line.setdefault("attendance_corrections", []).append(entry)
+
     line_rows = list(lines.values())
     for line in line_rows:
         if allocation:
@@ -1410,7 +1418,7 @@ def calculate_employee(employee, year_month):
         for key in list(line):
             if isinstance(line[key], Decimal):
                 line[key] = rounded(line[key])
-    active_line_rows = [line for line in line_rows if line_has_payroll_activity(line)]
+    active_line_rows = [line for line in line_rows if line_has_payroll_activity(line) or line.get("attendance_corrections")]
     if active_line_rows:
         line_rows = active_line_rows
     line_rows.sort(
@@ -1556,6 +1564,7 @@ def calculate_employee(employee, year_month):
             monthly_components["injury_days"] + daily_components["injury_days"]
         ),
         "adjustment_amount": rounded(adjustments_total),
+        "legacy_adjustments": adjustments,
         "attendance_other_allowance_amount": rounded(
             attendance_other_allowance
         ),
@@ -1579,6 +1588,13 @@ def calculate_employee(employee, year_month):
         ),
         "actual_previous_tail": rounded(actual_previous_tail),
         "expected_previous_tail": rounded(expected_previous_tail),
+        "tail_source": {
+            "month": previous_month(year_month),
+            "actual": rounded(reconciliation_actual),
+            "expected": rounded(reconciliation_expected),
+            "from_sheet": bool(previous_forecast_segments),
+            "snapshot_id": forecast_snapshot_id,
+        },
         "reconciliation_amount": rounded(
             reconciliation_actual - reconciliation_expected
         ),
@@ -1612,19 +1628,20 @@ def calculate_payroll(
     year_month,
     payroll_group="all",
     payroll_entity_id=None,
+    *, employees=None,
 ):
+    if employees is None:
+        employees = employees_for_payroll(year_month, payroll_group, payroll_entity_id)
+    summaries = {row.employee_id: row for row in
+                 AttendanceMonthlySummary.query.filter_by(year_month=year_month).all()}
     return [
-        calculate_employee(employee, year_month)
-        for employee in employees_for_payroll(
-            year_month,
-            payroll_group,
-            payroll_entity_id,
-        )
+        calculate_employee(employee, year_month, summary=summaries.get(employee.id))
+        for employee in employees
     ]
 
 
 def serialize_line(line):
-    return {
+    return {"project_name": line["project"].name if line.get("project") else "未分配", **{
         key: (
             str(value)
             if isinstance(value, Decimal)
@@ -1635,7 +1652,21 @@ def serialize_line(line):
             else value
         )
         for key, value in line.items()
-    }
+    }}
+
+
+def snapshot_employee(employee, assignment, year_month):
+    month_start, month_end = parse_year_month(year_month)
+    periods = [p for p in employee.employment_periods if p.start_date <= month_end
+               and (p.end_date is None or p.end_date >= month_start)]
+    start = max((p.start_date for p in periods), default=None)
+    position = assignment.primary_position if assignment else None
+    hkid = next((i.identity_number for i in employee.identities
+                 if i.status == "active" and i.identity_type == "hkid"), None)
+    return {"employee_no": employee.employee_no, "english_name": employee.english_name,
+            "chinese_name": employee.chinese_name, "position": position.display_name if position else "",
+            "employment_start": start.isoformat() if start else None, "hkid": hkid,
+            "employer": assignment.employer.display_name if assignment and assignment.employer else ""}
 
 
 def snapshot_payroll(year_month, payroll_group, rows, user_id, *, commit=True):
@@ -1733,6 +1764,7 @@ def snapshot_payroll(year_month, payroll_group, rows, user_id, *, commit=True):
             warnings_json=row["warnings"],
             calculation_json={
                 "group": row["group"],
+                "employee_snapshot": snapshot_employee(row["employee"], row["assignment"], year_month),
                 "payroll_entity_code": (
                     row["assignment"].payroll_entity.code
                     if row["assignment"] and row["assignment"].payroll_entity
@@ -1848,8 +1880,10 @@ def project_summary(rows):
             continue
         for line in row["lines"]:
             project = line["project"]
-            key = project.id if project else 0
+            currency = row.get("currency") or "HKD"
+            key = (project.id if project else 0, currency)
             item = summary[key]
+            item["currency"] = currency
             item["project"] = project
             item["headcount"].add(row["employee"].id)
             item["base"] += decimal_value(line["base_amount"])
@@ -1876,3 +1910,19 @@ def project_summary(rows):
         }
         for item in summary.values()
     ]
+
+
+def currency_summary(rows):
+    """Never combine monetary values in different currencies without an FX policy."""
+    totals = {}
+    fields = {"gross": "gross_amount", "employee_mpf": "employee_mpf",
+              "employer_mpf": "employer_mpf", "net": "net_amount",
+              "medical": "work_injury_medical_reimbursement_amount"}
+    for row in rows:
+        if row.get("blockers"):
+            continue
+        currency = row.get("currency") or "HKD"
+        item = totals.setdefault(currency, {key: Decimal("0") for key in fields})
+        for target, source in fields.items():
+            item[target] += decimal_value(row.get(source))
+    return [{"currency": currency, **totals[currency]} for currency in sorted(totals)]

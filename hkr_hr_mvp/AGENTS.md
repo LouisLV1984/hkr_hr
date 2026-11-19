@@ -36,7 +36,7 @@ $files = @('app.py','config.py','models.py') + (Get-ChildItem routes -Filter *.p
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy_to_hkr_hr.ps1
 ```
 
-5. Report copying/deployment separately from process restart and live browser verification. The user normally restarts production with `D:\HKR_HR\scripts\mini_pc_restart_hkr_hr_app.bat`.
+5. Report copying/deployment separately from process restart and live browser verification. Use the HKR HR restart inbox after its one-time installation documented in [README.md](README.md). If it is unavailable, the mini-PC operator can use `D:\HKR_HR\scripts\mini_pc_restart_hkr_hr_app.bat`.
 6. For every release, review [`操作指南.md`](操作指南.md) together with `tools/releases.py`. Any user-facing change to navigation, forms, fields, permissions, document handling, attendance, Payroll, exports, or operating rules must update the guide in the same change. Keep its applicable version and update date aligned with `CURRENT_VERSION`; internal-only fixes may leave the guide body unchanged after confirming that no operator instruction changed.
 7. Do not fold a later material set of business rules or workflow changes into an already published release. Add a new release entry with its actual publication date, preserve the prior release's date and scope, and align the operator guide to the new current version.
 

@@ -1,0 +1,18 @@
+  <dialog class="app-dialog record-editor-dialog" id="add-leave-dialog">
+    <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.add_annual_leave', employee_id=employee.id) }}" enctype="multipart/form-data">
+      {% if leave_return == "annual_leave" %}{% include 'leave/_return_fields.html' %}{% endif %}
+      <div class="section-head"><div><h2>{{ t("leave.add_request") }} · {{ employee.display_name }}</h2><p>{{ t("leave.only_three_types") }}</p></div><button class="icon-btn" type="button" data-dialog-close>×</button></div>
+      <div class="record-editor-body form-grid">
+        <label><span>{{ t("leave.type") }} *</span><select name="leave_type" data-leave-type required><option value="annual">{{ t("leave.type_annual") }}</option><option value="sick">{{ t("leave.type_sick") }}</option><option value="unpaid">{{ t("leave.type_unpaid") }}</option></select></label>
+        {% include 'leave/_duration.html' %}
+        <label><span>{{ t("leave.start_date") }} *</span><input type="date" name="start_date" required></label>
+        <label><span>{{ t("leave.end_date") }} *</span><input type="date" name="end_date" required></label>
+        <label><span>{{ t("leave.derived_days_label") }}</span><input readonly data-leave-days data-leave-preview-url="{{ url_for('leave.leave_day_preview', employee_id=employee.id) }}" placeholder="—"><small>{{ t("leave.derived_days_rule") }}</small></label>
+        <label><span>{{ t("leave.start_session") }}</span><select name="start_session"><option value="am">{{ t('hr.am') }}</option><option value="pm">{{ t('hr.pm') }}</option></select></label>
+        <label><span>{{ t("leave.end_session") }}</span><select name="end_session"><option value="pm">{{ t('hr.pm') }}</option><option value="am">{{ t('hr.am') }}</option></select></label>
+        <label><span>{{ t("common.evidence") }}</span><input type="file" name="evidence"><small data-leave-rule>{{ t("leave.annual_rule") }}</small></label>
+        <label class="wide"><span>{{ t("common.remarks") }}</span><textarea name="remarks"></textarea></label>
+      </div>
+      <div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
+    </form>
+  </dialog>

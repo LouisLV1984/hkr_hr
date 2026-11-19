@@ -1,6 +1,6 @@
 # ADR-0003: OCR-Assisted Reviewed Import
 
-- Status: Accepted
+- Status: Superseded for V1 by [ADR-0007](0007-profile-first-manual-document-capture.md)
 - Date: 2026-07-24
 
 ## Context
@@ -20,4 +20,4 @@ HR source documents may be scanned, multilingual, or handwritten. OCR can accele
 - Manual completion remains a first-class path.
 - Intake decisions and resulting changes must be auditable.
 - Re-OCR and fully automatic employee creation are not required core behavior.
-- Current field names and document codes are maintained in [`../OCR_RULES.md`](../OCR_RULES.md), not duplicated in this ADR.
+- Historical OCR material is evidence only; current intake vocabulary is in [CONTEXT.md](../../../CONTEXT.md).

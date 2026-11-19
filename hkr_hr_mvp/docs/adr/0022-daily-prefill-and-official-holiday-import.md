@@ -5,6 +5,8 @@
 - Supersedes in part: [ADR-0021](0021-daily-sunday-attendance-and-guided-prefill.md)
 - Superseded in part by: [ADR-0023](0023-payroll-group-holiday-calendars.md)
 
+Current workflow amendments: [ADR-0026](0026-small-team-workflow-and-stable-outputs.md). Historical wording below is superseded only in the scopes explicitly listed there.
+
 ## Context
 
 Daily workers are paid for Sunday only when they actually work. Prefilling every non-statutory-holiday calendar date therefore made Sunday look like expected attendance and required HR to remove it repeatedly. Known annual leave, sick leave, unpaid leave and work-injury dates could also remain inside the attendance baseline even though Payroll calculates those dates separately, creating a risk of duplicate pay for daily workers.

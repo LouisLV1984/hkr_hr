@@ -77,7 +77,8 @@ if ($Mode -eq "MiniPc") {
     }
 }
 
-Write-Host "Restore verification passed."
+$verificationScope = if ($Mode -eq "MiniPc") { "Database restore and template extraction passed; attachment restore NOT tested." } else { "Archive listing and template extraction passed; database and attachment restore NOT tested." }
+Write-Host $verificationScope
 Write-Host "Dump:     $($dump.FullName)"
 Write-Host "Template: $($template.FullName)"
 
@@ -89,7 +90,7 @@ if ($Mode -eq "MiniPc") {
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
 $verificationLog = Join-Path $logRoot ("restore_verify_{0}.log" -f (Get-Date -Format "yyyyMMdd_HHmmss"))
 @(
-    "Restore verification passed."
+    $verificationScope
     "Verified at: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
     "Mode: $Mode"
     "Dump: $($dump.Name)"

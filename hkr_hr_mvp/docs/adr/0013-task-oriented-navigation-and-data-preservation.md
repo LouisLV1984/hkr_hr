@@ -3,6 +3,10 @@
 **Status:** Accepted  
 **Date:** 2026-07-31
 
+Current workflow amendments: [ADR-0026](0026-small-team-workflow-and-stable-outputs.md). Historical wording below is superseded only in the scopes explicitly listed there.
+
+The navigation and default landing pages are updated by [ADR-0029](0029-employee-workbench-and-task-pages.md).
+
 ## Context
 
 HKR HR had grown into a collection of functions. Attendance and Payroll shared one top-level label, while report/export functions duplicated Payroll actions. Admin tools were mixed with HR-maintained reference data. Empty pages also exposed large inactive work areas before the operator had selected or uploaded anything.
@@ -11,7 +15,7 @@ Reference-data deletion could clear values from existing employee, attendance, o
 
 ## Decision
 
-The primary navigation follows six HR tasks:
+Historical navigation grouping (superseded by ADR-0026; current labels and locations are in CONTEXT.md):
 
 1. Work Overview;
 2. Employees;
@@ -24,7 +28,7 @@ Attendance contains collection and entry only. Payroll calculation, Payroll expo
 
 Pages show a purposeful start state until data exists. Workbenches appear only after the operator has selected or uploaded a record.
 
-List and management workspaces use a consistent two-part layout. The fixed left rail contains the active submodule, selected month or year, filters, and the current work context. The right pane displays filtered results and the actions that change those results. Filters appear only under the active submodule and default to `All`. Work Overview has no left rail. Focused preview workbenches, employee forms and dialogs may use a task-specific layout instead of adding an empty rail.
+List and management workspaces use a consistent two-part layout. The fixed left rail contains the active submodule, selected month or year, filters, and the current work context. The right pane displays filtered results and the actions that change those results. Filters appear only under the active submodule. ADR-0026 replaces the universal `All` default with task-specific missing/exception views. Work Overview has no left rail. Focused preview workbenches, employee forms and dialogs may use a task-specific layout instead of adding an empty rail.
 
 Employee Management and Annual Leave Management follow this layout. Attendance Management has four peer submodules: Attendance Details, Attendance Collection, Specific-month Attendance Exemption, and Long-term Attendance Exemption. The two exemption views retain the selected month and filter by position/trade and Payroll group; bulk changes are performed above the right-side result list. A specific-month exemption automatically returns to attendance-required in the following month.
 

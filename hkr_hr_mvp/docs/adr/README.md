@@ -28,6 +28,14 @@ ADRs record accepted design tradeoffs. They explain why the system follows a dir
 | [ADR-0022](0022-daily-prefill-and-official-holiday-import.md) | Accepted | Exclude Sunday and known absences from daily prefills and import Hong Kong official holiday calendars on demand |
 | [ADR-0023](0023-payroll-group-holiday-calendars.md) | Accepted | Apply statutory holidays to Site staff and general holidays to Management/Head Office |
 | [ADR-0024](0024-unified-profile-document-intake-and-owned-record-routing.md) | Accepted | Use one profile document gateway and route structured evidence to its owning record |
+| [ADR-0025](0025-calendar-year-advance-annual-leave.md) | Accepted | Confirm calendar-year advance leave, preserve historical balances and recover excess on departure |
+
+| [ADR-0026](0026-small-team-workflow-and-stable-outputs.md) | Accepted | Simplify the three-operator monthly workflow, preserve dated facts and support offline maintenance |
+
+| [ADR-0027](0027-dated-attendance-corrections.md) | Accepted | Correct past attendance from the current PDF, with dated payroll differences and shared evidence |
+| [ADR-0028](0028-hkr-hr-restart-inbox.md) | Accepted | Restart HKR HR through its own file inbox and Windows task |
+
+| [ADR-0029](0029-employee-workbench-and-task-pages.md) | Accepted | Use an employee workbench, PDF-first intake and shared leave entry |
 
 Stable terms and current facts are in [`../../../CONTEXT.md`](../../../CONTEXT.md). Executable rules are in [`../../AGENTS.md`](../../AGENTS.md).
 

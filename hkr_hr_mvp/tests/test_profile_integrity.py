@@ -40,6 +40,7 @@ class ProfileIntegrityTests(unittest.TestCase):
             row = EmployeeAnnualLeaveRecord(employee_id=eid, leave_date=date(2026, 8, 4),
                 end_date=date(2026, 8, 4), days=1, entitlement_year=2026, leave_type="sick")
             db.session.add(row); db.session.commit(); rid = row.id
+            leave_changed_at = row.updated_at
         page = self.client.get(f"/employees/{eid}?tab=leave&focus=sick_evidence").get_data(as_text=True)
         self.assertIn('id="missing-leave-evidence"', page)
         self.assertIn(f'/annual-leave/{rid}/evidence', page)
@@ -51,6 +52,7 @@ class ProfileIntegrityTests(unittest.TestCase):
             row = EmployeeAnnualLeaveRecord.query.one()
             self.assertEqual((row.leave_date, row.days, row.leave_type), (date(2026, 8, 4), Decimal(1), "sick"))
             self.assertIsNotNone(row.evidence_document_id)
+            self.assertEqual(row.updated_at, leave_changed_at)
             self.assertEqual(AuditLog.query.filter_by(action="leave_evidence_added").count(), 1)
             row.status = "voided"; db.session.commit()
         self.assertEqual(self.client.post(f"/annual-leave/{rid}/evidence").status_code, 400)

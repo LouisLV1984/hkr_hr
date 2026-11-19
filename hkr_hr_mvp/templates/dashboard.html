@@ -1,104 +1,35 @@
 {% extends "base.html" %}
-{% block title %}{{ t("dashboard.title") }} - HKR HR{% endblock %}
+{% block title %}{{ t('workbench.title') }} · HKR HR{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static',filename='css/workbench.css',v=current_version) }}">{% endblock %}
+{% macro w(key) -%}{{ t('workbench.' ~ key) }}{%- endmacro %}
+{% set leave=url_for('leave.leave_home',year=today.year) %}
+{% set intake=url_for('attendance.attendance_home',month=year_month,view='collection') %}
+{% set pay=url_for('payroll.attendance_payroll',year_month=year_month,payroll_entity_id='',status='all') %}
 {% block content %}
-<section class="page-head">
-  <div>
-    <h1>{{ t("dashboard.title") }}</h1>
-    <p>{{ t("dashboard.subtitle") }}</p>
-  </div>
-  <a class="primary-btn" href="{{ url_for('employees.new_employee') }}">{{ t("employees.new") }}</a>
-</section>
-
-<section class="metric-grid">
-  <a class="metric-card" href="{{ url_for('employees.list_employees', status='active') }}">
-    <span>{{ t("dashboard.active_count") }}</span>
-    <strong>{{ active_count }}</strong>
-  </a>
-  <a class="metric-card" href="{{ url_for('payroll.attendance_payroll', year_month=year_month) }}">
-    <span>{{ year_month }} · {{ t("dashboard.estimated_payroll") }}</span>
-    <strong>HKD {{ fmt_money(estimated_payroll) }}</strong>
-    {% if payroll_unready_count %}<small>{{ t("dashboard.payroll_unready", count=payroll_unready_count) }}</small>{% endif %}
-  </a>
-  <a class="metric-card" href="{{ url_for('attendance.attendance_home', month=year_month) }}">
-    <span>{{ t("dashboard.attendance_received") }}</span>
-    <strong>{{ attendance_received }} / {{ attendance_expected }}</strong>
-  </a>
-  <a class="metric-card warn" href="{{ url_for('dashboard.dashboard', month=year_month, panel='expiry') }}#expiry-alerts">
-    <span>{{ t("dashboard.expiry") }}</span>
-    <strong>{{ expiry_alerts|length }}</strong>
-  </a>
-  <a class="metric-card warn" href="{{ url_for('dashboard.dashboard', month=year_month, panel='confirmation') }}#confirmation-alerts">
-    <span>{{ t("dashboard.confirmation_due") }}</span>
-    <strong>{{ confirmation_alerts|length }}</strong>
-  </a>
-</section>
-
-{% if active_count == 0 %}
-<section class="panel onboarding-empty">
-  <div><h2>{{ t("dashboard.start_title") }}</h2><p>{{ t("dashboard.start_hint") }}</p></div>
-  <a class="primary-btn" href="{{ url_for('employees.new_employee') }}">{{ t("employees.new") }}</a>
-</section>
-{% else %}
-<section class="dashboard-sections">
-  <details class="panel dashboard-disclosure" id="confirmation-alerts" {% if open_panel == "confirmation" %}open{% endif %}>
-    <summary class="dashboard-section-summary">
-      <strong>{{ t("dashboard.confirmation_with_count", count=confirmation_alerts|length) }}</strong>
-    </summary>
-    <div class="dashboard-section-content">
-      <p class="form-note">{{ t("dashboard.confirmation_hint") }}</p>
-      <div class="table-wrap flat">
-        <table class="dense-table">
-          <thead><tr><th>{{ t("common.employee") }}</th><th>{{ t("employees.payroll_group") }}</th><th>{{ t("employee.probation_end") }}</th><th>{{ t("common.status") }}</th></tr></thead>
-          <tbody>
-            {% for alert in confirmation_alerts %}
-              <tr class="expiry-row {{ alert.severity }}">
-                <td><a href="{{ url_for('employees.view_employee', employee_id=alert.employee.id, tab='employment_status', focus='probation') }}">{{ alert.employee.employee_no }} · {{ alert.employee.display_name }}</a></td>
-                <td>{{ option_t("payroll_group", alert.employee.payroll_group, alert.employee.payroll_group) }}</td>
-                <td>{{ fmt_date(alert.date) }}</td>
-                <td><span class="flag expiry-status {{ alert.severity }}">{% if alert.days_remaining < 0 %}{{ t("dashboard.confirmation_overdue", days=-alert.days_remaining) }}{% elif alert.days_remaining == 0 %}{{ t("dashboard.confirmation_today") }}{% else %}{{ t("dashboard.confirmation_remaining", days=alert.days_remaining) }}{% endif %}</span></td>
-              </tr>
-            {% else %}
-              <tr><td colspan="4" class="empty-cell">{{ t("dashboard.no_confirmation_alerts") }}</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </details>
-
-  <details class="panel dashboard-disclosure" id="expiry-alerts" {% if open_panel == "expiry" %}open{% endif %}>
-    <summary class="dashboard-section-summary">
-      <strong>{{ t("dashboard.expiry_with_count", count=expiry_alerts|length) }}</strong>
-    </summary>
-    <div class="dashboard-section-content">
-      <div class="table-wrap flat">
-        <table class="dense-table">
-          <thead><tr><th>{{ t("common.employee") }}</th><th>{{ t("common.details") }}</th><th>{{ t("employee.expiry_date") }}</th><th>{{ t("common.status") }}</th></tr></thead>
-          <tbody>
-            {% for alert in expiry_alerts %}
-              <tr class="expiry-row {{ alert.severity }}">
-                <td><a href="{{ url_for('employees.view_employee', employee_id=alert.employee.id, tab='credentials', _anchor=alert.anchor) }}">{{ alert.employee.employee_no }} · {{ alert.employee.display_name }}</a></td>
-                <td>{{ option_t("identity_type", alert.label, alert.label) }}</td>
-                <td>{{ fmt_date(alert.date) }}</td>
-                <td><span class="flag expiry-status {{ alert.severity }}">{% if alert.severity == 'expired' %}已到期 {{ -alert.days_remaining }} 日{% elif alert.severity == 'urgent' %}{{ alert.days_remaining }} 日內到期{% else %}{{ alert.days_remaining }} 日後到期{% endif %}</span></td>
-              </tr>
-            {% else %}
-              <tr><td colspan="4" class="empty-cell">{{ t("dashboard.no_expiry_alerts") }}</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </details>
-
-  <section class="panel dashboard-action-panel" id="tasks">
-    <div class="section-head"><div><h2>{{ t("dashboard.current_month_actions", month=year_month, count=readiness_total_count) }}</h2><p>{{ t("dashboard.current_month_actions_hint") }}</p></div></div>
-    <div class="dashboard-action-links">
-      <a href="{{ url_for('employees.list_employees', month=year_month, readiness='employee_data', status='all') }}"><span>{{ t("readiness.employee_file") }}</span><strong>{{ employee_data_issue_count }}</strong></a>
-      <a href="{{ url_for('employees.list_employees', month=year_month, readiness='attendance', status='all') }}"><span>{{ t("readiness.attendance") }}</span><strong>{{ attendance_issue_count }}</strong></a>
-      <a href="{{ url_for('employees.list_employees', month=year_month, readiness='payroll', status='all') }}"><span>{{ t("readiness.payroll_status") }}</span><strong>{{ payroll_issue_count }}</strong></a>
-    </div>
-  </section>
-</section>
+<section class="staff-workbench"><div class="intro"><div><p class="date">{{ today.strftime('%Y / %m / %d') }}</p><h1>{{ w('title') }}</h1></div><form class="period" method="get"><label>{{ w('month') }} <input type="month" name="month" value="{{ year_month }}" required></label><button>{{ w('apply') }}</button></form></div>
+<div class="overview">
+<section class="tile"><div class="title"><h2>{{ w('expiry') }}</h2><a href="{{ url_for('dashboard.dashboard',month=year_month,panel='expiry',_anchor='expiry-alerts') }}">{{ w('view') }} ↗</a></div><div class="big">{{ alerts|length }} <small>{{ w('doc') }}</small></div>
+{% for a in alerts[:2] %}<a class="line" href="{{ url_for('employees.view_employee',employee_id=a.employee.id,tab='credentials',_anchor=a.anchor) }}"><span>{{ a.employee.display_name }} · {{ option_t('identity_type',a.label,a.label) }}</span><em class="{{ 'red' if a.days_remaining < 0 else 'amber' }}">{{ a.date.strftime('%m/%d') }} {{ w('expired') if a.days_remaining < 0 else w('exp') }}</em></a>{% else %}<p>{{ w('none') }}</p>{% endfor %}</section>
+<section class="tile"><div class="title"><h2>{{ w('leave') }}</h2><a href="{{ leave }}">{{ w('view') }} ↗</a></div>
+{% for key,items in [('today',outlook.today),('week',outlook.week),('injury',outlook.injury)] %}<div class="line"><span>{{ w(key) }}</span><span class="leave-names">{% for e in items[:2] %}<a href="{{ url_for('leave.leave_home',year=today.year,view='injury' if key=='injury' else 'leave',employee_id=e.id,origin='workbench') }}">{{ e.display_name }}</a>{% if not loop.last %}、{% endif %}{% endfor %}{% if items|length > 2 %}…{% endif %}</span><b>{{ items|length }}</b></div>{% endfor %}</section>
+<section class="tile accent"><div class="title"><h2>{{ w('cycle') }}</h2><small>{{ year_month }}</small></div><div class="metrics"><a href="{{ url_for('attendance.attendance_home',month=year_month,view='details',status='expected') }}"><strong>{{ attendance_received }}<small> / {{ attendance_expected }}</small></strong>{{ w('received') }}</a><a href="{{ url_for('payroll.attendance_payroll',year_month=year_month,status='ready',payroll_entity_id='') }}"><strong>{{ ready_count }}</strong>{{ w('ontime') }}</a><a href="{{ url_for('payroll.attendance_payroll',year_month=year_month,status='pending',payroll_entity_id='') }}"><strong>{{ blocked_count }}</strong>{{ w('review') }}</a></div><div class="actions"><a class="upload" href="{{ intake }}">{{ w('upload') }} ↗</a><a href="{{ pay }}">{{ w('openpay') }} →</a></div></section></div>
+{% if confirmation_alerts or open_panel in ('confirmation', 'expiry') %}
+<div class="workbench-alert-lists">{% include '_workbench_alerts.html' %}</div>
 {% endif %}
+<div class="workbench-net"><span>{{ t('dashboard.estimated_payroll') }}</span>{% for total in estimated_payroll %}<strong>{{ total.currency }} {{ fmt_money(total.net) }}</strong>{% else %}—{% endfor %}</div>
+<section class="directory"><div class="table-head"><h2>{{ w('list') }} <small id="count">{{ people|length }}</small></h2><div class="tools"><input type="search" id="q" aria-label="{{ w('search') }}" placeholder="{{ w('search') }}"><label><input type="checkbox" id="pending">{{ w('pending') }}</label></div></div>
+<div class="scroll"><table><thead><tr><th>{{ w('staff') }}</th><th>{{ w('expiry') }}</th><th>{{ w('leave') }}</th><th>{{ w('attendance') }} · {{ year_month }}</th><th>{{ w('readytable') }}</th></tr></thead><tbody>
+{% for p in people %}{% set e=p.employee %}<tr id="staff-{{ e.id }}" data-name="{{ e.employee_no }} {{ e.display_name }} {{ e.english_name or '' }}" data-pending="{{ 1 if p.pending else 0 }}">
+<td><a class="employee" href="{{ url_for('employees.view_employee',employee_id=e.id,origin='workbench') }}"><strong>{{ e.display_name }}</strong><small>{{ e.employee_no }} · {{ option_t('payroll_group',e.payroll_group,e.payroll_group) }}</small></a></td>
+<td>{% if p.alerts %}{% set a=p.alerts[0] %}<a class="highlight" href="{{ url_for('employees.view_employee',employee_id=e.id,tab='credentials',_anchor=a.anchor) }}">{{ option_t('identity_type',a.label,a.label) }} <small>{{ a.date.strftime('%m/%d') }}</small>{% if p.alerts|length > 1 %} +{{ p.alerts|length - 1 }}{% endif %}</a>{% else %}<span class="muted">{{ w('clearfile') }}</span>{% endif %}</td>
+<td>{% if p.absences %}{% for day,kind in p.absences %}<a class="absence" href="{{ url_for('leave.leave_home',year=today.year,employee_id=e.id,origin='workbench',view='injury' if kind=='injury' else 'leave') }}">{{ w(kind) }}{% if day!=today %} · {{ day.strftime('%m/%d') }}{% endif %}</a>{% endfor %}{% else %}<a class="muted" href="{{ url_for('leave.leave_home',employee_id=e.id,year=today.year,origin='workbench') }}">{{ t('workbench.leaveview') }}</a>{% endif %}</td>
+{% if p.row %}<td>{% set a=p.row.attendance %}{% if p.summary and a.code=='received' %}<a class="status ok" href="{{ url_for('attendance.attendance_home',month=year_month,view='collection',summary_id=p.summary.id) }}">{{ t(a.label_key) }}</a>{% else %}<span class="status {{ 'neutral' if a.ok else 'warn' }}">{{ t(a.label_key) }}</span>{% endif %}</td>
+<td>{% set can=p.row.payroll[0].ok %}{% if p.final_payment %}<a class="status {{ 'ok' if can else 'warn' }}" href="{{ url_for('payroll.final_payment',year_month=year_month,payroll_entity_id='',_anchor='final-employee-' ~ e.id) }}">{{ t('final_payment.title') }} ›</a>{% else %}<a class="status {{ 'ok' if can else 'warn' }}" href="{{ url_for('payroll.attendance_payroll',year_month=year_month,payroll_entity_id='',employee_id=e.id,status='all') }}">{{ w('ontime') if can else w('wait') }} ›</a>{% endif %}</td>{% else %}<td colspan="2">{{ w('inactive') }}</td>{% endif %}</tr>{% endfor %}</tbody></table></div><p id="empty" hidden>{{ w('noresults') }}</p></section></section>
+{% endblock %}
+{% block scripts %}
+<script>
+const q=document.querySelector('#q'), pending=document.querySelector('#pending'), rows=[...document.querySelectorAll('.directory tbody tr')];
+function filter(){let visible=0; for(const row of rows){row.hidden=!row.dataset.name.toLocaleLowerCase().includes(q.value.trim().toLocaleLowerCase()) || (pending.checked && row.dataset.pending==='0'); if(!row.hidden)visible++;}document.querySelector('#count').textContent=visible;document.querySelector('#empty').hidden=visible>0;}
+q.addEventListener('input',filter);pending.addEventListener('change',filter);filter();
+</script>
 {% endblock %}

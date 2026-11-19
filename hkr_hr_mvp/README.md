@@ -25,15 +25,16 @@ runtime assets, routes, data and services are never shared.
 ## V1 Workflow
 
 1. Create one minimal employee profile and permanent employee number.
-2. Complete personal details, effective-dated assignment and salary on that
-   profile.
+2. Complete missing initial employment, assignment, salary, bank and MPF records
+   together on that profile. One date and one save; existing records retain their correction editors.
 3. Use the employee's single document gateway for 三寶, Staff Record, CV,
    signed contracts and general attachments. Bank and other structured
    evidence is uploaded in its owning profile module. Preview the original and
    enter any facts manually. V1 does not use OCR.
-4. Generate an editable SITE or OFFICE contract package from current profile
-   data.
-5. Upload attendance PDFs in a batch. For each PDF, select the employee and
+4. Generate a uniquely versioned SITE or OFFICE draft using facts on its effective date.
+   Draft generation never updates formal employment terms.
+5. Choose a default month and queue attendance PDFs into one batch. Retry only failed files.
+   For each PDF, select the employee and
    enter current-month days 1–20 plus prior-month days 21–end.
 6. Review payroll and export one XLSX group or all three groups as a ZIP; the
    export creates an immutable calculation snapshot automatically.
@@ -42,9 +43,9 @@ runtime assets, routes, data and services are never shared.
 8. Maintain annual, sick and unpaid leave in Leave Management. Comp leave is
    generated only from rest-day/statutory-holiday attendance; work injury is a
    separate dated attendance-exemption and payroll record.
-9. Maintain meal, transport and special allowances as effective-dated monthly
-   amounts under Employment & Salary. One-off Payroll changes remain
-   month-specific adjustments.
+9. Maintain meal and transport daily-rate allowances and monthly special allowances
+   under Employment & Salary. One-off changes are month-specific adjustments,
+   available from both monthly Payroll and departure settlement.
 
 ## Routes
 
@@ -65,6 +66,17 @@ runtime assets, routes, data and services are never shared.
 
 There is no raw database console, OCR intake route or second employee-create
 path.
+
+## Offline Operation
+
+Production startup does not contact a package index. Prepare dependencies on a connected development PC
+with `scripts/build_offline_wheels.ps1` using the same Python version and Windows architecture as production.
+Copy the resulting folder to `D:\HKR_HR\_system\wheelhouse`. The setup script installs using
+`--no-index --find-links`; unchanged installations only run the existing import check.
+
+Work Calendar can export/import local UTF-8 CSV with columns `date,name,scope,region_code`.
+Scopes are `statutory`, `public`, or `both`. Existing names and archived states are preserved.
+No holiday dates are invented. Online official import remains an optional connected maintenance action.
 
 ## Local Setup
 
@@ -90,11 +102,31 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy_to_hkr_hr.p
 ```
 
 Deployment mirrors code and templates to `R:\`; it does not restart the mini
-PC. The operator restart remains:
+PC. To deploy changes to the restart tools alone, use the same command with
+`-RestartToolsOnly`. The operator can always restart directly on the mini PC:
 
 ```text
 D:\HKR_HR\scripts\mini_pc_restart_hkr_hr_app.bat
 ```
+
+For remote restarts, run `D:\HKR_HR\scripts\mini_pc_install_hkr_hr_restart_inbox.bat`
+once on the mini PC from the Windows account that operates HKR HR. It registers
+`HKR HR Restart Inbox`, which checks every minute while that account is signed
+in. The app does not need to be running for the task to pick up a request.
+
+From the laptop, at the app root:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\request_hkr_hr_restart.ps1
+# On timeout, check the same ID. Do not queue another restart to check status.
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\request_hkr_hr_restart.ps1 -RequestId <printed-id>
+```
+
+The task sees an empty marker file in `R:\_system\restart_inbox`. A `.running`
+marker without a result means the restart started and may have been interrupted;
+inspect `R:\03.Output\logs\restart_inbox` and check the live login page before
+requesting another restart. A successful result includes a local login HTTP check;
+confirm the expected version and affected page from the laptop separately.
 
 Admin passwords are never stored in source control. For first-time database
 bootstrap or an explicit admin-password reset, set `HKR_HR_ADMIN_PASSWORD` in
@@ -114,7 +146,9 @@ After that one-time rebuild, use only the normal restart file.
 
 ## Backup And Restore
 
-Production uses two encrypted, deduplicated Restic repositories. The mini PC
+The supplied backup setup supports two encrypted, deduplicated Restic repositories.
+Their availability must be verified on each installation; this is not proof that
+the schedules or repositories have already been configured. The mini PC
 keeps seven daily short-term snapshots under `D:\HKR_HR\04.Backups`; the
 laptop keeps longer incremental history under
 `%USERPROFILE%\HKR_HR_Backups`. Unchanged multi-gigabyte attachments are not
@@ -163,3 +197,28 @@ node tests\profile_workspace_browser.cjs
 The fixture listens only on `127.0.0.1:8766`. Stop it with Ctrl+C after testing;
 temporary records and files are cleaned up. Screenshots under `tmp` stay outside
 Git and deployment. Never point this test at a live employee database.
+
+### Isolated PostgreSQL regression
+
+Use a disposable local PostgreSQL cluster whose data directory is below this
+application's ignored `tmp` directory, with a database named `hkr_hr_db`. Never
+use the production cluster. Set `HKR_HR_TEST_DATABASE_URL` to that cluster's
+`postgresql://` URL, then run:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\test_postgres.py --data-directory <absolute-disposable-data-directory>
+```
+
+The runner checks the server's real `data_directory` before running tests and
+creates a fresh schema for every fixture app (including migration fixtures).
+Only schemas created by that invocation are removed. `--pattern` selects a test
+file. User identity fixtures select the admin by username, not unordered rows.
+
+Backup verification reports its scope explicitly: laptop mode lists the dump
+and extracts templates; mini-PC mode additionally restores a temporary database.
+Neither mode currently proves attachment recovery. The system page marks these
+logs as partial verification, including older generic success messages.
+
+### Offline PDF preview
+
+Mozilla PDF.js 6.5.438 is vendored under `static/vendor/pdfjs` with its Apache 2.0 license and source manifest. `static/js/pdf-preview.mjs` uses local worker, fonts, CMaps and WASM. Document and attendance open routes serve a viewer by default and preserve original PDF bytes with `?raw=1`; downloads remain attachments. No CDN, browser PDF plugin, or new Python dependency is required.

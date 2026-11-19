@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 
 from flask import abort, request, session
 from PIL import Image, UnidentifiedImageError
+from pypdf import PdfReader
 
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
@@ -26,6 +27,19 @@ CANONICAL_MIME_TYPES = {
 
 class UploadValidationError(ValueError):
     pass
+
+
+def document_file_issue(document):
+    """Physical availability is separate from a record's active/voided state."""
+    try:
+        path = Path(document.stored_path)
+        if not path.is_file():
+            return "review.file_unavailable"
+        if path.stat().st_size == 0:
+            return "upload.empty_file"
+    except (OSError, TypeError, ValueError):
+        return "review.file_unavailable"
+    return None
 
 
 class LoginRateLimiter:
@@ -170,6 +184,21 @@ def validate_uploaded_file(uploaded_file, allowed_extensions=None):
         raise UploadValidationError("upload.empty_file")
     if suffix == ".pdf" and (not head.startswith(b"%PDF-") or b"%%EOF" not in tail):
         raise UploadValidationError("upload.invalid_pdf" if allowed == {".pdf"} else "upload.invalid_file")
+    if suffix == ".pdf":
+        position = uploaded_file.stream.tell()
+        try:
+            uploaded_file.stream.seek(0)
+            reader = PdfReader(uploaded_file.stream)
+            if reader.is_encrypted or not len(reader.pages):
+                raise ValueError("PDF must contain readable pages")
+            for page in reader.pages:
+                # Resolve the page tree and page dimensions without rewriting evidence.
+                if page.mediabox.width <= 0 or page.mediabox.height <= 0:
+                    raise ValueError("Invalid PDF page")
+        except Exception as exc:
+            raise UploadValidationError("upload.invalid_pdf") from exc
+        finally:
+            uploaded_file.stream.seek(position)
     if suffix in {".jpg", ".jpeg", ".png"}:
         _validate_image(uploaded_file, "PNG" if suffix == ".png" else "JPEG")
     if suffix == ".docx":

@@ -4,6 +4,8 @@
             <div class="row-actions">
               {% if item.document and item.document.status == "active" %}<a class="mini-btn" target="_blank" href="{{ url_for('documents.open_document', document_id=item.document.id) }}">{{ t("common.open") }}</a>{% elif item.status == "active" %}<span class="flag warn">{{ t("common.pending") }}</span>{% endif %}
               {% if item.status == "active" %}
+                {% if item.expiry_date and not active_successor(item) and item.certificate_type.code not in ['SKILL','DEGREE'] %}<button type="button" class="mini-btn" data-dialog-open="certificate-add-dialog" data-renew-id="{{ item.id }}" data-renew-type="certificate_type_id" data-renew-value="{{ item.certificate_type_id }}" data-renew-label="{{ t('hr.renew') }}"{% if false %} data-renew-name="{{ item.qualification_name }}"{% endif %}>{{ t('hr.renew') }}</button>{% endif %}
+                <button class="mini-btn" type="button" data-dialog-open="certificate-editor-{{ item.id }}" data-record-editor-trigger>{{ t("common.correct") }}</button>
                 <dialog class="app-dialog record-editor-dialog" id="certificate-editor-{{ item.id }}">
                   <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.update_certificate', certificate_id=item.id) }}" enctype="multipart/form-data">
                     <div class="section-head record-editor-head"><div><h2>{{ t("common.correct") }} · {{ t("employee.certificate_records") }}</h2><p>{{ item.certificate_no or item.certificate_type.display_name }}</p></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>

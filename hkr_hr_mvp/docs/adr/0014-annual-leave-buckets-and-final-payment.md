@@ -3,6 +3,10 @@
 - Status: Accepted
 - Date: 2026-08-07
 
+Company calendar-year entitlement activation and progression are defined by [ADR-0025](0025-calendar-year-advance-annual-leave.md). The bucket, expiry and Final Payment decisions below remain effective.
+
+Current workflow amendments: [ADR-0026](0026-small-team-workflow-and-stable-outputs.md). Historical wording below is superseded only in the scopes explicitly listed there.
+
 ## Context
 
 The company treats annual leave earned in 2023 or earlier differently from leave earned from 2024 onward. The legacy balance does not expire. A balance from 2024 onward normally expires on March 31 of the following year, unless the company approves a specific extension date. One leave period may use both sources.
@@ -14,7 +18,7 @@ Final Payment also differs from ordinary monthly Payroll. It uses actual attenda
 - Store one annual-leave balance per employee and entitlement year.
 - Treat the `2023` balance row as the combined permanent bucket for 2023 and earlier.
 - Give each 2024-onward balance a March 31 default expiry and an optional approved extension date.
-- Allocate each leave record to one or more balance rows. HR enters the legacy portion; the regular portion uses the oldest valid balance first.
+- Allocate each leave record to one or more balance rows. Current rule: compensatory leave, 2023-and-earlier leave, then the earliest-expiring valid annual balance. The original HR-entered legacy split is superseded by ADR-0026.
 - Keep leave in 0.5-day units for ordinary leave records. Final Payment prorated entitlement may use greater precision and is not rounded to a half day before conversion to money.
 - Use a separate Final Payment case per employment period. It stores HR-reviewed actual attendance, leave and statutory-holiday days, wage bases, MPF offset, and other settlement inputs.
 - Final Payment calculations are separate from the four-part monthly Payroll calculation.

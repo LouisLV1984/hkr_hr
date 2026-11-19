@@ -1,3 +1,10 @@
+from tools.payroll_review import review_sources
+from tools.payroll_export_policy import export_message, saved_export_message, policy_text, export_issues, is_payroll_ready
+from tools.payroll_exchange import valid_rate, exchange_settings
+from tools.payroll_engine import currency_summary
+import json
+from types import SimpleNamespace
+from tools.attendance_rates import allocation_issue
 import calendar
 import io
 import zipfile
@@ -24,13 +31,16 @@ from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.workbook.properties import CalcProperties
 
+from openpyxl.comments import Comment
 from models import (
+    AttendanceCorrection,
     Employee,
     EmployeeDocument,
     EmployeeEmploymentPeriod,
     EmployeeFinalPaymentCase,
     MpfScheme,
     PayrollAdjustment,
+    AttendanceMonthlySummary,
     PayrollRun,
     WorkProject,
     db,
@@ -43,6 +53,7 @@ from tools.final_payment import (
 )
 from tools.hr_core import (
     PAYROLL_GROUPS,
+    current_assignment_on,
     current_mpf_on,
     file_sha256,
     parse_decimal,
@@ -55,11 +66,14 @@ from tools.payroll_engine import (
     PAYROLL_GROUP_CODES,
     RULE_VERSION,
     calculate_payroll,
+    employees_for_payroll,
     decimal_value,
     project_summary,
     rounded,
     snapshot_payroll,
+    snapshot_employee,
 )
+from tools.attendance_policy import assignment_workweek_days
 from tools.text_search import chinese_search_variants
 
 
@@ -146,7 +160,7 @@ def selected_group():
 
 
 def selected_month():
-    value = request.values.get("year_month") or date.today().strftime("%Y-%m")
+    value = request.values.get("year_month") or session.get("operating_month") or date.today().strftime("%Y-%m")
     try:
         datetime.strptime(value, "%Y-%m")
     except ValueError:
@@ -156,7 +170,9 @@ def selected_month():
 
 
 def selected_payroll_entity():
-    value = request.values.get("payroll_entity_id", "").strip()
+    value = request.values.get("payroll_entity_id", session.get("operating_entity_id", ""))
+    value = str(value or "").strip()
+    session["operating_entity_id"] = value
     return int(value) if value.isdigit() else None
 
 
@@ -166,20 +182,36 @@ def attendance_payroll():
     year_month = selected_month()
     group = selected_group()
     payroll_entity_id = selected_payroll_entity()
-    rows = calculate_payroll(year_month, group, payroll_entity_id)
-    blockers = [row for row in rows if row["blockers"]]
+    if request.args.get("status") == "unassigned":
+        payroll_entity_id = None
+        session["operating_entity_id"] = ""
+    _, month_end = parse_year_month(year_month)
+    population = employees_for_payroll(year_month, group)
+    scope = []
+    unassigned_ids = set()
+    for employee in population:
+        assignment = current_assignment_on(employee, month_end)
+        entity = assignment.payroll_entity_id if assignment else None
+        if entity is None:
+            unassigned_ids.add(employee.id)
+        if not payroll_entity_id or entity == payroll_entity_id:
+            scope.append(employee)
+    rows = calculate_payroll(year_month, employees=scope)
+    blockers = [row for row in rows if not is_payroll_ready(row)]
     counts = {
         code: sum(1 for row in rows if row["group"] == code)
         for code in PAYROLL_GROUP_CODES
     }
-    ready_rows = [row for row in rows if not row["blockers"]]
-    selected_status = request.args.get("status") or "ready"
-    if selected_status not in {"ready", "pending", "all"}:
+    ready_rows = [row for row in rows if is_payroll_ready(row)]
+    selected_status = request.args.get("status") or ("pending" if blockers else "ready")
+    if selected_status not in {"ready", "pending", "all", "unassigned"}:
         selected_status = "ready"
     employee_q = request.args.get("q", "").strip()
     selected_employee_id = request.args.get("employee_id", type=int)
 
-    if selected_status == "ready":
+    if selected_status == "unassigned":
+        visible_rows = [row for row in rows if row["employee"].id in unassigned_ids]
+    elif selected_status == "ready":
         visible_rows = list(ready_rows)
     elif selected_status == "pending":
         visible_rows = list(blockers)
@@ -214,37 +246,20 @@ def attendance_payroll():
             row for row in visible_rows
             if row["employee"].id == selected_employee_id
         ]
-    adjustments_by_employee = {
-        row["employee"].id: PayrollAdjustment.query.filter_by(
-            employee_id=row["employee"].id,
-            year_month=year_month,
-        )
-        .order_by(PayrollAdjustment.id.desc())
-        .all()
-        for row in visible_rows
-    }
-    summary = {
-        "ready_count": len(ready_rows),
-        "blocked_count": len(blockers),
-        "gross": sum(
-            (row["gross_amount"] for row in ready_rows),
-            Decimal("0"),
-        ),
-        "employee_mpf": sum(
-            (row["employee_mpf"] for row in ready_rows),
-            Decimal("0"),
-        ),
-        "employer_mpf": sum(
-            (row["employer_mpf"] for row in ready_rows),
-            Decimal("0"),
-        ),
-        "net": sum(
-            (row["net_amount"] for row in ready_rows),
-            Decimal("0"),
-        ),
-    }
+    pay_context = dict(from_payroll="1", pay_month=year_month, pay_group=group,
+                       pay_entity=payroll_entity_id or "", pay_status=selected_status,
+                       pay_q=employee_q, pay_employee=selected_employee_id or "")
+    for row in visible_rows:
+        if not is_payroll_ready(row):
+            row["tasks"], row["sources"] = review_sources(row, pay_context)
+    summary = {"ready_count": len(ready_rows), "blocked_count": len(blockers),
+               "currencies": currency_summary(ready_rows)}
     return render_template(
         "payroll/index.html",
+        unassigned_count=len(unassigned_ids),
+        saved_runs=PayrollRun.query.filter_by(year_month=year_month).order_by(PayrollRun.id.desc()).all(),
+        export_review=export_message(rows),
+        exchange_settings=exchange_settings(),
         year_month=year_month,
         selected_group=group,
         selected_payroll_entity_id=payroll_entity_id,
@@ -256,6 +271,8 @@ def attendance_payroll():
         employee_q=employee_q,
         blockers=blockers,
         ready_rows=ready_rows,
+        is_payroll_ready=is_payroll_ready,
+
         project_summary=project_summary(ready_rows),
         counts=counts,
         summary=summary,
@@ -264,8 +281,15 @@ def attendance_payroll():
         projects=WorkProject.query.filter_by(active=True).order_by(
             WorkProject.name
         ).all(),
-        adjustments_by_employee=adjustments_by_employee,
+        corrections_by_employee=pay_month_corrections(year_month),
     )
+
+
+def pay_month_corrections(year_month):
+    records = {}
+    for correction in AttendanceCorrection.query.filter_by(pay_month=year_month).order_by(AttendanceCorrection.source_month):
+        records.setdefault(correction.employee_id, []).append(correction)
+    return records
 
 
 def employee_hkid(employee):
@@ -288,7 +312,7 @@ def masked_identity_number(value):
 
 
 def mpf_export_issues(row):
-    issues = list(row["blockers"])
+    issues = list(row["blockers"]) + [policy_text(key) for key in export_issues(row)]
     enrollment = row.get("mpf_enrollment")
     if row["blockers"]:
         return issues
@@ -354,6 +378,9 @@ def mpf_preview_rows(year_month):
                 "group": final["group"],
                 "currency": final["salary"].currency if final["salary"] else "HKD",
                 "salary_basis": final["salary"].salary_basis if final["salary"] else None,
+                "monthly_pay_method": final["salary"].monthly_pay_method if final["salary"] else "full_month",
+                "workweek_days": str(assignment_workweek_days(final["assignment"])),
+                "statutory_holiday_paid_days": Decimal("0"),
                 "salary_amount": decimal_value(final["salary"].amount) if final["salary"] else Decimal("0"),
                 "assignment": final["assignment"],
                 "bank_account": None,
@@ -448,6 +475,7 @@ def mpf_contributions():
         )
     return render_template(
         "payroll/mpf.html",
+        export_review=export_message(rows),
         year_month=year_month,
         rows=rows,
         schemes=schemes,
@@ -468,25 +496,21 @@ def final_payment():
         code: sum(1 for row in rows if row["group"] == code)
         for code in PAYROLL_GROUP_CODES
     }
-    ready_rows = [row for row in rows if not row["blockers"]]
-    summary = {
-        "ready_count": len(ready_rows),
-        "blocked_count": len(blockers),
-        "gross": sum(
-            (row["wage_income"] for row in ready_rows),
-            Decimal("0"),
-        ),
-        "benefit": sum(
-            (row["benefit"]["net"] for row in ready_rows),
-            Decimal("0"),
-        ),
-        "net": sum(
-            (row["net_amount"] for row in ready_rows),
-            Decimal("0"),
-        ),
-    }
+    ready_rows = [row for row in rows if is_payroll_ready(row)]
+    currency_totals = {}
+    for row in ready_rows:
+        currency = row["salary"].currency if row.get("salary") else "HKD"
+        item = currency_totals.setdefault(currency, {"gross": Decimal("0"), "benefit": Decimal("0"), "net": Decimal("0")})
+        item["gross"] += row["wage_income"]
+        item["benefit"] += row["benefit"]["net"]
+        item["net"] += row["net_amount"]
+    summary = {"ready_count": len(ready_rows), "blocked_count": len(blockers),
+               "currencies": [{"currency": key, **currency_totals[key]} for key in sorted(currency_totals)]}
     return render_template(
         "payroll/final_payment.html",
+        projects=WorkProject.query.filter_by(active=True).order_by(WorkProject.name).all(),
+        corrections_by_employee=pay_month_corrections(year_month),
+        export_review=export_message(rows),
         year_month=year_month,
         selected_group=group,
         selected_payroll_entity_id=payroll_entity_id,
@@ -548,6 +572,7 @@ def save_final_payment(period_id):
         "legacy_leave_days": str(case.legacy_leave_days or ""),
         "post_2024_leave_days": str(case.post_2024_leave_days or ""),
     }
+    rate_issue = None
     try:
         case.actual_working_days = nonnegative_form_decimal("actual_working_days")
         case.actual_ot_hours = nonnegative_form_decimal("actual_ot_hours")
@@ -601,9 +626,13 @@ def save_final_payment(period_id):
             "special_compensation"
         )
         period.payment_in_lieu = nonnegative_form_decimal("payment_in_lieu")
+        case.rate_allocations = json.loads(request.form.get("rate_allocations") or "[]")
+        rate_issue = allocation_issue(period.employee, SimpleNamespace(working_days=case.actual_working_days, ot_hours=case.actual_ot_hours, sunday_holiday_days=case.actual_holiday_days, large_ecall_count=case.large_ecall_count, rate_allocations=case.rate_allocations), max(period.start_date, period.end_date.replace(day=1)), period.end_date)
+        if rate_issue:
+            raise ValueError(rate_issue)
     except (ValueError, TypeError):
         db.session.rollback()
-        flash("請檢查離職 Payroll 日數、次數及金額，不可填寫負數。", "error")
+        flash(rate_issue or "請檢查離職 Payroll 日數、次數及金額，不可填寫負數。", "error")
         return redirect(
             url_for(
                 "payroll.final_payment",
@@ -687,8 +716,12 @@ def create_current_payroll_run(
             for row in rows
             if row["employee"].id in requested_ids
         ]
-    elif ready_only:
-        rows = [row for row in rows if not row["blockers"]]
+    if employee_ids is None and ready_only:
+        rows = [row for row in rows if is_payroll_ready(row)]
+    review = export_message(rows)
+    if review:
+        flash(policy_text("review.export_blocked") + " " + review, "error")
+        return None
 
     blockers = [row for row in rows if row["blockers"]]
     if blockers:
@@ -719,32 +752,6 @@ def create_current_payroll_run(
     )
     db.session.commit()
     return run
-
-
-def save_adjustment_evidence(employee, uploaded, current_document=None):
-    if not uploaded or not uploaded.filename:
-        return current_document
-    path = store_employee_file(employee, uploaded, "change_evidence")
-    document = EmployeeDocument(
-        employee=employee,
-        category="change_evidence",
-        title="Payroll 調整憑證",
-        original_filename=uploaded.filename,
-        stored_path=str(path),
-        mime_type=uploaded.mimetype,
-        file_ext=Path(uploaded.filename).suffix.lower(),
-        file_size=path.stat().st_size,
-        content_sha256=file_sha256(path),
-        status="active",
-        uploaded_by=current_user.id,
-    )
-    db.session.add(document)
-    db.session.flush()
-    if current_document and current_document.status == "active":
-        current_document.status = "replaced"
-        current_document.replaced_by_document_id = document.id
-        current_document.replacement_reason = "更正 Payroll 調整憑證"
-    return document
 
 
 @payroll_bp.route("/payroll/preview", methods=["POST"])
@@ -785,6 +792,9 @@ def export_current_payroll():
     year_month = selected_month()
     group = selected_group()
     payroll_entity_id = selected_payroll_entity()
+    if request.method == "GET":
+        return redirect(url_for("payroll.attendance_payroll", year_month=year_month,
+                                payroll_group=group, payroll_entity_id=payroll_entity_id or ""))
     if payroll_entity_id is None:
         inferred_entities = {
             row["assignment"].payroll_entity_id
@@ -804,7 +814,7 @@ def export_current_payroll():
                     payroll_entity_id="",
                 )
             )
-    scope = request.form.get("scope", "ready") if request.method == "POST" else "ready"
+    scope = request.form.get("scope", "ready")
     employee_ids = None
     ready_only = False
     if scope == "selected":
@@ -840,137 +850,7 @@ def export_current_payroll():
                 payroll_entity_id=payroll_entity_id,
             )
         )
-    return export_payroll(run.id)
-
-
-@payroll_bp.route("/employees/<int:employee_id>/payroll-adjustments", methods=["POST"])
-@login_required
-def add_adjustment(employee_id):
-    employee = db.get_or_404(Employee, employee_id)
-    year_month = selected_month()
-    amount = parse_decimal(request.form.get("amount"))
-    label = request.form.get("label", "").strip()
-    if amount is None or not label:
-        flash("請填寫調整名稱及金額。", "error")
-    else:
-        evidence = save_adjustment_evidence(
-            employee,
-            request.files.get("evidence"),
-        )
-        adjustment = PayrollAdjustment(
-            employee=employee,
-            year_month=year_month,
-            label=label,
-            amount=rounded(amount),
-            project_id=request.form.get("project_id", type=int),
-            evidence_document_id=evidence.id if evidence else None,
-            remarks=request.form.get("remarks", "").strip() or None,
-            status="active",
-        )
-        db.session.add(adjustment)
-        db.session.flush()
-        write_audit(
-            "payroll_adjustment_added",
-            "PayrollAdjustment",
-            adjustment.id,
-            employee_id=employee.id,
-            detail=f"{year_month}: {label} {rounded(amount)}",
-        )
-        db.session.commit()
-        flash("Payroll 調整已保存。", "success")
-    return redirect(
-        url_for(
-            "payroll.attendance_payroll",
-            year_month=year_month,
-            employee_id=employee.id,
-            status="all",
-        )
-    )
-
-
-@payroll_bp.route(
-    "/payroll-adjustments/<int:adjustment_id>/correct",
-    methods=["POST"],
-)
-@login_required
-def correct_adjustment(adjustment_id):
-    adjustment = db.get_or_404(PayrollAdjustment, adjustment_id)
-    if adjustment.status != "active":
-        abort(400)
-    year_month = selected_month()
-    amount = parse_decimal(request.form.get("amount"))
-    label = request.form.get("label", "").strip()
-    if amount is None or not label:
-        flash("請填寫調整名稱及金額。", "error")
-        return redirect(url_for("payroll.attendance_payroll", year_month=year_month, employee_id=adjustment.employee_id, status="all"))
-    before = {
-        "year_month": adjustment.year_month,
-        "label": adjustment.label,
-        "amount": str(adjustment.amount),
-        "project_id": adjustment.project_id,
-    }
-    adjustment.year_month = year_month
-    adjustment.label = label
-    adjustment.amount = rounded(amount)
-    adjustment.project_id = request.form.get("project_id", type=int)
-    adjustment.remarks = request.form.get("remarks", "").strip() or None
-    evidence = save_adjustment_evidence(
-        adjustment.employee,
-        request.files.get("evidence"),
-        adjustment.evidence_document,
-    )
-    if evidence:
-        adjustment.evidence_document_id = evidence.id
-    write_audit(
-        "payroll_adjustment_corrected",
-        "PayrollAdjustment",
-        adjustment.id,
-        employee_id=adjustment.employee_id,
-        detail=f"{year_month}: {label}",
-        before=before,
-        after={
-            "year_month": adjustment.year_month,
-            "label": adjustment.label,
-            "amount": str(adjustment.amount),
-            "project_id": adjustment.project_id,
-        },
-    )
-    db.session.commit()
-    flash("Payroll 調整項目已更正。", "success")
-    return redirect(url_for("payroll.attendance_payroll", year_month=year_month, employee_id=adjustment.employee_id, status="all"))
-
-
-@payroll_bp.route(
-    "/payroll-adjustments/<int:adjustment_id>/withdraw",
-    methods=["POST"],
-)
-@login_required
-def withdraw_adjustment(adjustment_id):
-    adjustment = db.get_or_404(PayrollAdjustment, adjustment_id)
-    before = {
-        "status": adjustment.status,
-        "year_month": adjustment.year_month,
-        "label": adjustment.label,
-        "amount": str(adjustment.amount),
-    }
-    adjustment.status = "voided"
-    write_audit(
-        "payroll_adjustment_withdrawn",
-        "PayrollAdjustment",
-        adjustment.id,
-        employee_id=adjustment.employee_id,
-        detail=request.form.get("reason", "").strip() or "撤回錯誤記錄",
-        before=before,
-        after={
-            "status": adjustment.status,
-            "year_month": adjustment.year_month,
-            "label": adjustment.label,
-            "amount": str(adjustment.amount),
-        },
-    )
-    db.session.commit()
-    flash("Payroll 調整項目已撤回，不再參與計算。", "success")
-    return redirect(url_for("payroll.attendance_payroll", year_month=adjustment.year_month, employee_id=adjustment.employee_id, status="all"))
+    return redirect(url_for("payroll.export_payroll", run_id=run.id), code=303)
 
 
 def copy_row_format(sheet, source_row, target_row):
@@ -1192,7 +1072,7 @@ def result_lines(result):
     active = [
         line
         for line in lines
-        if any(decimal_value(line.get(key)) != 0 for key in monetary_fields)
+        if line.get("attendance_corrections") or any(decimal_value(line.get(key)) != 0 for key in monetary_fields)
     ]
     if active:
         lines = active
@@ -1204,6 +1084,17 @@ def result_lines(result):
         ),
         reverse=True,
     )
+
+
+def saved_employee_facts(result):
+    facts = (result.calculation_json or {}).get("employee_snapshot")
+    if facts is None:
+        # Legacy runs never captured these facts; keep the compatibility fallback explicit.
+        facts = snapshot_employee(result.employee, result.employee.current_assignment, result.run.year_month)
+    facts = dict(facts)
+    if facts.get("employment_start"):
+        facts["employment_start"] = date.fromisoformat(facts["employment_start"])
+    return facts
 
 
 def project_for_line(line):
@@ -1263,6 +1154,7 @@ def set_ecall_headers(sheet):
 
 def monthly_values(result, line, first, row_number):
     employee = result.employee
+    facts = saved_employee_facts(result)
     project = project_for_line(line)
     calculation = result.calculation_json or {}
     allocated = bool(calculation.get('monthly_project_allocation'))
@@ -1315,14 +1207,14 @@ def monthly_values(result, line, first, row_number):
         )
     return {
         1: row_number - 6,
-        2: project.name if project else "未分配",
+        2: line.get("project_name", project.name if project else "未分配"),
         3: "是" if calculation.get("group") == "management" else "",
         4: "eMPF",
-        5: employee.employee_no,
-        6: employee.english_name,
-        7: employee.chinese_name,
-        8: employee_position(employee),
-        9: employee.current_period.start_date if employee.current_period else None,
+        5: facts["employee_no"],
+        6: facts["english_name"],
+        7: facts["chinese_name"],
+        8: facts["position"],
+        9: facts["employment_start"],
         10: float(decimal_value(calculation.get("salary_amount"))),
         11: float(base_rate),
         12: float(working_days),
@@ -1366,6 +1258,7 @@ def monthly_values(result, line, first, row_number):
 
 def daily_values(result, line, first, row_number):
     employee = result.employee
+    facts = saved_employee_facts(result)
     project = project_for_line(line)
     calculation = result.calculation_json or {}
     working_days = decimal_value(line.get("working_days"))
@@ -1413,14 +1306,14 @@ def daily_values(result, line, first, row_number):
         )
     return {
         1: row_number - 6,
-        2: project.name if project else "未分配",
+        2: line.get("project_name", project.name if project else "未分配"),
         3: "",
         4: "eMPF",
-        5: employee.employee_no,
-        6: employee.english_name,
-        7: employee.chinese_name,
-        8: employee_position(employee),
-        9: employee.current_period.start_date if employee.current_period else None,
+        5: facts["employee_no"],
+        6: facts["english_name"],
+        7: facts["chinese_name"],
+        8: facts["position"],
+        9: facts["employment_start"],
         10: float(base_rate),
         11: float(working_days),
         12: float(decimal_value(line.get("base_amount"))),
@@ -1632,6 +1525,25 @@ def daily_formulas(result, line, first, row_number, last_row, values):
     return formulas
 
 
+def add_correction_comment(cell, entries, other_payment):
+    if not entries:
+        return
+    notes = []
+    for entry in entries:
+        quantity = ("+" if entry["direction"] == "add" else "-") + entry["quantity"]
+        unit = "OT 小時" if entry["kind"] == "ot" else "出勤日"
+        note = f"{entry['date']} {quantity} {unit}：{entry['amount']}"
+        if entry["included"]:
+            note += "（已計入上月尾段）"
+        notes.append(note)
+    remainder = decimal_value(other_payment) - sum(Decimal(e["amount"]) for e in entries)
+    if remainder:
+        notes.append(f"其他款項：{remainder:.2f}")
+    cell.comment = Comment("\n".join(notes), "HKR HR")
+    cell.comment.width = 320
+    cell.comment.height = max(90, 20 * len(notes))
+
+
 def build_group_workbook(run, group):
     source = load_workbook(template_path())
     if source.calculation is None:
@@ -1674,6 +1586,8 @@ def build_group_workbook(run, group):
         )
         for column, value in values.items():
             sheet.cell(index, column).value = value
+        other_col = 33 if group == "site_daily" else 34
+        add_correction_comment(sheet.cell(index, other_col), line.get("attendance_corrections"), values[other_col])
         formulas = (
             daily_formulas(result, line, first, index, last_row, values)
             if group == "site_daily"
@@ -1707,6 +1621,8 @@ def build_group_workbook(run, group):
             )
             if item
         )
+        if not (result.calculation_json or {}).get("employee_snapshot"):
+            warnings = "；".join(filter(None, [warnings, "舊批次未保存員工身份快照；身份及職位使用現時資料，金額仍為原批次。 / Legacy batch: current identity; original amounts."]))
         sheet.cell(index, last_column).value = warnings
         for column in range(10, last_column):
             sheet.cell(index, column).number_format = "#,##0.00"
@@ -1875,6 +1791,7 @@ def build_final_payment_workbook(year_month, group, rows):
         }
         for column, value in values.items():
             sheet.cell(row_number, column).value = value
+        add_correction_comment(sheet.cell(row_number, 18), result.get("attendance_corrections"), combined_adjustment)
         sheet.cell(row_number, 10).value = f"=ROUND(H{row_number}*I{row_number},2)"
         sheet.cell(row_number, 13).value = f"=ROUND(K{row_number}*L{row_number},2)"
         sheet.cell(row_number, 16).value = f"=ROUND(N{row_number}*O{row_number},2)"
@@ -2021,13 +1938,17 @@ def build_mpf_workbook(run, scheme):
             item.employee.employee_no,
         ),
     )
+    if results:
+        sheet["H2"] = results[0].mpf_employer_account_no
+        sheet["J2"] = results[0].mpf_payroll_group_no or ""
     month_start, month_end = parse_year_month(run.year_month)
     for row_number, result in enumerate(results, start=8):
+        facts = saved_employee_facts(result)
         values = (
             result.mpf_member_name or "",
-            masked_identity_number(employee_hkid(result.employee)),
+            masked_identity_number(facts["hkid"]),
             result.mpf_member_account_no or "",
-            employment_start_for_month(result.employee, run.year_month),
+            facts["employment_start"],
             "APPROVED",
             month_start,
             month_end,
@@ -2071,6 +1992,10 @@ def export_mpf_contributions():
             for scheme in schemes
         )
     ]
+    review = export_message(selected_rows)
+    if review:
+        flash(policy_text("review.export_blocked") + " " + review, "error")
+        return redirect(url_for("payroll.mpf_contributions", year_month=year_month))
     metadata_issues = [row for row in selected_rows if row["mpf_issues"]]
     if metadata_issues:
         names = "、".join(
@@ -2152,6 +2077,10 @@ def export_final_payment():
         group,
         payroll_entity_id,
     )
+    review = export_message(rows)
+    if review:
+        flash(policy_text("review.export_blocked") + " " + review, "error")
+        return redirect(url_for("payroll.final_payment", year_month=year_month, payroll_group=group, payroll_entity_id=payroll_entity_id))
     blockers = [row for row in rows if row["blockers"]]
     entity_codes = {
         row["assignment"].payroll_entity.code
@@ -2273,6 +2202,10 @@ def export_payroll(run_id):
                 run_id=run.id,
             )
         )
+    review = saved_export_message(run, groups)
+    if review:
+        flash(policy_text("review.export_blocked") + " " + review, "error")
+        return redirect(url_for("payroll.attendance_payroll", year_month=run.year_month))
     write_audit(
         "payroll_exported",
         "PayrollRun",
@@ -2312,3 +2245,34 @@ def export_payroll(run_id):
         download_name=f"HKR_Payroll_{run.year_month}_{entity_code}_ALL.zip",
         mimetype="application/zip",
     )
+
+
+@payroll_bp.route("/payroll/exchange-rates", methods=["POST"])
+@login_required
+def save_exchange_rates():
+    year_month = selected_month()
+    changes = []
+    for ref in reference_options("currency"):
+        if ref.code == "HKD" or f"rate_{ref.code}" not in request.form:
+            continue
+        raw = request.form[f"rate_{ref.code}"].strip()
+        try:
+            rate = str(valid_rate(raw)) if raw else None
+        except ValueError:
+            flash(policy_text("review.fx_invalid").format(currency=ref.code), "error")
+            return redirect(url_for("payroll.attendance_payroll", year_month=year_month))
+        changes.append((ref, rate))
+    for ref, rate in changes:
+        metadata = dict(ref.metadata_json or {})
+        old = metadata.get("payroll_hkd_rate")
+        if rate is None:
+            metadata.pop("payroll_hkd_rate", None)
+        else:
+            metadata["payroll_hkd_rate"] = rate
+        ref.metadata_json = metadata
+        if old != rate:
+            write_audit("payroll_exchange_rate_updated", "ReferenceValue", ref.id,
+                        detail=f"{ref.code}: {old or '-'} -> {rate or '-'} HKD")
+    db.session.commit()
+    flash(policy_text("review.fx_saved"), "success")
+    return redirect(url_for("payroll.attendance_payroll", year_month=year_month))

@@ -1,4 +1,5 @@
 """Progressive employee editors: isolated synthetic records, no runtime data."""
+from test_v1_workflows import current_profile_revision
 import unittest
 import re
 from datetime import date
@@ -39,7 +40,7 @@ class ProfileWorkspaceTests(unittest.TestCase):
         eid = self.employee()
         self.document(eid)
         page = self.client.get(f"/employees/{eid}?tab=documents").get_data(as_text=True)
-        library = page.split('data-document-library hidden>', 1)[1].split('</section>', 1)[0]
+        library = page.split('data-document-library>', 1)[1].split('</section>', 1)[0]
         self.assertNotIn('document-card-grid', library)
         self.assertNotIn('doc-card missing', library)
         self.assertIn('data-document-filter="staff_record"', library)
@@ -74,7 +75,7 @@ class ProfileWorkspaceTests(unittest.TestCase):
     def test_success_keeps_flash_for_destination_and_changes_once(self):
         eid = self.employee()
         path = f"/employees/{eid}/personal"
-        response = self.client.post(path, data={"form_scope": "profile", "residential_address": "QA address"}, headers=self.enhanced)
+        response = self.client.post(path, data={"profile_revision": current_profile_revision(self.app, eid, "profile"), "form_scope": "profile", "residential_address": "QA address"}, headers=self.enhanced)
         self.assertEqual(response.status_code, 200)
         self.assertIn("redirect", response.json)
         page = self.client.get(response.json["redirect"]).get_data(as_text=True)

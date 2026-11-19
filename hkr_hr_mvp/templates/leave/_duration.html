@@ -1,0 +1,3 @@
+<label><span>{{ t('hr.leave_span') }}</span><select data-leave-duration>
+{% for key in ['full', 'am', 'pm', 'range'] %}<option value="{{ key }}">{{ t('hr.' ~ key) }}</option>{% endfor %}
+</select></label>

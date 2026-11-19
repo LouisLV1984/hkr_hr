@@ -60,22 +60,33 @@ def application_root():
 
 def latest_log_status(pattern, success_marker):
     log_root = application_root() / "03.Output" / "logs"
-    files = sorted(
-        log_root.glob(pattern) if log_root.exists() else [],
-        key=lambda item: item.stat().st_mtime,
-        reverse=True,
-    )
+    try:
+        files = sorted(
+            log_root.glob(pattern) if log_root.exists() else [],
+            key=lambda item: item.stat().st_mtime,
+            reverse=True,
+        )
+    except OSError:
+        return {"state": "unreadable", "checked_at": None, "filename": None}
     if not files:
         return {"state": "missing", "checked_at": None, "filename": None}
     latest = files[0]
     try:
         content = latest.read_text(encoding="utf-8", errors="replace")
+        modified = latest.stat().st_mtime
     except OSError:
-        content = ""
+        return {"state": "unreadable", "checked_at": None, "filename": latest.name}
+    state = "ok" if success_marker in content else "attention"
+    if pattern == "restore_verify_*.log" and any(marker in content for marker in (
+        "Restore verification passed.", "Archive listing and template extraction passed;",
+        "Database restore and template extraction passed;",
+    )):
+        # Neither legacy success nor the current script proves attachment recovery.
+        state = "partial"
     return {
-        "state": "ok" if success_marker in content else "attention",
+        "state": state,
         "checked_at": hong_kong_datetime(
-            datetime.utcfromtimestamp(latest.stat().st_mtime)
+            datetime.utcfromtimestamp(modified)
         ),
         "filename": latest.name,
     }

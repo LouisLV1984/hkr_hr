@@ -4,6 +4,8 @@
 - Date: 2026-07-27
 - Supersedes: [ADR-0004](0004-monthly-attendance-live-payroll.md) where attendance grain and live-only payroll conflict
 
+Current workflow amendments: [ADR-0026](0026-small-team-workflow-and-stable-outputs.md). Historical wording below is superseded only in the scopes explicitly listed there.
+
 ## Context
 
 HR receives one signed attendance PDF per employee for a payroll month. Payroll uses actual attendance for the current month from day 1 to day 20, actual attendance for the previous month from day 21 to month end, and a forecast for the current month after day 20. An employee can also transfer project during the month, so one employee result may need more than one project allocation line.

@@ -1,0 +1,5 @@
+<!doctype html>
+<html lang="{{ active_lang }}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{ title }} · HKR HR</title><link rel="stylesheet" href="{{ url_for('static', filename='css/app.css', v=current_version) }}"></head>
+<body class="pdf-document-page"><header class="preview-toolbar"><strong>{{ title }}</strong><a href="{{ download_url }}" download>{{ t('common.download') }}</a></header>
+{% from '_pdf_preview.html' import pdf_preview with context %}{{ pdf_preview(source_url, title) }}
+</body></html>

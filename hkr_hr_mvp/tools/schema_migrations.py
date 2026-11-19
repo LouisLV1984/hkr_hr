@@ -3,7 +3,7 @@ from sqlalchemy import inspect, text
 from models import SystemSetting, db
 
 
-SCHEMA_VERSION = "2.8"
+SCHEMA_VERSION = "2.11"
 REQUIRED_V1_TABLES = {
     "employee_salary_records",
     "employees",
@@ -28,6 +28,11 @@ REQUIRED_V1_TABLES = {
 }
 
 ADDITIVE_V1_MIGRATIONS = {
+    "employee_identities": {"renews_id": "INTEGER REFERENCES employee_identities(id)"},
+    "employee_employment_periods": {
+        "annual_leave_policy_year": "INTEGER",
+        "annual_leave_contract_verified": "BOOLEAN",
+    },
     "users": {
         "last_login_at": "TIMESTAMP",
         "last_seen_at": "TIMESTAMP",
@@ -38,10 +43,12 @@ ADDITIVE_V1_MIGRATIONS = {
         "general_document_type_id": "INTEGER",
     },
     "attendance_batch_items": {
+        "archived_summary": "JSON",
         "content_sha256": "VARCHAR(64)",
         "year_month": "VARCHAR(7)",
     },
     "attendance_segments": {
+        "rate_allocations": "JSON",
         "large_ecall_count": "INTEGER NOT NULL DEFAULT 0",
         "ecall_count": "INTEGER NOT NULL DEFAULT 0",
         "other_allowance_amount": "NUMERIC(14, 2) NOT NULL DEFAULT 0",
@@ -70,15 +77,21 @@ ADDITIVE_V1_MIGRATIONS = {
         "status": "VARCHAR(30) NOT NULL DEFAULT 'active'",
     },
     "employee_qualifications": {
+        "renews_id": "INTEGER REFERENCES employee_qualifications(id)",
         "status": "VARCHAR(30) NOT NULL DEFAULT 'active'",
     },
     "employee_certificates": {
+        "renews_id": "INTEGER REFERENCES employee_certificates(id)",
         "status": "VARCHAR(30) NOT NULL DEFAULT 'active'",
     },
     "employee_visas": {
+        "renews_id": "INTEGER REFERENCES employee_visas(id)",
         "status": "VARCHAR(30) NOT NULL DEFAULT 'active'",
     },
     "employee_annual_leave_balances": {
+        "calculated_entitled_days": "NUMERIC(5, 1)",
+        "calculated_annual_rate": "NUMERIC(5, 1)",
+        "calculation_start_date": "DATE",
         "entitled_days_override": "NUMERIC(5, 1)",
         "expiry_date": "DATE",
         "extended_until": "DATE",
@@ -128,6 +141,7 @@ ADDITIVE_V1_MIGRATIONS = {
         "pay_mode": "VARCHAR(30) NOT NULL DEFAULT 'four_fifths'",
     },
     "employee_final_payment_cases": {
+        "rate_allocations": "JSON",
         "leave_wage_total": "NUMERIC(14, 2)",
     },
     "work_calendar_holidays": {
@@ -198,6 +212,26 @@ def apply_additive_migrations():
                 )
             )
             changed.append(f"{table_name}.{column_name}")
+    if ("attendance_batch_items.archived_summary" in changed
+            and {"status", "summary_id", "original_filename", "updated_at"} <=
+                {col["name"] for col in inspector.get_columns("attendance_batch_items")}
+            and {"employee_documents", "attendance_monthly_summaries"} <= present_tables):
+        # Old versions pointed several PDFs at one mutable summary. Only the
+        # matching saved item can edit it. Older PDFs remain available to read.
+        db.session.execute(text("""
+            UPDATE attendance_batch_items SET status = 'replaced'
+            WHERE status = 'saved' AND EXISTS (
+                SELECT 1 FROM attendance_monthly_summaries s
+                JOIN employee_documents d ON d.id = s.document_id
+                WHERE s.id = attendance_batch_items.summary_id
+                  AND (d.content_sha256 <> attendance_batch_items.content_sha256
+                       OR d.original_filename <> attendance_batch_items.original_filename
+                       OR EXISTS (SELECT 1 FROM attendance_batch_items newer
+                           WHERE newer.summary_id = s.id AND newer.status = 'saved'
+                             AND newer.content_sha256 = d.content_sha256
+                             AND newer.original_filename = d.original_filename
+                             AND newer.updated_at > attendance_batch_items.updated_at)))
+        """))
     if changed:
         db.session.commit()
     return changed

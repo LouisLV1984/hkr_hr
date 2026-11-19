@@ -1,0 +1,29 @@
+<div class="negative-net"><strong>{{ t('review.negative_net') }}</strong>
+<details class="pay-breakdown"><summary>{{ t('hr.month_detail') }}</summary>
+  <h3>{{ row.employee.display_name }} · {{ year_month }} · {{ row.currency }}</h3>
+  <dl>
+  {% for field, label, sign, source in [
+    ('base_amount','common.base_pay',1,'terms'),('holiday_amount','hr.holiday_pay',1,'attendance'),
+    ('ot_amount','OT',1,'attendance'),('large_ecall_amount','payroll.large_ecall',1,'attendance'),
+    ('ecall_amount','payroll.ordinary_ecall',1,'attendance'),('allowance_amount','common.allowance',1,'allowance'),
+    ('sick_leave_amount','hr.sick_pay',1,'leave'),('work_injury_amount','hr.injury_pay',1,'leave'),
+    ('attendance_other_allowance_amount','final_payment.attendance_other_allowance',1,'attendance'),
+    ('overpay_amount','payroll.overpay',-1,'attendance'),('underpay_amount','payroll.underpay',1,'attendance'),
+    ('employee_mpf','payroll.employee_mpf',-1,'mpf'),('payment_in_lieu','final_payment.payment_in_lieu',1,'departure'),
+    ('severance_long_service','hr.termination_pay',1,'departure'),
+    ('work_injury_medical_reimbursement_amount','final_payment.medical_reimbursement',1,'leave')] %}
+    {% if row[field] %}<div><dt><a href="{{ row.sources[source] }}">{{ t(label) }} ↗</a></dt><dd>{{ fmt_money(sign * row[field]) }}</dd></div>{% endif %}
+  {% endfor %}
+  {% for item in row.legacy_adjustments %}<div><dt><a href="{{ row.sources.legacy.split('#')[0] }}#adjustment-{{ item.id }}">{{ item.label }} ↗</a></dt><dd>{{ fmt_money(item.amount) }}</dd></div>{% endfor %}
+  {% for item in corrections_by_employee.get(row.employee.id, []) %}<div><dt><a href="#pay-correction-{{ item.id }}">{{ t('corr.history') }} · {{ item.source_month }}</a></dt><dd>{{ fmt_money(item.amount) }}</dd></div>{% endfor %}
+  <div class="pay-net-total"><dt>{{ t('payroll.net') }}</dt><dd>{{ fmt_money(row.net_amount) }}</dd></div>
+  </dl>
+  {% if row.overpay_amount or row.underpay_amount %}
+  {% set tail = row.tail_source %}
+  <h4>{{ t('attendance.previous_tail_group') }} · {{ tail.month }}</h4>
+  <p>{{ t('hr.tail_values', actual=fmt_money(tail.actual), expected=fmt_money(tail.expected)) }}</p>
+  {% if tail.snapshot_id %}<a href="{{ row.sources.snapshot }}">{{ t('hr.prior_snapshot') }} ↗</a>
+  {% elif tail.from_sheet %}<a href="{{ row.sources.attendance }}">{{ t('hr.recorded_forecast') }} ↗</a>
+  {% else %}<span>{{ t('hr.estimated_forecast') }}</span>{% endif %}
+  {% endif %}
+</details></div>
