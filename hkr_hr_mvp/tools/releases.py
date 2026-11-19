@@ -1,5 +1,44 @@
 RELEASES = [
 {
+    "version": "V0.7.6",
+    "date": "2026-11-19",
+    "title": {
+        "zh-Hant": "員工詳情頁籤「變更歷史」風格統一",
+        "zh-Hans": "员工详情页签“变更历史”风格统一",
+        "en": "Unified collapsible history panels across employee tabs"
+    },
+    "features": {
+        "zh-Hant": [
+            "個人資料、任職與薪酬、證件與文件、假期與工傷及考勤與出糧五個頁籤改為一致的頁面結構：上方集中展示當前資料卡片，最下方保留單一預設展開、可點擊收合的紀錄／變更歷史外框。",
+            "「任職與薪酬」將原「任職狀態變更歷史」合併入底部單一「變更歷史」，不再攔腰打斷卡片區；「證件與文件」歷史由頁面中段移至最底並預設展開。"
+        ],
+        "zh-Hans": [
+            "个人资料、任职与薪酬、证件与文件、假期与工伤及考勤与出粮五个页签改为一致的页面结构：上方集中展示当前资料卡片，最下方保留单一默认展开、可点击折叠的记录／变更历史外框。",
+            "“任职与薪酬”将原“任职状态变更历史”合并入底部单一“变更历史”，不再拦腰打断卡片区；“证件与文件”历史由页面中段移至最底并默认展开。"
+        ],
+        "en": [
+            "All five employee profile tabs share a consistent layout: current status cards on top with a single default-open collapsible history panel at the bottom.",
+            "Employment status history is merged into the unified Change history panel at the bottom of the Employment & Pay tab, and credential history moves to the bottom of Credentials & Files and opens by default."
+        ]
+    },
+    "improvements": {
+        "zh-Hant": [
+            "統一個人資料、任職與薪酬、證件與文件三頁籤歷史標題為「變更歷史」並顯示筆數；假期與工傷下方改為同款可收合「假期與工傷紀錄」面板。"
+        ],
+        "zh-Hans": [
+            "统一个人资料、任职与薪酬、证件与文件三页签历史标题为“变更历史”并显示笔数；假期与工伤下方改为同款可折叠“假期与工伤记录”面板。"
+        ],
+        "en": [
+            "Standardized Change history headers with item counts across Personal, Employment & Pay, and Credentials & Files, and wrapped Leave & Injury records and Historical adjustments in the same collapsible panel."
+        ]
+    },
+    "limitations": {
+        "zh-Hant": [],
+        "zh-Hans": [],
+        "en": []
+    }
+},
+{
     "version": "V0.7.5",
     "date": "2026-11-19",
     "title": {
@@ -2628,4 +2667,4 @@ RELEASES = [
 CURRENT_VERSION = RELEASES[0]["version"]
 
 # The next published release follows the current version without skipping.
-NEXT_VERSION = "V0.7.6"
+NEXT_VERSION = "V0.7.7"

@@ -165,6 +165,71 @@ class ProfileWorkspaceTests(unittest.TestCase):
         page = self.client.get(f"/employees/{eid}?lang=zh-Hant").get_data(as_text=True)
         self.assertIn('class="panel initial-setup"', page)
 
+    def test_v076_unified_history_disclosures_across_tabs(self):
+        eid = self.employee()
+        self.document(eid, "staff_record")
+        with self.app.app_context():
+            db.session.add(
+                EmployeeAssignment(
+                    employee_id=eid,
+                    effective_from=date(2026, 1, 1),
+                    payroll_group="management",
+                    workweek_days=Decimal("5.0"),
+                )
+            )
+            db.session.add(
+                EmployeeSalary(
+                    employee_id=eid,
+                    effective_from=date(2026, 1, 1),
+                    salary_basis="monthly",
+                    currency="HKD",
+                    amount=Decimal("20000"),
+                )
+            )
+            db.session.commit()
+
+        page = self.client.get(f"/employees/{eid}?lang=zh-Hant").get_data(as_text=True)
+        personal_panel = page.split('data-panel="personal">', 1)[1].split(
+            'data-panel="employment"', 1
+        )[0]
+        employment_panel = page.split('data-panel="employment"', 1)[1].split(
+            'data-panel="credentials"', 1
+        )[0]
+        credentials_panel = page.split('data-panel="credentials"', 1)[1].split(
+            'data-panel="leave"', 1
+        )[0]
+        leave_panel = page.split('data-panel="leave"', 1)[1].split(
+            'data-panel="attendance"', 1
+        )[0]
+        attendance_panel = page.split('data-panel="attendance"', 1)[1]
+
+        self.assertEqual(personal_panel.count('class="panel history-disclosure" open'), 1)
+        self.assertIn("<h2>變更歷史</h2>", personal_panel)
+
+        self.assertEqual(employment_panel.count('class="panel history-disclosure" open'), 1)
+        self.assertEqual(employment_panel.count("<table "), 1)
+        self.assertLess(
+            employment_panel.index('id="employment-status"'),
+            employment_panel.index('class="panel history-disclosure" open'),
+        )
+        self.assertIn('class="flag change-kind employment_status"', employment_panel)
+
+        self.assertNotIn("profile-credential-history", credentials_panel)
+        self.assertEqual(credentials_panel.count('class="panel history-disclosure" open'), 1)
+        self.assertLess(
+            credentials_panel.index('id="file-library"'),
+            credentials_panel.index('class="panel history-disclosure" open'),
+        )
+        self.assertIn("<h2>變更歷史</h2>", credentials_panel)
+
+        self.assertEqual(leave_panel.count('class="panel history-disclosure" open'), 1)
+        self.assertIn("<h2>假期與工傷紀錄</h2>", leave_panel)
+
+        self.assertIn(
+            'class="panel history-disclosure payroll-adjustment-panel" id="legacy-adjustments" open',
+            attendance_panel,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

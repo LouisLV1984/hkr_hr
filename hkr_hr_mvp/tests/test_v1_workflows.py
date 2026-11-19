@@ -3119,11 +3119,12 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertIn('autocomplete="current-password"', login_source)
 
     def test_user_guide_page_and_release_alignment(self):
-        self.assertEqual(CURRENT_VERSION, "V0.7.5")
-        self.assertEqual(NEXT_VERSION, "V0.7.6")
+        self.assertEqual(CURRENT_VERSION, "V0.7.6")
+        self.assertEqual(NEXT_VERSION, "V0.7.7")
         self.assertEqual(
             [(release["version"], release["date"]) for release in RELEASES],
             [
+                ("V0.7.6", "2026-11-19"),
                 ("V0.7.5", "2026-11-19"),
                 ("V0.7.4", "2026-11-19"),
                 ("V0.7.3", "2026-11-18"),
@@ -3287,7 +3288,7 @@ class V1WorkflowTests(unittest.TestCase):
             'data-panel="employment"', 1
         )[1].split('data-panel="credentials"', 1)[0]
         self.assertIn('class="dense-table change-history-table"', employment_panel)
-        self.assertEqual(employment_panel.count('class="flag change-kind '), 3)
+        self.assertEqual(employment_panel.count('class="flag change-kind '), 4)
         self.assertEqual(employment_panel.count('class="record-audit-summary"'), 2)
         self.assertIn("2026-01-01", employment_panel)
         self.assertIn("HKD 20,000.00", employment_panel)
@@ -3364,20 +3365,22 @@ class V1WorkflowTests(unittest.TestCase):
         ).get_data(as_text=True)
         self.assertIn("個人資料", page)
         self.assertIn('data-dialog-open="edit-personal-dialog"', page)
-        self.assertIn("個人資料變更歷史", page)
+        self.assertIn('class="panel history-disclosure" open', page)
+        self.assertIn("<h2>變更歷史</h2>", page)
         self.assertIn('class="dense-table profile-history-table"', page)
 
         credentials = self.client.get(
             f"/employees/{employee_id}?tab=credentials"
         ).get_data(as_text=True)
-        self.assertIn("證件與資歷變更歷史", credentials)
+        self.assertIn("<h2>變更歷史</h2>", credentials)
+        self.assertNotIn("profile-credential-history", credentials)
         self.assertIn("Updated School", credentials)
         self.assertIn('data-dialog-open="education-editor-dialog"', credentials)
 
         status = self.client.get(
             f"/employees/{employee_id}?tab=employment_status"
         ).get_data(as_text=True)
-        self.assertIn("任職狀態變更歷史", status)
+        self.assertIn('class="dense-table change-history-table"', status)
         self.assertIn('data-dialog-open="termination-editor-dialog"', status)
         self.assertNotIn('details class="action-panel"', status)
 

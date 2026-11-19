@@ -531,6 +531,7 @@ def build_change_history(employee):
         "EmployeeSalary": "salary",
         "EmployeeMpfEnrollment": "mpf",
         "EmployeeAllowance": "allowance",
+        "EmployeeEmploymentPeriod": "employment_status",
     }
     audits_by_record = {}
     logs = AuditLog.query.filter_by(employee_id=employee.id).filter(
@@ -555,6 +556,7 @@ def build_change_history(employee):
         ("salary", "EmployeeSalary", employee.salaries),
         ("mpf", "EmployeeMpfEnrollment", employee.mpf_enrollments),
         ("allowance", "EmployeeAllowance", employee.allowances),
+        ("employment_status", "EmployeeEmploymentPeriod", employee.employment_periods),
     )
     for kind, entity_type, items in groups:
         for item in items:
@@ -565,10 +567,23 @@ def build_change_history(employee):
                     "audits": audits_by_record.get((entity_type, item.id), []),
                 }
             )
-    kind_order = {"employment": 0, "salary": 1, "mpf": 2, "allowance": 3}
+    kind_order = {
+        "employment": 0,
+        "salary": 1,
+        "mpf": 2,
+        "allowance": 3,
+        "employment_status": 4,
+    }
+
+    def _history_date(item):
+        rec = item["record"]
+        if item["kind"] == "employment_status":
+            return rec.start_date or date.min
+        return rec.effective_from or date.min
+
     records.sort(
         key=lambda item: (
-            item["record"].effective_from or date.min,
+            _history_date(item),
             -kind_order[item["kind"]],
         ),
         reverse=True,

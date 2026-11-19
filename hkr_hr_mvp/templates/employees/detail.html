@@ -216,11 +216,23 @@
       </form>
     </dialog>
   </div>
-  <div class="section-head change-history-head"><div><h2>{{ t("employee.change_history") }}</h2><p>{{ t("employee.change_history_hint") }}</p></div></div>
-  {% include "employees/_change_history.html" %}
 <section id="employment-status" class="profile-subsection">
   {% include "employees/_employment_status_tab.html" %}
 </section>
+  <details class="panel history-disclosure" open>
+    <summary class="history-disclosure-summary">
+      <div class="history-disclosure-title">
+        <h2>{{ t("employee.history_title") }}</h2>
+        <span class="history-count-pill">{{ t("employee.history_count", count=change_history|length) }}</span>
+        <p>{{ t("employee.unified_employment_history_hint") }}</p>
+      </div>
+      <span class="history-disclosure-chevron" aria-hidden="true"></span>
+    </summary>
+    <div class="history-disclosure-body">
+      {% include "employees/_change_history.html" %}
+    </div>
+  </details>
+  {% if current_user.role == "admin" %}<details class="danger-zone-disclosure"><summary>{{ t("employee.danger_zone_toggle") }}</summary><div class="danger-zone"><p>{{ t("employee.delete_confirm") }}</p><button class="danger-btn" type="button" data-dialog-open="delete-employee-dialog">{{ t("employee.hard_delete") }}</button></div></details><dialog class="app-dialog" id="delete-employee-dialog"><form class="dialog-panel stack-form" method="post" action="{{ url_for('employees.delete_employee', employee_id=employee.id) }}"><div class="section-head"><div><h2>{{ t("employee.hard_delete") }}</h2><p>{{ employee.employee_no }} · {{ employee.display_name }}</p></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div><div class="inline-note danger-note">{{ t("employee.delete_confirm") }}</div><label><span>{{ t("employee.delete_type_label") }}</span><input name="confirm_employee_no" autocomplete="off" required><small>{{ t("employee.delete_type_hint", employee_no=employee.employee_no) }}</small></label><div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="danger-btn" type="submit">{{ t("employee.hard_delete") }}</button></div></form></dialog>{% endif %}
 </section>
 
 <section class="profile-tab-panel" data-panel="credentials" hidden>
@@ -422,9 +434,6 @@
   </div>
   <dialog class="app-dialog record-editor-dialog" id="visa-requirement-dialog"><form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.update_personal', employee_id=employee.id) }}"><input type="hidden" name="form_scope" value="visa_requirement"><input type="hidden" name="profile_revision" value="{{ profile_revision(employee, 'visa_requirement') }}"><div class="section-head record-editor-head"><h2>{{ t("employee.edit_visa_requirement") }}</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div><div class="record-editor-body"><label class="check-line"><input type="checkbox" name="visa_required" value="1" {% if employee.visa_required %}checked{% endif %}><span>{{ t("employee.visa_required") }}</span></label></div><div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div></form></dialog>
   <dialog class="app-dialog record-editor-dialog" id="education-editor-dialog"><form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.update_personal', employee_id=employee.id) }}"><input type="hidden" name="form_scope" value="education"><input type="hidden" name="profile_revision" value="{{ profile_revision(employee, 'education') }}"><div class="section-head record-editor-head"><h2>{{ t("employee.edit_education") }}</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div><div class="record-editor-body form-grid"><label>{{ quick_reference_label(t("employee.education"), "education_level", "education_level", "display_name") }}<select name="education_level"><option value="">{{ t("common.not_set") }}</option>{% for item in refs.education_level %}<option value="{{ item.display_name }}" {% if employee.education_level == item.display_name %}selected{% endif %}>{{ item.display_name }}</option>{% endfor %}</select></label><label><span>{{ t("employee.major") }}</span><input name="major" value="{{ employee.major or '' }}"></label><label><span>{{ t("employee.school") }}</span><input name="graduation_school" value="{{ employee.graduation_school or '' }}"></label></div><div class="dialog-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div></form></dialog>
-  <details class="profile-credential-history"><summary>{{ t("employee.credential_change_history") }}</summary>
-    {% include "employees/_credential_history.html" %}
-  </details>
 
 
 <section id="file-library" class="profile-subsection" data-document-library>
@@ -506,6 +515,20 @@
   <ul class="compact-list">{% for contract in contracts %}<li><a href="{{ url_for('documents.download_contract', contract_id=contract.id) }}">{{ contract.output_filename }}</a><span>{{ fmt_date(contract.contract_date) }} · {{ option_t("workflow_status", contract.status, contract.status) }}</span></li>{% else %}<li><span>{{ t("common.no_records") }}</span></li>{% endfor %}</ul>
 </section>
 
+<details class="panel history-disclosure" open>
+  <summary class="history-disclosure-summary">
+    <div class="history-disclosure-title">
+      <h2>{{ t("employee.history_title") }}</h2>
+      <span class="history-count-pill">{{ t("employee.history_count", count=credential_history|length) }}</span>
+      <p>{{ t("employee.credential_change_history_hint") }}</p>
+    </div>
+    <span class="history-disclosure-chevron" aria-hidden="true"></span>
+  </summary>
+  <div class="history-disclosure-body">
+    {% include "employees/_credential_history.html" %}
+  </div>
+</details>
+
 </section>
 <section class="profile-tab-panel" data-panel="leave" id="employee-leave" hidden>
   <div class="page-head compact">
@@ -525,21 +548,35 @@
   {% set missing_evidence = leave_records|selectattr('status', 'equalto', 'active')|selectattr('leave_type', 'equalto', 'sick')|rejectattr('evidence_document_id')|list %}
   {% if missing_evidence %}<article class="panel" id="missing-leave-evidence"><h2>{{ t('leave.sick_evidence_missing') }}</h2><p class="form-note">{{ t('profile.evidence_only') }}</p>{% for item in missing_evidence %}<div class="section-head"><span>{{ leave_date_label(item) }} · {{ item.days }} {{ t('leave.days') }}</span>{% include 'employees/_leave_evidence.html' %}</div>{% endfor %}</article>{% endif %}
 
-  <div class="section-head"><div><h2>{{ t("leave.timeline") }}</h2><p>{{ t("leave.attendance_link_hint") }}</p></div><a class="secondary-btn" href="{{ url_for('leave.leave_home', view='injury', employee_id=employee.id) }}">{{ t("work_injury.open_manage") }}</a></div>
-  <div class="table-wrap">
-    <table class="dense-table">
-      <thead><tr><th>{{ t("leave.type") }}</th><th>{{ t("leave.period") }}</th><th>{{ t("leave.days") }}</th><th>{{ t("common.evidence") }}</th><th>{{ t("common.status") }}</th><th>{{ t("common.actions") }}</th></tr></thead>
-      <tbody>
-        {% for item in leave_records %}
-          <tr class="{{ 'muted-row' if item.status != 'active' else '' }}"><td>{{ t("leave.type_" ~ item.leave_type) }}</td><td>{{ leave_date_label(item) }}</td><td>{{ item.days }}</td><td>{% if item.evidence_document %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=item.evidence_document.id) }}">{{ item.evidence_document.original_filename }}</a>{% elif item.leave_type == 'sick' and item.status == 'active' %}<span class="flag danger">{{ t("leave.sick_evidence_missing") }}</span>{% else %}-{% endif %}</td><td>{{ t('profile.record_active') if item.status == 'active' else t('profile.record_voided') }}</td><td><a class="mini-btn" href="{{ url_for('leave.leave_home', employee_id=employee.id) }}#employee-leave">{{ t("common.open") }}</a></td></tr>
-        {% endfor %}
-        {% for item in work_injury_periods %}
-          <tr class="{{ 'muted-row' if item.status != 'active' else '' }}"><td>{{ t("work_injury.title") }}</td><td>{{ fmt_date(item.payroll_start_date) }} – {{ fmt_date(item.payroll_end_date) if item.payroll_end_date else t("employee.long_term") }}</td><td>{{ t("work_injury.pay_four_fifths_exempt") if item.pay_mode == 'four_fifths' else t("work_injury.pay_full_exempt") }}</td><td>{% if item.evidence_document %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=item.evidence_document.id) }}">{{ item.evidence_document.original_filename }}</a>{% else %}-{% endif %}</td><td>{{ t('profile.record_active') if item.status == 'active' else t('profile.record_voided') }}</td><td><a class="mini-btn" href="{{ url_for('leave.leave_home', view='injury', employee_id=employee.id) }}">{{ t("common.open") }}</a></td></tr>
-        {% endfor %}
-        {% if not leave_records and not work_injury_periods %}<tr><td colspan="6" class="empty-cell">{{ t("common.no_records") }}</td></tr>{% endif %}
-      </tbody>
-    </table>
-  </div>
+  <details class="panel history-disclosure" open>
+    <summary class="history-disclosure-summary">
+      <div class="history-disclosure-title">
+        <h2>{{ t("leave.history_title") }}</h2>
+        <span class="history-count-pill">{{ t("employee.history_count", count=(leave_records|length + work_injury_periods|length)) }}</span>
+        <p>{{ t("leave.attendance_link_hint") }}</p>
+      </div>
+      <span class="history-disclosure-chevron" aria-hidden="true"></span>
+    </summary>
+    <div class="history-disclosure-body">
+      <div class="history-disclosure-toolbar">
+        <a class="secondary-btn" href="{{ url_for('leave.leave_home', view='injury', employee_id=employee.id) }}">{{ t("work_injury.open_manage") }}</a>
+      </div>
+      <div class="table-wrap">
+        <table class="dense-table">
+          <thead><tr><th>{{ t("leave.type") }}</th><th>{{ t("leave.period") }}</th><th>{{ t("leave.days") }}</th><th>{{ t("common.evidence") }}</th><th>{{ t("common.status") }}</th><th>{{ t("common.actions") }}</th></tr></thead>
+          <tbody>
+            {% for item in leave_records %}
+              <tr class="{{ 'muted-row' if item.status != 'active' else '' }}"><td>{{ t("leave.type_" ~ item.leave_type) }}</td><td>{{ leave_date_label(item) }}</td><td>{{ item.days }}</td><td>{% if item.evidence_document %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=item.evidence_document.id) }}">{{ item.evidence_document.original_filename }}</a>{% elif item.leave_type == 'sick' and item.status == 'active' %}<span class="flag danger">{{ t("leave.sick_evidence_missing") }}</span>{% else %}-{% endif %}</td><td>{{ t('profile.record_active') if item.status == 'active' else t('profile.record_voided') }}</td><td><a class="mini-btn" href="{{ url_for('leave.leave_home', employee_id=employee.id) }}#employee-leave">{{ t("common.open") }}</a></td></tr>
+            {% endfor %}
+            {% for item in work_injury_periods %}
+              <tr class="{{ 'muted-row' if item.status != 'active' else '' }}"><td>{{ t("work_injury.title") }}</td><td>{{ fmt_date(item.payroll_start_date) }} – {{ fmt_date(item.payroll_end_date) if item.payroll_end_date else t("employee.long_term") }}</td><td>{{ t("work_injury.pay_four_fifths_exempt") if item.pay_mode == 'four_fifths' else t("work_injury.pay_full_exempt") }}</td><td>{% if item.evidence_document %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=item.evidence_document.id) }}">{{ item.evidence_document.original_filename }}</a>{% else %}-{% endif %}</td><td>{{ t('profile.record_active') if item.status == 'active' else t('profile.record_voided') }}</td><td><a class="mini-btn" href="{{ url_for('leave.leave_home', view='injury', employee_id=employee.id) }}">{{ t("common.open") }}</a></td></tr>
+            {% endfor %}
+            {% if not leave_records and not work_injury_periods %}<tr><td colspan="6" class="empty-cell">{{ t("common.no_records") }}</td></tr>{% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </details>
 
   {% with leave_return='profile' %}{% include 'leave/_entry_dialog.html' %}{% endwith %}
 
@@ -646,31 +683,37 @@
     {% with records=corrections_by_month.get(month, []) %}{% include 'attendance/_correction_history.html' %}{% endwith %}
   </article>
   {% endfor %}
-  <article class="panel payroll-adjustment-panel" id="legacy-adjustments">
-    <div class="section-head">
-      <div><h2>{{ t("corr.legacy") }}</h2></div>
+  <details class="panel history-disclosure payroll-adjustment-panel" id="legacy-adjustments" open>
+    <summary class="history-disclosure-summary">
+      <div class="history-disclosure-title">
+        <h2>{{ t("corr.legacy") }}</h2>
+        <span class="history-count-pill">{{ t("employee.history_count", count=payroll_adjustments|length) }}</span>
+      </div>
+      <span class="history-disclosure-chevron" aria-hidden="true"></span>
+    </summary>
+    <div class="history-disclosure-body">
+      <div class="table-wrap flat">
+        <table class="dense-table">
+          <thead><tr><th>{{ t("common.month") }}</th><th>{{ t("employee.adjustment_name") }}</th><th>{{ t("common.project") }}</th><th>{{ t("common.amount") }}</th><th>{{ t("common.evidence") }}</th><th>{{ t("common.status") }}</th><th>{{ t("common.actions") }}</th></tr></thead>
+          <tbody>
+            {% for adjustment in payroll_adjustments %}
+              <tr id="adjustment-{{ adjustment.id }}" class="{{ 'muted-row' if adjustment.status != 'active' else '' }}" data-record-context>
+                <td>{{ adjustment.year_month }}</td>
+                <td>{{ adjustment.label }}</td>
+                <td>{{ project_t(adjustment.project, t("common.unassigned")) }}</td>
+                <td>{{ fmt_money(adjustment.amount) }}</td>
+                <td>{% if adjustment.evidence_document %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=adjustment.evidence_document.id) }}">{{ adjustment.evidence_document.original_filename }}</a>{% else %}<span class="flag warn">{{ t("common.pending") }}</span>{% endif %}</td>
+                <td>{{ option_t("document_status", adjustment.status, adjustment.status) }}</td>
+                <td>
+                  <a class="mini-btn" href="{{ url_for('payroll.attendance_payroll', year_month=adjustment.year_month, employee_id=employee.id, status='all') }}">{{ t("payroll.open_monthly_payroll") }}</a>
+                </td>
+              </tr>
+            {% else %}<tr><td colspan="7" class="empty-cell">{{ t("common.no_records") }}</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
-    <div class="table-wrap flat">
-      <table class="dense-table">
-        <thead><tr><th>{{ t("common.month") }}</th><th>{{ t("employee.adjustment_name") }}</th><th>{{ t("common.project") }}</th><th>{{ t("common.amount") }}</th><th>{{ t("common.evidence") }}</th><th>{{ t("common.status") }}</th><th>{{ t("common.actions") }}</th></tr></thead>
-        <tbody>
-          {% for adjustment in payroll_adjustments %}
-            <tr id="adjustment-{{ adjustment.id }}" class="{{ 'muted-row' if adjustment.status != 'active' else '' }}" data-record-context>
-              <td>{{ adjustment.year_month }}</td>
-              <td>{{ adjustment.label }}</td>
-              <td>{{ project_t(adjustment.project, t("common.unassigned")) }}</td>
-              <td>{{ fmt_money(adjustment.amount) }}</td>
-              <td>{% if adjustment.evidence_document %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=adjustment.evidence_document.id) }}">{{ adjustment.evidence_document.original_filename }}</a>{% else %}<span class="flag warn">{{ t("common.pending") }}</span>{% endif %}</td>
-              <td>{{ option_t("document_status", adjustment.status, adjustment.status) }}</td>
-              <td>
-                <a class="mini-btn" href="{{ url_for('payroll.attendance_payroll', year_month=adjustment.year_month, employee_id=employee.id, status='all') }}">{{ t("payroll.open_monthly_payroll") }}</a>
-              </td>
-            </tr>
-          {% else %}<tr><td colspan="7" class="empty-cell">{{ t("common.no_records") }}</td></tr>{% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </article>
+  </details>
 </section>
 
 

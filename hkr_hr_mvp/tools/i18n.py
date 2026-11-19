@@ -5367,6 +5367,15 @@ for _key, _labels in {
     'common.no_records': ('暫無紀錄。', '暂无记录。', 'No records yet.'),
     'workflow.file_details_missing': ('缺 {count} 項資料', '缺 {count} 项资料', '{count} missing'),
     'workflow.file_details_complete': ('資料齊全', '资料齐全', 'Complete'),
+    'employee.history_title': ('變更歷史', '变更历史', 'Change history'),
+    'employee.change_type_employment_status': ('任職狀態', '任职状态', 'Employment status'),
+    'employee.unified_employment_history_hint': (
+        '集中記錄任職、薪酬、固定補貼、MPF 及入職／轉正／離職狀態的歷史與憑證；點擊標題列可收合。',
+        '集中记录任职、薪酬、固定补贴、MPF 及入职／转正／离职状态的历史与凭证；点击标题栏可折叠。',
+        'Combined history and evidence for assignments, salary, allowances, MPF, probation and departure; click the header to collapse.',
+    ),
+    'leave.history_title': ('假期與工傷紀錄', '假期与工伤记录', 'Leave and injury records'),
+    'employee.history_count': ('{count} 筆', '{count} 笔', '{count}'),
 }.items():
     for _lang, _label in zip(("zh-Hant", "zh-Hans", "en"), _labels):
         TRANSLATIONS[_lang][_key] = _label

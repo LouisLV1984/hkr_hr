@@ -52,14 +52,23 @@
     <tbody>
       {% for entry in change_history %}
         {% set item = entry.record %}
-        <tr class="{{ 'muted-row' if item.status != 'active' else '' }}" data-record-context>
+        {% set is_status_row = entry.kind == "employment_status" %}
+        <tr class="{{ 'history-status-row muted-row' if is_status_row and item.end_date and item.end_date < today else ('history-status-row' if is_status_row else ('muted-row' if item.status != 'active' else '')) }}"{% if not is_status_row %} data-record-context{% endif %}>
           <td><div class="effective-period-cell">
-            <strong>{{ fmt_date(item.effective_from) }}</strong>
-            {% if item.status != "active" %}<span class="flag">{{ option_t("document_status", item.status, item.status) }}</span>{% endif %}
+            {% if is_status_row %}
+              <strong>{{ fmt_date(item.start_date) }}</strong>
+              <span class="flag">{{ t("employees.status_departed") if item.end_date and item.end_date < today else t("employees.status_active") }}</span>
+            {% else %}
+              <strong>{{ fmt_date(item.effective_from) }}</strong>
+              {% if item.status != "active" %}<span class="flag">{{ option_t("document_status", item.status, item.status) }}</span>{% endif %}
+            {% endif %}
           </div></td>
           <td><span class="flag change-kind {{ entry.kind }}">{{ t("employee.change_type_" ~ entry.kind) }}</span></td>
           <td><div class="change-content-cell">
-            {% if entry.kind == "employment" %}
+            {% if is_status_row %}
+              <strong>{% if item.confirmation_date %}{{ t("employee.confirmed") }} · {{ fmt_date(item.confirmation_date) }}{% else %}{{ t("employee.not_confirmed") if item.probation_end_date else t("profile.probation_unknown") }}{% endif %}</strong>
+              {% if item.end_date %}<small class="history-status-end">{{ t("employee.last_working_day") }}：{{ fmt_date(item.end_date) }} · {{ option_t("termination_reason", item.termination_reason, item.termination_reason or "-") }}</small>{% endif %}
+            {% elif entry.kind == "employment" %}
               <strong>{{ item.positions|map(attribute='position.display_name')|join('、') or t("common.not_set") }}</strong>
               <span>{{ project_t(item.project, t("common.unassigned")) }} · {{ option_t("payroll_group", item.payroll_group, dict(payroll_groups).get(item.payroll_group, item.payroll_group)) }}{% if item.payroll_group in ('site_monthly', 'management') %} · {{ t("employee.workweek_five_half") if item.workweek_days|float == 5.5 else (t("employee.workweek_five") if item.workweek_days|float == 5 else t("employee.workweek_six")) }}{% endif %}</span>
               {% if item.department %}<small>{{ item.department.display_name }}</small>{% endif %}
@@ -74,10 +83,13 @@
               <span>Member Account No.：{{ item.member_account_no or "-" }}</span>
               <small>{{ t("employee.mpf_exempt") if item.is_exempt else t("mpf.mode_" ~ item.contribution_mode) }}</small>
             {% endif %}
-            {% if item.effective_to %}<small class="history-effective-end">{{ t("employee.effective_to") }}：{{ fmt_date(item.effective_to) }}</small>{% endif %}
+            {% if not is_status_row and item.effective_to %}<small class="history-effective-end">{{ t("employee.effective_to") }}：{{ fmt_date(item.effective_to) }}</small>{% endif %}
           </div></td>
           <td class="history-evidence-cell">
-            {% if entry.kind == "employment" %}
+            {% if is_status_row %}
+              {% if item.confirmation_document %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=item.confirmation_document.id) }}">{{ item.confirmation_document.original_filename }}</a><br>{% endif %}
+              {% if item.termination_document %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=item.termination_document.id) }}">{{ item.termination_document.original_filename }}</a>{% elif not item.confirmation_document %}-{% endif %}
+            {% elif entry.kind == "employment" %}
               {% if item.evidence_document and item.evidence_document.status == "active" %}
                 <a target="_blank" href="{{ url_for('documents.open_document', document_id=item.evidence_document.id) }}">{{ item.evidence_document.original_filename }}</a>
               {% elif item.status == "active" %}
@@ -95,7 +107,13 @@
           </td>
           <td>{{ audit_cell(entry) }}</td>
           <td class="row-actions history-actions-cell">
-            {% if item.status == "active" %}
+            {% if is_status_row %}
+              {% if item == period %}
+                {% if employee.payroll_group == 'management' %}<button class="mini-btn" type="button" data-dialog-open="probation-editor-dialog">{{ t("employee.edit_confirmation") }}</button>{% endif %}
+                <button class="mini-btn" type="button" data-dialog-open="termination-editor-dialog">{{ t("employee.correct_termination") if item.end_date else t("employee.terminate") }}</button>
+                {% if item.end_date %}<form class="mini-form" method="post" action="{{ url_for('employees.cancel_termination', employee_id=employee.id) }}" data-confirm="{{ t('employee.cancel_termination_confirm') }}"><button class="mini-btn danger-text" type="submit">{{ t("employee.cancel_termination") }}</button></form>{% endif %}
+              {% endif %}
+            {% elif item.status == "active" %}
               <button class="mini-btn" type="button" data-dialog-open="{{ entry.kind }}-editor-{{ item.id }}" data-record-editor-trigger>{{ t("common.correct") }}</button>
               <form class="mini-form" method="post"
                     action="{% if entry.kind == 'employment' %}{{ url_for('employees.withdraw_assignment', assignment_id=item.id) }}{% elif entry.kind == 'salary' %}{{ url_for('employees.withdraw_salary', salary_id=item.id) }}{% elif entry.kind == 'allowance' %}{{ url_for('employees.withdraw_allowance', allowance_id=item.id) }}{% else %}{{ url_for('employees.withdraw_mpf_enrollment', enrollment_id=item.id) }}{% endif %}"
@@ -105,7 +123,7 @@
               </form>
             {% endif %}
 
-        {% if item.status == "active" and entry.kind == "employment" %}
+        {% if not is_status_row and item.status == "active" and entry.kind == "employment" %}
           <dialog class="app-dialog record-editor-dialog" id="employment-editor-{{ item.id }}">
             <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.correct_assignment', assignment_id=item.id) }}" enctype="multipart/form-data" data-assignment-form>{% include 'employees/_payroll_origin.html' %}
               <div class="section-head record-editor-head"><div><h2>{{ t("common.correct") }} · {{ t("employee.employment") }}</h2><p>{{ fmt_date(item.effective_from) }}</p></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
@@ -136,7 +154,7 @@
             </form>
           </dialog>
           {% endif %}
-        {% elif item.status == "active" and entry.kind == "salary" %}
+        {% elif not is_status_row and item.status == "active" and entry.kind == "salary" %}
           <dialog class="app-dialog record-editor-dialog" id="salary-editor-{{ item.id }}">
             <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.correct_salary', salary_id=item.id) }}" enctype="multipart/form-data" data-salary-form>
               <div class="section-head record-editor-head"><div><h2>{{ t("common.correct") }} · {{ t("employee.current_salary") }}</h2><p>{{ fmt_date(item.effective_from) }}</p></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
@@ -161,7 +179,7 @@
             </form>
           </dialog>
           {% endif %}
-        {% elif item.status == "active" and entry.kind == "allowance" %}
+        {% elif not is_status_row and item.status == "active" and entry.kind == "allowance" %}
           <dialog class="app-dialog record-editor-dialog" id="allowance-editor-{{ item.id }}">
             <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.correct_allowance', allowance_id=item.id) }}" enctype="multipart/form-data">
               <div class="section-head record-editor-head"><div><h2>{{ t("common.correct") }} · {{ t("allowance." ~ item.allowance_type) }}</h2><p>{{ fmt_date(item.effective_from) }}</p></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
@@ -179,7 +197,7 @@
               <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
             </form>
           </dialog>
-        {% elif item.status == "active" %}
+        {% elif entry.kind == "mpf" and item.status == "active" %}
           <dialog class="app-dialog record-editor-dialog" id="mpf-editor-{{ item.id }}">
             <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.correct_mpf_enrollment', enrollment_id=item.id) }}">
               <div class="section-head record-editor-head"><h2>{{ t("common.correct") }} · MPF</h2><button class="icon-btn" type="button" data-dialog-close>×</button></div>
