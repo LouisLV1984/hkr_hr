@@ -3711,3 +3711,12 @@ details[open] > summary .when-closed { display: none; }
   max-height: 70vh;
   overflow: auto;
 }
+.shared-file-flag {
+  background: #eef4f7;
+  border-color: #c2d6e0;
+  color: #305264;
+  font-size: 11px;
+  min-height: 20px;
+  padding: 1px 6px;
+  margin-top: 3px;
+}

@@ -1987,7 +1987,7 @@ def correct_summary(summary_id):
     flash("考勤資料已更正。", "success")
     if payroll_was_exported:
         flash(
-            "原月份或新月份曾經導出 Payroll。考勤更正後，請重新核對及導出 Payroll。",
+            "原月份或新月份曾經匯出工資表。考勤更正後，請重新核對及匯出工資表。",
             "warning",
         )
     payroll_url = originating_payroll(request.form, source_year_month)
@@ -2036,7 +2036,7 @@ def withdraw_summary(summary_id):
         after={"status": "voided"},
     )
     db.session.commit()
-    flash("考勤已撤回，不再參與 Payroll；原記錄仍保留。", "success")
+    flash("考勤已撤回，不再參與出糧；原記錄仍保留。", "success")
     return redirect(
         url_for(
             "employees.view_employee",
@@ -2136,7 +2136,7 @@ def mark_not_required():
         after=summary_snapshot(summary),
     )
     db.session.commit()
-    flash("已標記本月無需考勤表；Payroll 會按預設全勤及零 OT／E-CALL 計算。", "success")
+    flash("已標記本月無需考勤表；工資表會按預設全勤及零 OT／E-CALL 計算。", "success")
     return redirect(
         url_for(
             "attendance.attendance_home",

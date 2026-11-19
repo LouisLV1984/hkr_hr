@@ -78,7 +78,7 @@ const base = 'http://127.0.0.1:8766';
       const old = await select.inputValue();
       assert.equal(await dialog.locator('[data-impact-note]').count(), 0);
       await select.selectOption(old === '6' ? '5' : '6');
-      assert.ok((await dialog.locator('[data-impact-note]').textContent()).includes('已匯出的 Payroll'));
+      assert.ok((await dialog.locator('[data-impact-note]').textContent()).includes('已匯出的工資表'));
       await select.selectOption(old);
       assert.equal(await dialog.locator('[data-impact-note]').count(), 0);
       await dialog.locator('[data-dialog-close]').last().click();

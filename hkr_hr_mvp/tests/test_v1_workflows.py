@@ -1130,7 +1130,7 @@ class V1WorkflowTests(unittest.TestCase):
         )
         self.assertEqual(corrected.status_code, 200)
         self.assertIn(
-            "請重新核對及導出 Payroll",
+            "請重新核對及匯出工資表",
             corrected.get_data(as_text=True),
         )
         with self.app.app_context():
@@ -1891,7 +1891,7 @@ class V1WorkflowTests(unittest.TestCase):
         ).get_data(as_text=True)
         self.assertIn("payroll-summary-card active", payroll_page)
         self.assertIn(employee_no, payroll_page)
-        self.assertIn("導出此員工 Payroll", payroll_page)
+        self.assertIn("匯出此員工工資表", payroll_page)
         self.assertIn("30,000.00", payroll_page)
         self.assertNotIn("payroll-person-preview", payroll_page)
 
@@ -1990,7 +1990,7 @@ class V1WorkflowTests(unittest.TestCase):
             ascending.index(monthly_no),
             ascending.index(management_no),
         )
-        self.assertIn("Payroll 組別 ↑", ascending)
+        self.assertIn("薪酬組別 ↑", ascending)
         self.assertIn("policy-actions-head", ascending)
 
         descending = self.client.get(
@@ -3212,13 +3212,13 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertIn("前往專項管理", source)
         self.assertIn("最小單位為 0.5 日", source)
         self.assertIn("撤回離職資料", source)
-        self.assertIn("導出薪金證明書", source)
+        self.assertIn("匯出薪金證明書", source)
         self.assertIn("頁面會自動計算", source)
         self.assertIn("修正／撤回／替換／補件", source)
         self.assertIn("### 10.6 每月 MPF 供款表", source)
         self.assertIn("Member Account No.", source)
         self.assertIn("變更歷史", source)
-        self.assertIn("離職 Payroll", source)
+        self.assertIn("離職結算", source)
         self.assertIn("發薪單位", source)
         self.assertIn("手動例外補貼", source)
 
@@ -4467,8 +4467,8 @@ class V1WorkflowTests(unittest.TestCase):
         page = self.client.get(
             "/attendance-payroll?year_month=2026-07&payroll_group=all&status=all"
         ).get_data(as_text=True)
-        self.assertIn("導出全部可出糧員工（2 人）", page)
-        self.assertIn("導出此員工 Payroll", page)
+        self.assertIn("匯出全部可出糧員工（2 人）", page)
+        self.assertIn("匯出此員工工資表", page)
         self.assertEqual(
             len(
                 re.findall(
@@ -4910,7 +4910,7 @@ class V1WorkflowTests(unittest.TestCase):
             follow_redirects=True,
         )
         self.assertEqual(response.status_code, 200)
-        self.assertIn("考勤及 Payroll 資料已全部刪除", response.get_data(as_text=True))
+        self.assertIn("考勤及工資表資料已全部刪除", response.get_data(as_text=True))
         with self.app.app_context():
             self.assertIsNone(db.session.get(Employee, employee_id))
             self.assertIsNone(
@@ -5460,7 +5460,7 @@ class V1WorkflowTests(unittest.TestCase):
         ).get_data(as_text=True)
         self.assertNotIn("工資更正與一次性調整", payroll_page)
         self.assertNotIn('action="/payroll/adjustments"', payroll_page)
-        self.assertIn("離職當月的工資只由離職 Payroll", payroll_page)
+        self.assertIn("離職當月的工資只由離職結算", payroll_page)
 
     def test_attendance_special_dates_generate_and_void_comp_leave(self):
         employee_id, _ = self.create_employee(
@@ -5510,7 +5510,7 @@ class V1WorkflowTests(unittest.TestCase):
         entry_page = self.client.get(
             f"/attendance?month=2026-07&view=collection&item_id={item_id}&employee_id={employee_id}"
         ).get_data(as_text=True)
-        self.assertIn("Payroll 類別", entry_page)
+        self.assertIn("薪酬類別", entry_page)
         self.assertIn("填寫方式：非法定假日按真正實際出勤日數填寫", entry_page)
         self.assertIn("請選擇員工", entry_page)
         self.assertNotIn("文件名不作身份依據", entry_page)
@@ -5540,7 +5540,7 @@ class V1WorkflowTests(unittest.TestCase):
         self.assertIn("待按 PDF 核對的系統基準", entry_page)
         self.assertIn("目前未錄入額外考勤項目", entry_page)
         self.assertIn("ⓘ 計算規則", entry_page)
-        self.assertNotIn("本次 Payroll 核對", entry_page)
+        self.assertNotIn("本次工資表核對", entry_page)
         self.assertRegex(
             entry_page,
             r'name="previous_21_end_forecast_working_days" value="8(?:\.0+)?"',
@@ -5801,8 +5801,8 @@ class V1WorkflowTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         page = response.get_data(as_text=True)
-        self.assertIn("離職 Payroll 資料已保存", page)
-        self.assertIn("當前離職 Payroll 月份", page)
+        self.assertIn("離職結算資料已保存", page)
+        self.assertIn("當前離職結算月份", page)
         self.assertIn("交通／餐補（自動）", page)
         self.assertIn("工傷醫療實銷（不計 MPF）", page)
         self.assertIn(employee_no, page)

@@ -43,7 +43,7 @@
                 <td><a href="{{ url_for('employees.view_employee', employee_id=alert.employee.id, tab='credentials', _anchor=alert.anchor) }}">{{ alert.employee.employee_no }} · {{ alert.employee.display_name }}</a></td>
                 <td>{{ option_t("identity_type", alert.label, alert.label) }}</td>
                 <td>{{ fmt_date(alert.date) }}</td>
-                <td><span class="flag expiry-status {{ alert.severity }}">{% if alert.severity == 'expired' %}已到期 {{ -alert.days_remaining }} 日{% elif alert.severity == 'urgent' %}{{ alert.days_remaining }} 日內到期{% else %}{{ alert.days_remaining }} 日後到期{% endif %}</span></td>
+                <td><span class="flag expiry-status {{ alert.severity }}">{% if alert.severity == 'expired' %}{{ t("dashboard.expiry_overdue_days", days=-alert.days_remaining) }}{% elif alert.severity == 'urgent' %}{{ t("dashboard.expiry_urgent_days", days=alert.days_remaining) }}{% else %}{{ t("dashboard.expiry_upcoming_days", days=alert.days_remaining) }}{% endif %}</span></td>
               </tr>
             {% else %}
               <tr><td colspan="4" class="empty-cell">{{ t("dashboard.no_expiry_alerts") }}</td></tr>

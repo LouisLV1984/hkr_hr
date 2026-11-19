@@ -11,34 +11,37 @@ RELEASES = [
         "zh-Hant": [
             "修正「考勤收集」檔案拖放區被全域檔案選擇器重複插入控制項與顯示「↑ *」的問題；將頁標題與「欠交名單」操作收齊於上傳區上方，並把左側「最近匯入批次」改為上下分行顯示完整批次標題。",
             "補全「假期管理」及「工傷管理」頁面（含側邊欄與全部彈窗）約百項繁體、簡體及英文三語翻譯，讓切換語言時整頁一致。",
-            "為「工傷管理」員工卡片補上清晰卡片邊框與雙欄編輯彈窗、統一本頁年假／補休小數精度至 1 位，並套用可收合歷史面板（含預設展開的「復診／醫療開支歷史」與「假期變更歷史」）。"
+            "為「工傷管理」員工卡片補上清晰卡片邊框與雙欄編輯彈窗、統一本頁年假／補休小數精度至 1 位，並套用可收合歷史面板（含預設展開的「復診／醫療開支歷史」與「假期變更歷史」）。",
+            "補齊「資料設定與匯出」（工作日曆、項目、MPF 計劃、引用員工及清單）與工作臺到期狀態之繁／簡／英三語翻譯，並統一採用雙欄編輯彈窗與可收合離線日曆外框；員工詳情「證件與文件」文件總庫顯示具體目標分頁連結及「同檔多處關聯」標記。"
         ],
         "zh-Hans": [
             "修复“考勤收集”文件拖放区被全局文件选择器重复插入控件及显示“↑ *”的问题；将页标题与“欠交名单”操作收齐于上传区上方，并把左侧“最近导入批次”改为上下分行显示完整批次标题。",
             "补全“假期管理”及“工伤管理”页面（含侧边栏与全部弹窗）约百项繁体、简体及英文三语翻译，让切换语言时整页一致。",
-            "为“工伤管理”员工卡片补上清晰卡片边框与双栏编辑弹窗、统一本页年假／补休小数精度至 1 位，并套用可折叠历史面板（含默认展开的“复诊／医疗开支历史”与“假期变更历史”）。"
+            "为“工伤管理”员工卡片补上清晰卡片边框与双栏编辑弹窗、统一本页年假／补休小数精度至 1 位，并套用可折叠历史面板（含默认展开的“复诊／医疗开支历史”与“假期变更历史”）。",
+            "补齐“资料设置与导出”（工作日历、项目、MPF 计划、引用员工及清单）与工作台到期状态之繁／简／英三语翻译，并统一采用双栏编辑弹窗与可折叠离线日历外框；员工详情“证件与文件”文件总库显示具体目标分页链接及“同文件多处关联”标记。"
         ],
         "en": [
             "Fixed the attendance PDF dropzone so the global file-picker enhancer no longer injects nested controls or appends an asterisk to the upload icon; moved the page title and Missing-attendance link above the dropzone, and stacked recent batch cards so batch titles display in full.",
             "Completed Traditional Chinese, Simplified Chinese, and English translations across Leave Management and Work Injury Management (including sidebar links and modal dialogs).",
-            "Added visible borders to work-injury roster cards, standardized two-column modal layouts and 1-decimal leave balances, and aligned Leave & Work Injury history panels with the collapsible style."
+            "Added visible borders to work-injury roster cards, standardized two-column modal layouts and 1-decimal leave balances, and aligned Leave & Work Injury history panels with the collapsible style.",
+            "Completed trilingual translations and standardized dialogs and collapsible sections across Reference Data & Export (work calendar, projects, MPF schemes, options) and Workbench expiry countdowns; upgraded Employee Credentials & Files library links with target tab names and shared-file badges."
         ]
     },
     "improvements": {
         "zh-Hant": [
             "「每月工資表」總計卡片金額改為單行呈現不再於幣種後斷行、為 4 個底部進階面板套用一致收合標題與箭嘴；調整歷史與人員表欄寬及過濾器寬度，避免 1024px 窄屏擠壓與換行。",
-            "「人事工作臺」證件到期日改為完整 `YYYY/MM/DD` 格式並為區塊標題補上展開／收合箭嘴；為假期總覽、每月工資表及工作臺長名單啟用表頭固定捲動。",
-            "「員工詳情」在已有工資表快照而無月度考勤 PDF 時不再顯示矛盾的空白提示；收緊編輯個人資料彈窗尺寸、補上憑證按鈕懸浮提示並防止過長檔名撐闊詳情卡片。"
+            "「人事工作臺」證件到期日改為完整 `YYYY/MM/DD` 格式並為區塊標題補上展開／收合箭嘴；為假期總覽、每月工資表、工作臺及資料設定長表啟用表頭固定捲動。",
+            "「員工詳情」在已有工資表快照而無月度考勤 PDF 時不再顯示矛盾的空白提示；收緊編輯個人資料彈窗尺寸、補上憑證按鈕懸浮提示並防止過長檔名撐闊詳情卡片；統一全站繁體介面用語為「匯出／工資表／離職結算／新增請假」（正式離職表英文名稱維持 `Final Payment`）。"
         ],
         "zh-Hans": [
             "“每月工资表”总计卡片金额改为单行呈现不再于币种后断行、为 4 个底部进阶面板套用一致折叠标题与箭头；调整历史与人员表栏宽及过滤器宽度，避免 1024px 窄屏挤压与换行。",
-            "“人事工作台”证件到期日改为完整 `YYYY/MM/DD` 格式并为区块标题补上展开／折叠箭头；为假期总览、每月工资表及工作台长名单启用表头固定滚动。",
-            "“员工详情”在已有工资表快照而无月度考勤 PDF 时不再显示矛盾的空白提示；收紧编辑个人资料弹窗尺寸、补上凭证按钮悬浮提示并防止过长文件名撑宽详情卡片。"
+            "“人事工作台”证件到期日改为完整 `YYYY/MM/DD` 格式并为区块标题补上展开／折叠箭头；为假期总览、每月工资表、工作台及资料设置长表启用表头固定滚动。",
+            "“员工详情”在已有工资表快照而无月度考勤 PDF 时不再显示矛盾的空白提示；收紧编辑个人资料弹窗尺寸、补上凭证按钮悬浮提示并防止过长文件名撑宽详情卡片；统一全站简体界面用语为“工资表／离职结算／新增请假”（正式离职表英文名称维持 `Final Payment`）。"
         ],
         "en": [
-            "Kept Payroll KPI currency amounts on single lines, unified the four lower Payroll disclosures with standard collapsible headers and chevrons, tuned table widths for 1024px viewports, and enabled sticky table headers across Leave overview, Payroll, and the Workbench.",
+            "Kept Payroll KPI currency amounts on single lines, unified the four lower Payroll disclosures with standard collapsible headers and chevrons, tuned table widths for 1024px viewports, and enabled sticky table headers across Leave overview, Payroll, Workbench and Reference tables.",
             "Formatted HR Workbench certificate expiry dates as `YYYY/MM/DD` with full-width toggle headers and chevrons, framed the Payroll summary strip, and adjusted wrapping at 1024px.",
-            "Updated Employee Profile Tab 5 so saved payroll snapshots without monthly attendance PDFs show an accurate hint instead of an empty-state contradiction, compacted the personal-details modal, and constrained long evidence links."
+            "Updated Employee Profile Tab 5 so saved payroll snapshots without monthly attendance PDFs show an accurate hint instead of an empty-state contradiction, compacted the personal-details modal, constrained long evidence links, and aligned Chinese UI terminology across templates and messages."
         ]
     },
     "limitations": {

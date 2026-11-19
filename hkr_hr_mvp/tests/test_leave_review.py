@@ -152,7 +152,7 @@ class LeaveReviewTests(unittest.TestCase):
             old_regular=case.post_2024_leave_days
             old_pay=calculate_final_payment(period)["annual_leave_pay"]
         response=self.submit([rid],eid=eid)
-        self.assertIn("1 筆離職 Payroll",response.get_data(as_text=True))
+        self.assertIn("1 筆離職結算",response.get_data(as_text=True))
         with self.app.app_context():
             row=db.session.get(EmployeeAnnualLeaveRecord,rid)
             self.assertEqual(row.days,3)

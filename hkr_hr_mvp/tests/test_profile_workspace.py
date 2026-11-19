@@ -286,6 +286,66 @@ class ProfileWorkspaceTests(unittest.TestCase):
         self.assertIn("history-disclosure-chevron", dashboard_page)
         self.assertIn(expiring_on.strftime("%Y/%m/%d"), dashboard_page)
 
+        from tools.i18n import TRANSLATIONS
+        ph = re.compile(r"\{([a-zA-Z0-9_]+)\}")
+        self.assertEqual([k for k, v in TRANSLATIONS["zh-Hant"].items() if "導出" in v], [])
+        self.assertEqual([k for k, v in TRANSLATIONS["zh-Hant"].items() if "Payroll" in v], [])
+        self.assertEqual([k for k, v in TRANSLATIONS["zh-Hans"].items() if "Payroll" in v], [])
+        self.assertIn("Final Payment", TRANSLATIONS["zh-Hant"]["final_payment.rule.departure_payroll"])
+        self.assertIn("Payroll", TRANSLATIONS["en"]["nav.payroll"])
+        for k in TRANSLATIONS["zh-Hant"]:
+            if k in {"attendance.open_previous_pdf", "attendance.previous_pdf_missing", "common.year_month", "attendance.period_date_range"}:
+                continue
+            self.assertEqual(
+                set(ph.findall(TRANSLATIONS["zh-Hant"][k])),
+                set(ph.findall(TRANSLATIONS["zh-Hans"].get(k, ""))),
+                k,
+            )
+            self.assertEqual(
+                set(ph.findall(TRANSLATIONS["zh-Hant"][k])),
+                set(ph.findall(TRANSLATIONS["en"].get(k, ""))),
+                k,
+            )
+
+        ref_en = self.client.get("/references?list=work_calendar&lang=en").get_data(as_text=True)
+        self.assertIn("Work calendar", ref_en)
+        self.assertIn("record-editor-dialog", ref_en)
+        self.assertIn("panel history-disclosure", ref_en)
+
+        dash_expiry_en = self.client.get("/dashboard?panel=expiry&lang=en").get_data(as_text=True)
+        self.assertIn("Due in 15d", dash_expiry_en)
+
+        eid_tab3 = self.employee("C")
+        pdf_same = pdf_bytes("SHARED-CONTRACT")
+        r1 = self.client.post(
+            f"/employees/{eid_tab3}/documents/new",
+            data={"category": "signed_contract", "file": (io.BytesIO(pdf_same), "contract_shared.pdf")},
+        )
+        self.assertEqual(r1.status_code, 302)
+        with self.app.app_context():
+            doc_id = db.session.get(Employee, eid_tab3).documents[0].id
+            db.session.add(
+                EmployeeAssignment(
+                    employee_id=eid_tab3,
+                    effective_from=date(2026, 2, 1),
+                    payroll_group="management",
+                    workweek_days=Decimal("5.0"),
+                    evidence_document_id=doc_id,
+                )
+            )
+            db.session.commit()
+        r2 = self.client.post(
+            f"/employees/{eid_tab3}/documents/new",
+            data={"category": "staff_record", "file": (io.BytesIO(pdf_same), "contract_copy.pdf")},
+        )
+        self.assertEqual(r2.status_code, 302)
+        tab3_page = self.client.get(f"/employees/{eid_tab3}?tab=credentials&lang=zh-Hant").get_data(as_text=True)
+        file_library = tab3_page.split('id="file-library"', 1)[1].split("</section>", 1)[0]
+        self.assertIn("前往任職與薪酬", file_library)
+        self.assertIn("由「任職與薪酬」管理", file_library)
+        self.assertIn("shared-file-flag", file_library)
+        self.assertIn("同檔多處關聯", file_library)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -918,7 +918,7 @@ def new_employee():
         elif not employee_type:
             flash("請選擇員工編號類別。", "error")
         elif payroll_group not in {item[0] for item in PAYROLL_GROUPS}:
-            flash("請選擇 Payroll 組別。", "error")
+            flash("請選擇薪酬組別。", "error")
         else:
             employee = Employee(
                 employee_no=next_employee_no(employee_type),
@@ -1062,6 +1062,11 @@ def view_employee(employee_id):
         document.id: document_management_tab(document)
         for document in employee.documents
     }
+    hash_counts = {}
+    for document in employee.documents:
+        if document.status == "active" and document.content_sha256:
+            hash_counts[document.content_sha256] = hash_counts.get(document.content_sha256, 0) + 1
+    shared_document_hashes = {digest for digest, count in hash_counts.items() if count > 1}
     pay_month = request.args.get("pay_month", "")
     payroll_return = originating_payroll(request.args, pay_month)
     pay_assignment = None
@@ -1151,6 +1156,7 @@ def view_employee(employee_id):
                            and c.certificate_type.code not in {"DEGREE", "SKILL"}},
         replacement_reasons=REPLACEMENT_REASONS,
         document_management_tabs=document_management_tabs,
+        shared_document_hashes=shared_document_hashes,
     )
 
 
@@ -1652,7 +1658,7 @@ def correct_assignment(assignment_id):
     if not effective_from or payroll_group not in {
         item[0] for item in PAYROLL_GROUPS
     }:
-        flash("請完整填寫任職生效日期及 Payroll 組別。", "error")
+        flash("請完整填寫任職生效日期及薪酬組別。", "error")
         return employee_redirect(assignment.employee_id, "employment")
     duplicate = EmployeeAssignment.query.filter(
         EmployeeAssignment.employee_id == assignment.employee_id,
@@ -3253,7 +3259,7 @@ def add_work_injury_expense(period_id):
         detail=f"{year_month}: {amount}",
     )
     db.session.commit()
-    flash("工傷復診／醫療開支已保存，將匯入該月 Payroll 的 AN 欄。", "success")
+    flash("工傷復診／醫療開支已保存，將匯入該月工資表的 AN 欄。", "success")
     return redirect(url_for("leave.leave_home", view="injury", employee_id=period.employee_id))
 
 
@@ -3495,5 +3501,5 @@ def delete_employee(employee_id):
         if folder.is_dir() and not any(folder.iterdir()):
             folder.rmdir()
     delete_employee_files(folder=upload_folder)
-    flash(f"員工 {employee_no}、考勤及 Payroll 資料已全部刪除。", "success")
+    flash(f"員工 {employee_no}、考勤及工資表資料已全部刪除。", "success")
     return redirect(url_for("employees.list_employees"))

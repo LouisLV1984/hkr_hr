@@ -869,7 +869,7 @@ def export_salary_certificate():
             break
     results.reverse()
     if not results:
-        flash("此員工尚未有已生成的 Payroll，無法製作薪金證明書。", "error")
+        flash("此員工尚未有已生成的工資表，無法製作薪金證明書。", "error")
         return redirect(
             url_for("exports.export_center", section="employees")
         )
@@ -1112,7 +1112,7 @@ def export_payroll_summary():
     run_id = request.args.get("run_id", type=int)
     run = db.session.get(PayrollRun, run_id) if run_id else None
     if not run:
-        flash("請先在考勤出糧頁建立 Payroll 計算快照。", "error")
+        flash("請先在每月工資表頁建立工資表計算快照。", "error")
         return redirect(url_for("exports.export_center"))
     review = saved_export_message(run)
     if review:

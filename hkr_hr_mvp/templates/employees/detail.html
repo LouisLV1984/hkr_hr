@@ -473,8 +473,12 @@
       <tbody>
         {% for document in employee.documents %}
           <tr class="{{ 'muted-row' if document.status != 'active' else '' }}" data-record-context data-document-category="{{ 'credential' if document.id in certificate_files else document.category }}">
-            <td>{% if document.id in certificate_files %}{{ certificate_files[document.id] }}{% elif document.general_document_type %}{{ document.general_document_type.display_name }}{% elif document.category == "change_evidence" and document.title %}{{ document.title }}{% else %}{{ option_t("document_category", document.category, document_categories.get(document.category, document.category)) }}{% endif %}</td>
+            <td>{% if document.id in certificate_files %}{{ certificate_files[document.id] }}{% elif document.general_document_type %}{{ document.general_document_type.display_name }}{% elif document.category == "change_evidence" and document.title %}{{ document.title }}{% else %}{{ option_t("document_category", document.category, document_categories.get(document.category, document.category)) }}{% endif %}
+              {% set management_tab = document_management_tabs.get(document.id) %}
+              {% if management_tab %}<div class="cell-text">{{ t("documents.owned_by_tab_" ~ management_tab) }}</div>{% endif %}
+            </td>
             <td><a class="document-link" target="_blank" href="{{ url_for('documents.open_document', document_id=document.id) }}">{{ document.original_filename }}</a>
+              {% if document.status == "active" and document.content_sha256 and document.content_sha256 in shared_document_hashes %}<div class="cell-text"><span class="flag shared-file-flag">{{ t("documents.shared_file_badge") }}</span></div>{% endif %}
               {% if document.document_date %}<div class="cell-text">{{ t('workspace.document_date') }} · {{ fmt_date(document.document_date) }}</div>{% endif %}
               <details class="document-file-details"><summary>{{ t('workspace.file_details') }}</summary><span>SHA-256 · {{ document.content_sha256 or '—' }}</span></details>
             </td>
@@ -482,9 +486,8 @@
             <td class="row-actions">
               <a class="mini-btn" target="_blank" href="{{ url_for('documents.open_document', document_id=document.id) }}">{{ t("common.open") }}</a>
               <a class="mini-btn" href="{{ url_for('documents.download_document', document_id=document.id) }}">{{ t("common.download") }}</a>
-              {% set management_tab = document_management_tabs.get(document.id) %}
               {% if management_tab %}
-                <a class="mini-btn" href="{{ url_for('employees.view_employee', employee_id=employee.id, tab=management_tab) }}">{{ t("documents.manage_in_module") }}</a>
+                <a class="mini-btn" href="{{ url_for('employees.view_employee', employee_id=employee.id, tab=management_tab) }}" title="{{ t('documents.manage_in_module') }}">{{ t("documents.manage_tab_" ~ management_tab) }}</a>
               {% elif document.status == "active" %}
                 <button class="mini-btn" type="button" data-dialog-open="document-replace-{{ document.id }}" data-record-editor-trigger>{{ t("documents.replace_file") }}</button>
                 <dialog class="app-dialog record-editor-dialog" id="document-replace-{{ document.id }}">

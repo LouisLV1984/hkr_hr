@@ -1518,7 +1518,7 @@ def delete_project(project_id):
     )
     if count:
         flash(
-            f"此項目仍被 {count} 筆任職、考勤或 Payroll 資料引用，不能刪除；如不再使用，請關閉「可供新資料選用」。",
+            f"此項目仍被 {count} 筆任職、考勤或工資表資料引用，不能刪除；如不再使用，請關閉「可供新資料選用」。",
             "error",
         )
         return references_redirect("projects")

@@ -141,7 +141,7 @@ LABOUR_DEPARTMENT_RULE_SOURCES = [
 ]
 
 FINAL_PAYMENT_EXPORT_RULES_ZH_HANT = [
-    "離職 Payroll 自動承接最後工作日前生效的固定補貼、指定月份調整、考勤替班其他津貼及工傷醫療實銷；手動補貼／其他應付只用於沒有其他系統來源的例外款項，不可重複輸入。工傷醫療實銷增加實發金額，但不納入 MPF 有關入息。",
+    "離職結算自動承接最後工作日前生效的固定補貼、指定月份調整、考勤替班其他津貼及工傷醫療實銷；手動補貼／其他應付只用於沒有其他系統來源的例外款項，不可重複輸入。工傷醫療實銷增加實發金額，但不納入 MPF 有關入息。",
     "遣散費：僱員須按連續性合約受僱不少於 24 個月，並符合裁員、因裁員不獲續約或停工等法定條件。",
     "長期服務金：僱員須按連續性合約受僱滿 5 年，並符合《僱傭條例》指定的終止僱傭情況。同一段受僱期不可同時取得遣散費及長期服務金。",
     "月薪僱員：每年款額為所選月薪工資基數乘以 2/3。僱員可選最後一個完整月份工資，或有關日期前 12 個月的平均月薪。",
@@ -679,7 +679,7 @@ def save_final_payment(period_id):
             raise ValueError(rate_issue)
     except (ValueError, TypeError):
         db.session.rollback()
-        flash(rate_issue or "請檢查離職 Payroll 日數、次數及金額，不可填寫負數。", "error")
+        flash(rate_issue or "請檢查離職結算日數、次數及金額，不可填寫負數。", "error")
         return redirect(
             url_for(
                 "payroll.final_payment",
@@ -719,7 +719,7 @@ def save_final_payment(period_id):
         },
     )
     db.session.commit()
-    flash("離職 Payroll 資料已保存，頁面金額已重新計算。", "success")
+    flash("離職結算資料已保存，頁面金額已重新計算。", "success")
     return redirect(
         url_for(
             "payroll.final_payment",
@@ -753,7 +753,7 @@ def create_current_payroll_run(
                 for employee in missing_people
             )
             flash(
-                "所選員工不在目前月份、Payroll 組別或發薪單位內，請重新選擇。"
+                "所選員工不在目前月份、薪酬組別或發薪單位內，請重新選擇。"
                 + (f"（{missing_names}）" if missing_names else ""),
                 "error",
             )
@@ -777,7 +777,7 @@ def create_current_payroll_run(
             for row in blockers[:8]
         )
         suffix = "…" if len(blockers) > 8 else ""
-        flash(f"暫時不能導出：{names}{suffix}", "error")
+        flash(f"暫時不能匯出：{names}{suffix}", "error")
         return None
     if not rows:
         flash("目前範圍沒有可出糧員工。", "error")
@@ -816,13 +816,13 @@ def preview_payroll():
         if len(inferred_entities) == 1:
             payroll_entity_id = next(iter(inferred_entities))
         else:
-            flash("保存 Payroll 前請先選擇發薪單位。", "error")
+            flash("保存工資表前請先選擇發薪單位。", "error")
     if payroll_entity_id is not None and create_current_payroll_run(
         year_month,
         group,
         payroll_entity_id=payroll_entity_id,
     ):
-        flash("Payroll 計算已保存。", "success")
+        flash("工資表計算已保存。", "success")
     return redirect(
         url_for(
             "payroll.attendance_payroll",
@@ -852,7 +852,7 @@ def export_current_payroll():
         if len(inferred_entities) == 1:
             payroll_entity_id = next(iter(inferred_entities))
         else:
-            flash("正式導出前請先選擇發薪單位。", "error")
+            flash("正式匯出前請先選擇發薪單位。", "error")
             return redirect(
                 url_for(
                     "payroll.attendance_payroll",
@@ -867,7 +867,7 @@ def export_current_payroll():
     if scope == "selected":
         raw_ids = request.form.getlist("employee_ids")
         if not raw_ids or any(not value.isdigit() for value in raw_ids):
-            flash("請先勾選需要導出的員工。", "error")
+            flash("請先勾選需要匯出的員工。", "error")
             return redirect(
                 url_for(
                     "payroll.attendance_payroll",
@@ -2049,7 +2049,7 @@ def export_mpf_contributions():
             f"{row['employee'].employee_no}（{' / '.join(row['mpf_issues'])}）"
             for row in metadata_issues[:8]
         )
-        flash(f"暫時不能導出 MPF：{names}", "error")
+        flash(f"暫時不能匯出 MPF：{names}", "error")
         return redirect(url_for("payroll.mpf_contributions", year_month=year_month))
     if scheme_code == "all":
         unassigned = [
@@ -2064,7 +2064,7 @@ def export_mpf_contributions():
             flash(f"仍有可出糧員工未設定 MPF 計劃：{names}", "error")
             return redirect(url_for("payroll.mpf_contributions", year_month=year_month))
     if not selected_rows:
-        flash("所選範圍沒有可導出的 MPF 員工。", "error")
+        flash("所選範圍沒有可匯出的 MPF 員工。", "error")
         return redirect(url_for("payroll.mpf_contributions", year_month=year_month))
     run = snapshot_payroll(year_month, "all", selected_rows, current_user.id)
     write_audit(
@@ -2111,7 +2111,7 @@ def export_final_payment():
     group = selected_group()
     payroll_entity_id = selected_payroll_entity()
     if payroll_entity_id is None:
-        flash("請先選擇發薪單位，才可匯出離職 Payroll。", "error")
+        flash("請先選擇發薪單位，才可匯出離職結算。", "error")
         return redirect(
             url_for(
                 "payroll.final_payment",
@@ -2153,7 +2153,7 @@ def export_final_payment():
             )
         )
     if blockers:
-        flash("請先完成所有離職員工的 Payroll 資料，才可匯出。", "error")
+        flash("請先完成所有離職員工的離職結算資料，才可匯出。", "error")
         return redirect(
             url_for(
                 "payroll.final_payment",
@@ -2240,7 +2240,7 @@ def export_payroll(run_id):
         if character.isalnum() or character in {"-", "_"}
     ) or "UNKNOWN"
     if not groups or any(code not in available for code in groups):
-        flash("此計算快照不包含所選 Payroll 組別。", "error")
+        flash("此計算快照不包含所選薪酬組別。", "error")
         return redirect(
             url_for(
                 "payroll.attendance_payroll",
