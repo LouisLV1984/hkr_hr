@@ -5583,6 +5583,9 @@ for _key, _labels in {
     'audit.entity.final_payment': ('離職結算', '离职结算', 'Departure payroll'),
     'audit.entity.payroll_run': ('工資表快照', '工资表快照', 'Payroll snapshot'),
     'audit.entity.payroll_adjustment': ('工資表調整', '工资表调整', 'Payroll adjustment'),
+    'references.sort_order': ('顯示排序', '显示排序', 'Display order'),
+    'references.sort_order_placeholder': ('留空使用預設排序', '留空使用默认排序', 'Leave blank for default'),
+    'references.sort_order_hint': ('數字愈小愈靠前（例如管理層 10、工程管理部 20）；留空沿用企業預設順序。', '数字越小越靠前（例如管理层 10、工程管理部 20）；留空沿用企业默认顺序。', 'Smaller numbers appear first (e.g. Management 10); leave blank for corporate default.'),
 }.items():
     for _lang, _label in zip(("zh-Hant", "zh-Hans", "en"), _labels):
         TRANSLATIONS[_lang][_key] = _label

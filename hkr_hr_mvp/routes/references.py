@@ -47,6 +47,8 @@ from tools.hr_core import (
     normalize_reference_display,
     parse_decimal,
     parse_date,
+    reference_sort_key,
+    reference_sort_order,
     slug_code,
     write_audit,
 )
@@ -630,9 +632,12 @@ def references_home():
     selected_code = request.args.get("list") or "projects"
     selected = ReferenceList.query.filter_by(code=selected_code).first()
     values = (
-        ReferenceValue.query.filter_by(list_id=selected.id)
-        .order_by(ReferenceValue.display_name.asc())
-        .all()
+        sorted(
+            ReferenceValue.query.filter_by(list_id=selected.id)
+            .order_by(ReferenceValue.display_name.asc())
+            .all(),
+            key=lambda item: reference_sort_key(selected.code, item),
+        )
         if selected
         else []
     )
@@ -819,6 +824,7 @@ def references_home():
         calendar_region_id=calendar_region_id,
         regions=regions,
         selected_code=selected_code,
+        reference_sort_order=reference_sort_order,
         can_edit=editor_allowed(),
         return_to=safe_return_to(request.args.get("return_to")),
     )
@@ -941,6 +947,22 @@ def delete_mpf_scheme(scheme_id):
     return references_redirect("mpf_schemes")
 
 
+def _apply_sort_order(value, raw_value):
+    meta = dict(value.metadata_json) if isinstance(value.metadata_json, dict) else {}
+    raw_text = (raw_value or "").strip()
+    if not raw_text:
+        meta.pop("sort_order", None)
+        value.metadata_json = meta or None
+        return
+    try:
+        parsed = int(raw_text)
+    except ValueError:
+        return
+    if 0 <= parsed <= 9999:
+        meta["sort_order"] = parsed
+        value.metadata_json = meta
+
+
 @references_bp.route("/references/<int:list_id>/values", methods=["POST"])
 @login_required
 def create_value(list_id):
@@ -954,7 +976,7 @@ def create_value(list_id):
         flash("請填寫名稱。", "error")
     else:
         try:
-            _, created, reactivated = ensure_reference_value(
+            value, created, reactivated = ensure_reference_value(
                 ref_list,
                 display_name,
                 request.form.get("remarks", "").strip() or None,
@@ -965,6 +987,8 @@ def create_value(list_id):
                 "info",
             )
         else:
+            if ref_list.code == "department" and (created or reactivated):
+                _apply_sort_order(value, request.form.get("sort_order"))
             if created:
                 flash("選項已新增。", "success")
             elif reactivated:
@@ -996,10 +1020,30 @@ def update_value(value_id):
         if duplicate:
             flash("此清單已有相同名稱。", "error")
         else:
+            before_sort = (
+                value.metadata_json.get("sort_order")
+                if isinstance(value.metadata_json, dict)
+                else None
+            )
             before = {"display_name": old_name, "active": value.active}
+            if before_sort is not None:
+                before["sort_order"] = before_sort
             value.display_name = display_name
             value.normalized_name = display_name.casefold()
             value.remarks = request.form.get("remarks", "").strip() or None
+            if value.reference_list.code == "department":
+                _apply_sort_order(value, request.form.get("sort_order"))
+            after_sort = (
+                value.metadata_json.get("sort_order")
+                if isinstance(value.metadata_json, dict)
+                else None
+            )
+            after = {
+                "display_name": display_name,
+                "active": value.active,
+            }
+            if after_sort is not None:
+                after["sort_order"] = after_sort
             propagate_text_usage(value, old_name)
             write_audit(
                 "reference_updated",
@@ -1007,10 +1051,7 @@ def update_value(value_id):
                 value.id,
                 detail=f"{old_name} → {display_name}",
                 before=before,
-                after={
-                    "display_name": display_name,
-                    "active": value.active,
-                },
+                after=after,
             )
             db.session.commit()
             flash(

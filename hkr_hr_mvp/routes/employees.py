@@ -95,6 +95,7 @@ from tools.hr_core import (
     parse_year_month,
     reference_map,
     reference_options,
+    reference_sort_key,
     rebuild_effective_ranges,
     REPLACEMENT_REASONS,
     set_annual_leave_allocations,
@@ -881,14 +882,20 @@ def list_employees():
         readiness_rows = [row for row in readiness_rows if any(not item["ok"] for item in row["employee_data"])]
     group_by = "position" if request.args.get("group_by") == "position" else "department"
     directory_groups = {}
+    group_objects = {}
     for row in readiness_rows:
         assignment = row["employee"].current_assignment
         group = (assignment.primary_position if group_by == "position" else assignment.department) if assignment else None
-        directory_groups.setdefault(group.display_name if group else "", []).append(row)
+        group_name = group.display_name if group else ""
+        directory_groups.setdefault(group_name, []).append(row)
+        group_objects.setdefault(group_name, group)
     return render_template(
         "employees/list.html",
         readiness_rows=readiness_rows, group_by=group_by,
-        directory_groups=sorted(directory_groups.items(), key=lambda pair: (not pair[0], pair[0].casefold())),
+        directory_groups=sorted(
+            directory_groups.items(),
+            key=lambda pair: reference_sort_key(group_by, group_objects.get(pair[0])) if pair[0] else (1, 9999, ""),
+        ),
         year_month=year_month,
         readiness_filter=readiness_filter,
         impact_filter=impact_filter,

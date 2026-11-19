@@ -115,3 +115,43 @@ class PayrollDirectoryTests(TestCase):
             f"/attendance-payroll?year_month=2026-08&payroll_entity_id={entity_b_id}&payroll_group=site_daily&lang=en"
         ).get_data(as_text=True)
         self.assertNotIn(f"/payroll/runs/{run_b_mgmt_id}/export", page_b_daily)
+
+    def test_department_directory_orders_by_corporate_hierarchy_and_custom_sort_order(self):
+        created = {}
+        for idx, code in enumerate(("HR", "SITE", "FINANCE", "COMMERCIAL", "ENGINEERING", "MANAGEMENT"), start=10):
+            eid, _ = self.employee("management", idx)
+            with self.app.app_context():
+                dept_list = ReferenceList.query.filter_by(code="department").one()
+                dept = ReferenceValue.query.filter_by(list_id=dept_list.id, code=code).one()
+                db.session.get(Employee, eid).current_assignment.department_id = dept.id
+                db.session.commit()
+                created[code] = (dept.id, dept.display_name)
+        unassigned_eid, _ = self.employee("management", 20)
+        with self.app.app_context():
+            db.session.get(Employee, unassigned_eid).current_assignment.department_id = None
+            db.session.commit()
+
+        directory = self.client.get("/employees?lang=zh-Hant").get_data(as_text=True)
+        expected_labels = [
+            "管理層",
+            "工程管理部",
+            "成本合約部",
+            "財務部",
+            "人事行政部",
+            "地盤",
+            "未填部門",
+        ]
+        positions = [directory.index(f"<h2>{label}") for label in expected_labels]
+        self.assertEqual(positions, sorted(positions))
+
+        hr_dept_id, hr_dept_name = created["HR"]
+        updated = self.client.post(
+            f"/references/values/{hr_dept_id}",
+            data={"display_name": hr_dept_name, "sort_order": "5", "remarks": ""},
+            follow_redirects=True,
+        )
+        self.assertEqual(updated.status_code, 200)
+        reordered_dir = self.client.get("/employees?lang=zh-Hant").get_data(as_text=True)
+        self.assertLess(reordered_dir.index("<h2>人事行政部"), reordered_dir.index("<h2>管理層"))
+        ref_page = self.client.get("/references?list=department&lang=zh-Hant").get_data(as_text=True)
+        self.assertLess(ref_page.index("人事行政部"), ref_page.index("管理層"))

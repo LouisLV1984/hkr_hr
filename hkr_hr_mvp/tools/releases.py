@@ -31,17 +31,20 @@ RELEASES = [
         "zh-Hant": [
             "「每月工資表」總計卡片金額改為單行呈現不再於幣種後斷行、為 4 個底部進階面板套用一致收合標題與箭嘴；調整歷史與人員表欄寬及過濾器寬度，避免 1024px 窄屏擠壓與換行。",
             "「人事工作臺」證件到期日改為完整 `YYYY/MM/DD` 格式並為區塊標題補上展開／收合箭嘴；為假期總覽、每月工資表、工作臺及資料設定長表啟用表頭固定捲動。",
-            "「員工詳情」在已有工資表快照而無月度考勤 PDF 時不再顯示矛盾的空白提示；收緊編輯個人資料彈窗尺寸、補上憑證按鈕懸浮提示並防止過長檔名撐闊詳情卡片；統一全站繁體介面用語為「匯出／工資表／離職結算／新增請假」（正式離職表英文名稱維持 `Final Payment`）。"
+            "「員工詳情」在已有工資表快照而無月度考勤 PDF 時不再顯示矛盾的空白提示；收緊編輯個人資料彈窗尺寸、補上憑證按鈕懸浮提示並防止過長檔名撐闊詳情卡片；統一全站繁體介面用語為「匯出／工資表／離職結算／新增請假」（正式離職表英文名稱維持 `Final Payment`）。",
+            "「員工檔案」按企業架構順序排列部門分組（管理層 → 工程管理部 → 成本合約部 → 船機設備部 → 財務部 → 人事行政部 → 地盤 → 印尼瑞沃 → 未填部門），並支援在「資料選項 → 所屬部門」自訂「顯示排序」。"
         ],
         "zh-Hans": [
             "“每月工资表”总计卡片金额改为单行呈现不再于币种后断行、为 4 个底部进阶面板套用一致折叠标题与箭头；调整历史与人员表栏宽及过滤器宽度，避免 1024px 窄屏挤压与换行。",
             "“人事工作台”证件到期日改为完整 `YYYY/MM/DD` 格式并为区块标题补上展开／折叠箭头；为假期总览、每月工资表、工作台及资料设置长表启用表头固定滚动。",
-            "“员工详情”在已有工资表快照而无月度考勤 PDF 时不再显示矛盾的空白提示；收紧编辑个人资料弹窗尺寸、补上凭证按钮悬浮提示并防止过长文件名撑宽详情卡片；统一全站简体界面用语为“工资表／离职结算／新增请假”（正式离职表英文名称维持 `Final Payment`）。"
+            "“员工详情”在已有工资表快照而无月度考勤 PDF 时不再显示矛盾的空白提示；收紧编辑个人资料弹窗尺寸、补上凭证按钮悬浮提示并防止过长文件名撑宽详情卡片；统一全站简体界面用语为“工资表／离职结算／新增请假”（正式离职表英文名称维持 `Final Payment`）。",
+            "“员工档案”按企业架构顺序排列部门分组（管理层 → 工程管理部 → 成本合约部 → 船机设备部 → 财务部 → 人事行政部 → 地盘 → 印尼瑞沃 → 未填部门），并支持在“资料选项 → 所属部门”自定义“显示排序”。"
         ],
         "en": [
             "Kept Payroll KPI currency amounts on single lines, unified the four lower Payroll disclosures with standard collapsible headers and chevrons, tuned table widths for 1024px viewports, and enabled sticky table headers across Leave overview, Payroll, Workbench and Reference tables.",
             "Formatted HR Workbench certificate expiry dates as `YYYY/MM/DD` with full-width toggle headers and chevrons, framed the Payroll summary strip, and adjusted wrapping at 1024px.",
-            "Updated Employee Profile Tab 5 so saved payroll snapshots without monthly attendance PDFs show an accurate hint instead of an empty-state contradiction, compacted the personal-details modal, constrained long evidence links, and aligned Chinese UI terminology across templates and messages."
+            "Updated Employee Profile Tab 5 so saved payroll snapshots without monthly attendance PDFs show an accurate hint instead of an empty-state contradiction, compacted the personal-details modal, constrained long evidence links, and aligned Chinese UI terminology across templates and messages.",
+            "Ordered Employee Directory departments by corporate hierarchy (Management first through site/overseas operations, Unassigned last) with optional custom Display order overrides in Reference Data."
         ]
     },
     "limitations": {
