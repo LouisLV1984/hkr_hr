@@ -32,8 +32,12 @@ class WorkbenchConsistencyTests(TestCase):
             db.session.commit()
         page = self.client.get("/attendance?month=2026-08&lang=en").get_data(as_text=True)
         resume = page.split('class="intake-resume"', 1)[1].split('</section>', 1)[0]
-        self.assertIn("2026-07-1.pdf", resume)
-        self.assertIn("1 saved · 1 pending", resume)
+        self.assertIn("1 saved · 0 pending", resume)
+        self.assertIn("All attendance files for", resume)
+        self.assertNotIn("2026-07-1.pdf", resume)
+        self.assertIn('class="intake-other-months"', resume)
+        self.assertIn("month=2026-07", resume)
+        self.assertIn("1 pending", resume)
         self.assertIn("status=missing&amp;month=2026-08", page)
 
     def test_review_exempt_attendance_returns_to_same_payroll_scope(self):

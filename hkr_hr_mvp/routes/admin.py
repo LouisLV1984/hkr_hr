@@ -17,6 +17,11 @@ from sqlalchemy import or_, text
 from models import AuditLog, User, db
 from tools.hr_core import write_audit
 from tools.datetime_utils import hong_kong_datetime
+from tools.historical_audit import (
+    daily_injury_earnings_rows,
+    replaced_attendance_rows,
+    unlinked_renewal_rows,
+)
 from tools.releases import CURRENT_VERSION
 
 
@@ -302,6 +307,25 @@ def audit():
         audit_username=username,
         audit_limit=limit,
         usernames=[row.username for row in User.query.order_by(User.username)],
+    )
+
+
+@admin_bp.route("/historical-review")
+@login_required
+def historical_review():
+    require_admin()
+    replaced_rows = replaced_attendance_rows()
+    injury_rows = daily_injury_earnings_rows()
+    renewal_rows = unlinked_renewal_rows()
+    return render_template(
+        "admin/historical_review.html",
+        replaced_rows=replaced_rows,
+        replaced_diff_count=sum(
+            1 for row in replaced_rows if row["different_file"] or row["figures_differ"]
+        ),
+        injury_rows=injury_rows,
+        injury_suspect_count=sum(1 for row in injury_rows if row["suspect"]),
+        renewal_rows=renewal_rows,
     )
 
 

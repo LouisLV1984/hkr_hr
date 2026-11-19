@@ -1,6 +1,8 @@
 from tools.payroll_review import originating_payroll
 from types import SimpleNamespace
 from tools.attendance_rates import rate_windows, allocation_issue, FIELDS
+import hashlib
+import hmac
 import json
 import shutil
 from collections import defaultdict
@@ -406,6 +408,45 @@ def summary_snapshot(summary):
     }
 
 
+def attendance_summary_revision(summary):
+    db.session.expire(summary, ["segments", "special_days"])
+    snapshot = summary_snapshot(summary)
+    snapshot["segments"] = sorted(
+        snapshot.get("segments", []),
+        key=lambda row: (row.get("period_kind") or "", row.get("project_id") or 0),
+    )
+    snapshot["special_days"] = sorted(
+        snapshot.get("special_days", []),
+        key=lambda row: (row.get("work_date") or "", row.get("session") or ""),
+    )
+    payload = json.dumps(
+        {
+            "snapshot": snapshot,
+            "remarks": summary.remarks,
+            "confirmed_at": (
+                summary.confirmed_at.isoformat() if summary.confirmed_at else None
+            ),
+        },
+        default=str,
+        sort_keys=True,
+    )
+    return hmac.new(
+        current_app.secret_key.encode(),
+        payload.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def set_summary_confirmed(summary):
+    now = datetime.utcnow()
+    summary.confirmed_by = current_user.id
+    summary.confirmed_at = (
+        max(now, summary.confirmed_at + timedelta(microseconds=1))
+        if summary.confirmed_at
+        else now
+    )
+
+
 def set_monthly_attendance_requirement(
     employee,
     year_month,
@@ -429,8 +470,7 @@ def set_monthly_attendance_requirement(
     for segment in list(summary.segments):
         db.session.delete(segment)
     db.session.flush()
-    summary.confirmed_by = current_user.id
-    summary.confirmed_at = datetime.utcnow()
+    set_summary_confirmed(summary)
     summary.document = None
     if requires_attendance:
         summary.status = "required"
@@ -635,10 +675,32 @@ def attendance_home():
             or month_batches.order_by(AttendanceBatch.id.desc()).first()
         )
     resume_batch = selected_batch
-    if view == "collection" and not request.args.get("batch_id") and not selected_item and not summary_id:
-        if not resume_batch or not any(item.status == "pending" for item in resume_batch.items):
-            resume_batch = (AttendanceBatch.query.filter(AttendanceBatch.items.any(AttendanceBatchItem.status == "pending"))
-                            .order_by(AttendanceBatch.id.desc()).first() or selected_batch)
+    other_pending_batches = []
+    if view == "collection" and not selected_item and not summary_id:
+        for batch in (
+            AttendanceBatch.query.filter(
+                AttendanceBatch.items.any(AttendanceBatchItem.status == "pending")
+            )
+            .order_by(AttendanceBatch.id.desc())
+            .all()
+        ):
+            if resume_batch and batch.id == resume_batch.id:
+                continue
+            pending_items = [row for row in batch.items if row.status == "pending"]
+            if not pending_items:
+                continue
+            target_month = pending_items[0].effective_year_month
+            if batch.year_month != year_month or target_month != year_month:
+                other_pending_batches.append(
+                    {
+                        "batch": batch,
+                        "first_pending": pending_items[0],
+                        "pending_count": len(pending_items),
+                        "year_month": target_month,
+                    }
+                )
+            if len(other_pending_batches) >= 5:
+                break
     if summary_id:
         if selected_summary:
             selected_batch = None
@@ -843,9 +905,15 @@ def attendance_home():
         attendance_roster_projects=attendance_roster_projects,
         recent_batches=recent_batches,
         resume_batch=resume_batch,
+        other_pending_batches=other_pending_batches,
         selected_batch=selected_batch,
         selected_item=selected_item,
         selected_summary=selected_summary,
+        summary_revision=(
+            attendance_summary_revision(selected_summary)
+            if selected_summary
+            else ""
+        ),
         edit_summary_mode=bool(selected_summary and not selected_item),
         identity_correction_mode=identity_correction_mode,
         selected_employee_id=selected_employee_id,
@@ -1561,10 +1629,29 @@ def add_segments(summary, prefix):
 @attendance_bp.route("/attendance/items/<int:item_id>/save", methods=["POST"])
 @login_required
 def save_item(item_id):
-    item = AttendanceBatchItem.query.filter_by(id=item_id).with_for_update().first_or_404()
+    item = (
+        AttendanceBatchItem.query.filter_by(id=item_id)
+        .with_for_update()
+        .populate_existing()
+        .first_or_404()
+    )
     if item.status == "replaced":
+        db.session.rollback()
+        flash("hr.attendance_item_already_saved", "error")
         return redirect(url_for("attendance.attendance_home", item_id=item.id))
     if item.summary_id:
+        if request.form.get("expected_item_status") == "pending":
+            db.session.rollback()
+            flash("hr.attendance_item_already_saved", "error")
+            return redirect(
+                url_for(
+                    "attendance.attendance_home",
+                    month=item.effective_year_month or current_month(),
+                    view="collection",
+                    batch_id=item.batch_id,
+                    item_id=item.id,
+                )
+            )
         # Keep old bookmarks/forms safe while the UI now posts saved items to
         # the explicit correction route.
         return correct_summary(item.summary_id)
@@ -1586,7 +1673,12 @@ def save_item(item_id):
                 item_id=item.id,
             )
         )
-    employee = Employee.query.filter_by(id=request.form.get("employee_id", type=int)).with_for_update().first()
+    employee = (
+        Employee.query.filter_by(id=request.form.get("employee_id", type=int))
+        .with_for_update()
+        .populate_existing()
+        .first()
+    )
     if not employee:
         flash("必須選擇員工。", "error")
         return redirect(
@@ -1623,9 +1715,15 @@ def save_item(item_id):
         item_sha256,
         effective_month=year_month,
     )
-    summary = AttendanceMonthlySummary.query.filter_by(
-        employee_id=employee.id, year_month=year_month,
-    ).with_for_update().first()
+    summary = (
+        AttendanceMonthlySummary.query.filter_by(
+            employee_id=employee.id,
+            year_month=year_month,
+        )
+        .with_for_update()
+        .populate_existing()
+        .first()
+    )
     original = summary.document if summary and summary.status == "received" else None
     confirmed_id = request.form.get("replace_document_id", type=int)
     same_file = original and duplicate_document and original.id == duplicate_document.id
@@ -1686,8 +1784,7 @@ def save_item(item_id):
         else "pay"
     )
     summary.no_attendance_reason = None
-    summary.confirmed_by = current_user.id
-    summary.confirmed_at = datetime.utcnow()
+    set_summary_confirmed(summary)
     summary.remarks = request.form.get("remarks", "").strip() or None
     try:
         replace_summary_segments(summary)
@@ -1739,10 +1836,25 @@ def save_item(item_id):
 )
 @login_required
 def correct_summary(summary_id):
-    summary = AttendanceMonthlySummary.query.filter_by(id=summary_id).with_for_update().first_or_404()
+    summary = (
+        AttendanceMonthlySummary.query.filter_by(id=summary_id)
+        .with_for_update()
+        .populate_existing()
+        .first_or_404()
+    )
     if "editing_document_id" in request.form and (request.form.get("editing_document_id", type=int) or None) != summary.document_id:
+        db.session.rollback()
         flash("原考勤表已被替換，請核對現行版本。", "error")
         return redirect(url_for("attendance.attendance_home", summary_id=summary.id))
+    if "summary_revision" in request.form:
+        submitted_rev = request.form.get("summary_revision", "")
+        if not hmac.compare_digest(
+            submitted_rev.encode(),
+            attendance_summary_revision(summary).encode(),
+        ):
+            db.session.rollback()
+            flash("hr.attendance_conflict", "error")
+            return redirect(url_for("attendance.attendance_home", summary_id=summary.id))
     source_year_month = summary.year_month
     review_url = url_for(
         "attendance.attendance_home",
@@ -1833,8 +1945,7 @@ def correct_summary(summary_id):
         if request.form.get("special_day_handling") == "comp_leave"
         else "pay"
     )
-    summary.confirmed_by = current_user.id
-    summary.confirmed_at = datetime.utcnow()
+    set_summary_confirmed(summary)
     summary.remarks = request.form.get("remarks", "").strip() or None
     for item in AttendanceBatchItem.query.filter_by(summary_id=summary.id, status="saved"):
         item.employee = employee
@@ -2013,8 +2124,7 @@ def mark_not_required():
     summary.status = "not_required"
     summary.no_attendance_reason = reason
     summary.document = None
-    summary.confirmed_by = current_user.id
-    summary.confirmed_at = datetime.utcnow()
+    set_summary_confirmed(summary)
     add_default_full_attendance(summary, employee, year_month)
     db.session.flush()
     write_audit(
@@ -2071,8 +2181,7 @@ def mark_required():
         db.session.delete(segment)
     summary.status = "required"
     summary.no_attendance_reason = None
-    summary.confirmed_by = current_user.id
-    summary.confirmed_at = datetime.utcnow()
+    set_summary_confirmed(summary)
     db.session.flush()
     write_audit(
         "attendance_required",

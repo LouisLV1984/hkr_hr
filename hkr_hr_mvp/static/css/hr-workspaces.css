@@ -31,6 +31,7 @@
 .intake-desk .attendance-upload-panel { margin: 0; }
 .intake-resume { background: #edf5eb; }
 .intake-resume > strong { font-size: 20px; }
+.intake-other-months { display: grid; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid #c9dccb; }
 .intake-missing { display: block; margin-top: 18px; }
 .payroll-desk { align-items: end; justify-content: space-between; padding: 16px 20px; margin-bottom: 12px; }
 .payroll-desk .hr-inline-form { flex: 1 1 500px; align-items: start; }

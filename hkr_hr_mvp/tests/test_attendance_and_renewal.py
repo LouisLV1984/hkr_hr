@@ -77,3 +77,56 @@ class AttendanceAndRenewalTests(unittest.TestCase):
             alerts = {row["anchor"] for row in credential_alerts(tomorrow)}
             self.assertNotIn(f"credential-certificate-{old}", alerts)
             self.assertIn(f"credential-certificate-{other}", alerts)
+
+    def test_existing_sheet_renders_explicit_replace_and_stale_guards(self):
+        import re
+        employee, project = self.employee()
+        items = []
+        month = "2026-08"
+        for filename in ("first.pdf", "second.pdf"):
+            self.client.post("/attendance/batches", data={
+                "year_month": month, "files": (io.BytesIO(pdf_bytes(filename)), filename)})
+            with self.app.app_context():
+                items.append(AttendanceBatchItem.query.order_by(AttendanceBatchItem.id.desc()).first().id)
+        form = dict(year_month=month, employee_id=employee, current_1_20_project_id=project,
+                    current_1_20_working_days="1", current_1_20_ot_hours="3")
+        self.client.post(f"/attendance/items/{items[0]}/save", data={**form, "expected_item_status": "pending"})
+
+        second_page = self.client.get(f"/attendance?month={month}&item_id={items[1]}&employee_id={employee}").get_data(as_text=True)
+        self.assertIn('data-explicit-replace="1"', second_page)
+        self.assertIn('attendance-context-action-replace', second_page)
+        self.assertIn('data-replacement-notice', second_page)
+
+        stale_item_post = self.client.post(
+            f"/attendance/items/{items[0]}/save",
+            data={**form, "expected_item_status": "pending", "current_1_20_ot_hours": "9"},
+            headers={"X-HKR-Profile-Editor": "1"},
+        )
+        self.assertEqual(stale_item_post.status_code, 422)
+        with self.app.app_context():
+            summary = AttendanceMonthlySummary.query.filter_by(employee_id=employee, year_month=month).one()
+            summary_id = summary.id
+            doc_id = summary.document_id
+            self.assertEqual(float(summary.segments[0].ot_hours), 3)
+
+        edit_page = self.client.get(f"/attendance?summary_id={summary_id}").get_data(as_text=True)
+        rev_match = re.search(r'name="summary_revision" value="([^"]+)"', edit_page)
+        self.assertIsNotNone(rev_match)
+        revision = rev_match.group(1)
+
+        first_correct = self.client.post(
+            f"/attendance/summaries/{summary_id}/correct",
+            data={**form, "editing_document_id": doc_id, "summary_revision": revision, "current_1_20_ot_hours": "5"},
+            headers={"X-HKR-Profile-Editor": "1"},
+        )
+        self.assertEqual(first_correct.status_code, 200)
+
+        stale_correct = self.client.post(
+            f"/attendance/summaries/{summary_id}/correct",
+            data={**form, "editing_document_id": doc_id, "summary_revision": revision, "current_1_20_ot_hours": "12"},
+            headers={"X-HKR-Profile-Editor": "1"},
+        )
+        self.assertEqual(stale_correct.status_code, 422)
+        with self.app.app_context():
+            summary = db.session.get(AttendanceMonthlySummary, summary_id)
+            self.assertEqual(float(summary.segments[0].ot_hours), 5)

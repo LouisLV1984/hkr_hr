@@ -92,13 +92,19 @@
   </section>
   <details class="panel payroll-project-summary"><summary>{{ t("exports.project_summary") }}</summary><div class="section-head"><div><h2>{{ t("exports.project_summary") }}</h2><p>{{ t("payroll.project_summary_hint") }}</p></div></div><div class="table-wrap flat"><table class="dense-table"><thead><tr><th>{{ t("common.project") }}</th><th>{{ t("common.currency") }}</th><th>{{ t("common.headcount") }}</th><th>{{ t("common.base_pay") }}</th><th>OT</th><th>E-CALL</th><th>{{ t("common.allowance") }}</th><th>{{ t("payroll.project_other") }}</th><th>{{ t("payroll.gross") }}</th></tr></thead><tbody>{% for item in project_summary %}<tr><td>{{ project_t(item.project, t("common.unassigned")) }}</td><td>{{ item.currency }}</td><td>{{ item.headcount }}</td><td>{{ fmt_money(item.base) }}</td><td>{{ fmt_money(item.ot) }}</td><td>{{ fmt_money(item.ecall) }}</td><td>{{ fmt_money(item.allowance) }}</td><td title="{{ t('payroll.project_other_hint') }}">{{ fmt_money(item.other) }}</td><td>{{ fmt_money(item.total) }}</td></tr>{% else %}<tr><td colspan="9" class="empty-cell">{{ t("common.no_results") }}</td></tr>{% endfor %}</tbody></table></div></details>
 
-  {% if saved_runs %}<details class="panel"><summary>{{ t('payroll.saved_tables') }} · {{ year_month }} ({{ saved_runs|length }})</summary>
-    <div class="table-wrap"><table class="dense-table"><thead><tr><th>#</th><th>{{ t('payroll.saved_time') }} (UTC)</th><th>{{ t('employee.payroll_entity') }}</th><th>{{ t('employees.payroll_group') }}</th><th>{{ t('common.headcount') }}</th><th></th></tr></thead><tbody>
+  {% if saved_runs or other_all_group_runs_count %}<details class="panel"><summary>{{ t('payroll.saved_tables') if selected_payroll_entity_id is none and selected_group == 'all' else t('payroll.saved_tables_filtered') }} · {{ year_month }} ({{ saved_runs|length }})</summary>
+    {% if saved_runs %}
+    <div class="table-wrap"><table class="dense-table"><thead><tr><th>#</th><th>{{ t('payroll.saved_time_hkt') }}</th><th>{{ t('employee.payroll_entity') }}</th><th>{{ t('employees.payroll_group') }}</th><th>{{ t('common.headcount') }}</th><th></th></tr></thead><tbody>
     {% for run in saved_runs %}<tr><td>{{ run.id }}</td><td>{{ run.created_at|hong_kong_datetime('%Y-%m-%d %H:%M') }}</td>
       <td>{{ run.employee_results|map(attribute='calculation_json.payroll_entity_name',default='')|reject('equalto',none)|unique|join('、') or '—' }}</td>
       <td>{{ t('payroll.group_all') if run.payroll_group == 'all' else option_t('payroll_group',run.payroll_group,run.payroll_group) }}</td>
       <td>{{ run.employee_results|length }}</td><td><a class="mini-btn" href="{{ url_for('payroll.export_payroll', run_id=run.id) }}">{{ t('payroll.download_saved') }}</a></td></tr>{% endfor %}
-    </tbody></table></div></details>{% endif %}
+    </tbody></table></div>
+    {% endif %}
+    {% if other_all_group_runs_count %}
+      <p class="form-note"><a href="{{ url_for('payroll.attendance_payroll', year_month=year_month, payroll_group='all', payroll_entity_id=selected_payroll_entity_id or '') }}">{{ t('payroll.saved_tables_other_all', count=other_all_group_runs_count) }}</a></p>
+    {% endif %}
+  </details>{% endif %}
   <article class="payroll-rule-summary"><strong>{{ t("payroll.rule_summary_title") }}</strong><span>{{ t("payroll.rule_summary") }}</span><small>{{ rule_version }}</small></article>
   <details class="panel rule-panel">
     <summary>{{ t("payroll.show_full_rules") }} · {{ rule_version }}</summary>

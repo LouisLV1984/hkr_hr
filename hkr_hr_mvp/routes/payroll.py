@@ -42,6 +42,7 @@ from models import (
     PayrollAdjustment,
     AttendanceMonthlySummary,
     PayrollRun,
+    ReferenceValue,
     WorkProject,
     db,
 )
@@ -176,6 +177,46 @@ def selected_payroll_entity():
     return int(value) if value.isdigit() else None
 
 
+def saved_runs_for_scope(year_month, group, payroll_entity_id):
+    all_runs = (
+        PayrollRun.query.filter_by(year_month=year_month)
+        .order_by(PayrollRun.id.desc())
+        .all()
+    )
+    entity = (
+        db.session.get(ReferenceValue, payroll_entity_id)
+        if payroll_entity_id
+        else None
+    )
+    target_code = entity.code if entity else None
+    target_name = entity.display_name if entity else None
+
+    def matches_entity(run):
+        if payroll_entity_id is None:
+            return True
+        if not entity or not run.employee_results:
+            return False
+        for result in run.employee_results:
+            calc = result.calculation_json or {}
+            code = calc.get("payroll_entity_code")
+            name = calc.get("payroll_entity_name")
+            if code:
+                if code != target_code:
+                    return False
+            elif name != target_name:
+                return False
+        return True
+
+    entity_runs = [run for run in all_runs if matches_entity(run)]
+    if group == "all":
+        return entity_runs, 0
+    matched = [run for run in entity_runs if run.payroll_group == group]
+    other_all_group_count = sum(
+        1 for run in entity_runs if run.payroll_group == "all"
+    )
+    return matched, other_all_group_count
+
+
 @payroll_bp.route("/attendance-payroll")
 @login_required
 def attendance_payroll():
@@ -254,10 +295,16 @@ def attendance_payroll():
             row["tasks"], row["sources"] = review_sources(row, pay_context)
     summary = {"ready_count": len(ready_rows), "blocked_count": len(blockers),
                "currencies": currency_summary(ready_rows)}
+    saved_runs, other_all_group_runs_count = saved_runs_for_scope(
+        year_month,
+        group,
+        payroll_entity_id,
+    )
     return render_template(
         "payroll/index.html",
         unassigned_count=len(unassigned_ids),
-        saved_runs=PayrollRun.query.filter_by(year_month=year_month).order_by(PayrollRun.id.desc()).all(),
+        saved_runs=saved_runs,
+        other_all_group_runs_count=other_all_group_runs_count,
         export_review=export_message(rows),
         exchange_settings=exchange_settings(),
         year_month=year_month,

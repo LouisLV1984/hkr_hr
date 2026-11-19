@@ -9,7 +9,7 @@ from openpyxl import load_workbook
 from werkzeug.datastructures import FileStorage
 import test_profile_integrity as fixture
 from test_v1_workflows import current_profile_revision, pdf_bytes
-from models import db, Employee, EmployeeSalary, EmployeeDocument, User
+from models import db, Employee, EmployeeSalary, EmployeeDocument, AttendanceBatchItem, AttendanceMonthlySummary, User
 from tools.payroll_engine import currency_summary, project_summary
 from tools.security import validate_uploaded_file, UploadValidationError
 
@@ -173,3 +173,97 @@ class ReviewHardeningTests(unittest.TestCase):
         with self.app.app_context():
             self.assertEqual(db.session.get(Employee, eid).residential_address,
                              f"Concurrent draft {statuses.index(200)}")
+
+    def test_postgres_simultaneous_attendance_item_writes_have_one_winner(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier
+        with self.app.app_context():
+            if db.engine.dialect.name != "postgresql":
+                self.skipTest("Row locking requires the isolated PostgreSQL runner")
+        eid = self.employee()
+        self.client.post("/attendance/batches", data={
+            "year_month": "2026-08",
+            "files": (io.BytesIO(pdf_bytes("concurrent.pdf")), "concurrent.pdf"),
+        })
+        with self.app.app_context():
+            item_id = AttendanceBatchItem.query.order_by(AttendanceBatchItem.id.desc()).first().id
+        clients = [self.app.test_client(), self.app.test_client()]
+        clients[0].post("/login", data={"username": "admin", "password": "test-admin-password"})
+        clients[1].post("/login", data={"username": "hr_test", "password": "test-hr-password"})
+        barrier = Barrier(2)
+
+        def save(index):
+            barrier.wait(timeout=10)
+            return clients[index].post(f"/attendance/items/{item_id}/save", data={
+                "employee_id": eid,
+                "year_month": "2026-08",
+                "expected_item_status": "pending",
+                "current_1_20_project_id": "",
+                "current_1_20_working_days": "10",
+                "current_1_20_ot_hours": str(index + 1),
+            }, headers={"X-HKR-Profile-Editor": "1"}).status_code
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            statuses = list(executor.map(save, range(2)))
+        self.assertEqual(sorted(statuses), [200, 422])
+        winner = statuses.index(200)
+        with self.app.app_context():
+            item = db.session.get(AttendanceBatchItem, item_id)
+            self.assertEqual(item.status, "saved")
+            summary = AttendanceMonthlySummary.query.filter_by(employee_id=eid, year_month="2026-08").one()
+            self.assertEqual(item.summary_id, summary.id)
+            self.assertEqual(summary.segments[0].ot_hours, Decimal(winner + 1))
+
+    def test_postgres_simultaneous_attendance_correction_writes_have_one_winner(self):
+        import re
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier
+        with self.app.app_context():
+            if db.engine.dialect.name != "postgresql":
+                self.skipTest("Row locking requires the isolated PostgreSQL runner")
+        eid = self.employee()
+        self.client.post("/attendance/batches", data={
+            "year_month": "2026-08",
+            "files": (io.BytesIO(pdf_bytes("correct.pdf")), "correct.pdf"),
+        })
+        with self.app.app_context():
+            item_id = AttendanceBatchItem.query.order_by(AttendanceBatchItem.id.desc()).first().id
+        self.client.post(f"/attendance/items/{item_id}/save", data={
+            "employee_id": eid,
+            "year_month": "2026-08",
+            "expected_item_status": "pending",
+            "current_1_20_project_id": "",
+            "current_1_20_working_days": "10",
+            "current_1_20_ot_hours": "1",
+        })
+        with self.app.app_context():
+            summary = AttendanceMonthlySummary.query.filter_by(employee_id=eid, year_month="2026-08").one()
+            summary_id = summary.id
+            doc_id = summary.document_id
+        html = self.client.get(f"/attendance?summary_id={summary_id}").get_data(as_text=True)
+        revision = re.search(r'name="summary_revision" value="([^"]+)"', html).group(1)
+
+        clients = [self.app.test_client(), self.app.test_client()]
+        clients[0].post("/login", data={"username": "admin", "password": "test-admin-password"})
+        clients[1].post("/login", data={"username": "hr_test", "password": "test-hr-password"})
+        barrier = Barrier(2)
+
+        def correct(index):
+            barrier.wait(timeout=10)
+            return clients[index].post(f"/attendance/summaries/{summary_id}/correct", data={
+                "employee_id": eid,
+                "year_month": "2026-08",
+                "editing_document_id": doc_id,
+                "summary_revision": revision,
+                "current_1_20_project_id": "",
+                "current_1_20_working_days": "10",
+                "current_1_20_ot_hours": str(index + 5),
+            }, headers={"X-HKR-Profile-Editor": "1"}).status_code
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            statuses = list(executor.map(correct, range(2)))
+        self.assertEqual(sorted(statuses), [200, 422])
+        winner = statuses.index(200)
+        with self.app.app_context():
+            summary = db.session.get(AttendanceMonthlySummary, summary_id)
+            self.assertEqual(summary.segments[0].ot_hours, Decimal(winner + 5))

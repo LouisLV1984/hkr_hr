@@ -2,7 +2,17 @@ from datetime import date
 from unittest import TestCase, mock
 
 import test_payroll_policy as fixtures
-from models import AttendanceMonthlySummary, AttendanceSegment, Employee, EmployeeWorkInjuryPeriod, User, db
+from models import (
+    AttendanceMonthlySummary,
+    AttendanceSegment,
+    Employee,
+    EmployeeWorkInjuryPeriod,
+    PayrollRun,
+    ReferenceList,
+    ReferenceValue,
+    User,
+    db,
+)
 from tools.payroll_engine import calculate_employee, snapshot_payroll
 
 
@@ -53,3 +63,55 @@ class PayrollDirectoryTests(TestCase):
         self.assertIn('focus=pay_entity', pending)
         ready = self.client.get("/attendance-payroll?year_month=2026-08&status=ready").get_data(as_text=True)
         self.assertNotIn('focus=pay_entity', ready)
+
+    def test_saved_payroll_runs_follow_entity_and_strict_group_with_hkt_header(self):
+        e1 = self.ready(1)
+        e2 = self.ready(2)
+        with self.app.app_context():
+            entity_list = ReferenceList.query.filter_by(code="payroll_entity").one()
+            entity_a = ReferenceValue.query.filter_by(list_id=entity_list.id, code="HK_RIVER").one()
+            entity_b = ReferenceValue(
+                list_id=entity_list.id,
+                code="ENTITY_B",
+                display_name="Entity B Ltd",
+                normalized_name="entity b ltd",
+                active=True,
+            )
+            db.session.add(entity_b)
+            db.session.flush()
+            emp1 = db.session.get(Employee, e1)
+            emp2 = db.session.get(Employee, e2)
+            emp1.current_assignment.payroll_entity_id = entity_a.id
+            emp2.current_assignment.payroll_entity_id = entity_b.id
+            db.session.commit()
+
+            uid = User.query.first().id
+            row1 = calculate_employee(emp1, "2026-08")
+            row2 = calculate_employee(emp2, "2026-08")
+            run_a_mgmt = snapshot_payroll("2026-08", "management", [row1], uid)
+            run_a_all = snapshot_payroll("2026-08", "all", [row1], uid)
+            run_b_mgmt = snapshot_payroll("2026-08", "management", [row2], uid)
+            ids = (entity_a.id, entity_b.id, run_a_mgmt.id, run_a_all.id, run_b_mgmt.id)
+
+        entity_a_id, entity_b_id, run_a_mgmt_id, run_a_all_id, run_b_mgmt_id = ids
+        page_a_mgmt = self.client.get(
+            f"/attendance-payroll?year_month=2026-08&payroll_entity_id={entity_a_id}&payroll_group=management&lang=en"
+        ).get_data(as_text=True)
+        self.assertIn("Saved at (HKT)", page_a_mgmt)
+        self.assertNotIn("(UTC)", page_a_mgmt)
+        self.assertIn(f"/payroll/runs/{run_a_mgmt_id}/export", page_a_mgmt)
+        self.assertNotIn(f"/payroll/runs/{run_a_all_id}/export", page_a_mgmt)
+        self.assertNotIn(f"/payroll/runs/{run_b_mgmt_id}/export", page_a_mgmt)
+        self.assertIn("1 saved all-groups payroll export(s) exist", page_a_mgmt)
+
+        page_a_all = self.client.get(
+            f"/attendance-payroll?year_month=2026-08&payroll_entity_id={entity_a_id}&payroll_group=all&lang=en"
+        ).get_data(as_text=True)
+        self.assertIn(f"/payroll/runs/{run_a_mgmt_id}/export", page_a_all)
+        self.assertIn(f"/payroll/runs/{run_a_all_id}/export", page_a_all)
+        self.assertNotIn(f"/payroll/runs/{run_b_mgmt_id}/export", page_a_all)
+
+        page_b_daily = self.client.get(
+            f"/attendance-payroll?year_month=2026-08&payroll_entity_id={entity_b_id}&payroll_group=site_daily&lang=en"
+        ).get_data(as_text=True)
+        self.assertNotIn(f"/payroll/runs/{run_b_mgmt_id}/export", page_b_daily)

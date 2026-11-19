@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}{{ t("admin.historical_review") }} - HKR HR{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <h1>{{ t("admin.historical_review") }}</h1>
+    <p>{{ t("admin.historical_review_hint") }}</p>
+  </div>
+</section>
+
+<p class="inline-alert">{{ t("admin.historical_review_read_only") }}</p>
+
+<section class="system-status-grid" aria-label="{{ t('admin.historical_review') }}">
+  <article class="panel system-status-card {{ 'attention' if replaced_diff_count else '' }}">
+    <span>{{ t("admin.hr_review_replaced_sheets") }}</span>
+    <strong>{{ replaced_rows|length }}</strong>
+    <small>{{ t("admin.hr_review_replaced_diff_count", count=replaced_diff_count) }}</small>
+  </article>
+  <article class="panel system-status-card {{ 'attention' if injury_suspect_count else '' }}">
+    <span>{{ t("admin.hr_review_daily_injuries") }}</span>
+    <strong>{{ injury_rows|length }}</strong>
+    <small>{{ t("admin.hr_review_injury_suspect_count", count=injury_suspect_count) }}</small>
+  </article>
+  <article class="panel system-status-card {{ 'attention' if renewal_rows else '' }}">
+    <span>{{ t("admin.hr_review_unlinked_renewals") }}</span>
+    <strong>{{ renewal_rows|length }}</strong>
+    <small>{{ t("admin.hr_review_unlinked_hint") }}</small>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="section-head compact">
+    <div>
+      <h2>{{ t("admin.hr_review_replaced_sheets") }}</h2>
+      <p>{{ t("admin.hr_review_replaced_desc") }}</p>
+    </div>
+  </div>
+  <div class="table-wrap flat">
+    <table class="dense-table">
+      <thead>
+        <tr>
+          <th>{{ t("common.employee") }}</th>
+          <th>{{ t("common.month") }}</th>
+          <th>{{ t("admin.hr_review_old_file") }}</th>
+          <th>{{ t("admin.hr_review_new_file") }}</th>
+          <th>{{ t("admin.hr_review_old_vs_new_figures") }}</th>
+          <th>{{ t("admin.hr_review_payroll_snapshots") }}</th>
+          <th>{{ t("common.actions") }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in replaced_rows %}
+        <tr>
+          <td><a href="{{ url_for('employees.view_employee', employee_id=row.employee.id, tab='attendance') }}">{{ row.employee.employee_no }} · {{ row.employee.display_name }}</a></td>
+          <td>{{ row.year_month or '—' }}</td>
+          <td>
+            <a target="_blank" rel="noopener" href="{{ url_for('documents.open_document', document_id=row.old_doc.id) }}">{{ row.old_doc.original_filename }}</a>
+            {% if row.filename_changed %}<span class="flag danger">{{ t("admin.hr_review_filename_changed") }}</span>{% elif row.different_file %}<span class="flag warn">{{ t("admin.hr_review_hash_changed") }}</span>{% endif %}
+          </td>
+          <td>
+            {% if row.current_doc %}
+              <a target="_blank" rel="noopener" href="{{ url_for('documents.open_document', document_id=row.current_doc.id) }}">{{ row.current_doc.original_filename }}</a>
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            <div><small>{{ t("admin.hr_review_old_figures") }}：</small>{% if row.old_totals %}{{ row.old_totals.working_days }} {{ t("leave.days") }} · OT {{ row.old_totals.ot_hours }}h · {{ t("attendance.large_ecall_count") }} {{ row.old_totals.large_ecall_count }} / {{ row.old_totals.ecall_count }}{% else %}{{ t("admin.hr_review_figures_unavailable") }}{% endif %}</div>
+            <div><small>{{ t("admin.hr_review_new_figures") }}：</small>{% if row.current_totals %}{{ row.current_totals.working_days }} {{ t("leave.days") }} · OT {{ row.current_totals.ot_hours }}h · {{ t("attendance.large_ecall_count") }} {{ row.current_totals.large_ecall_count }} / {{ row.current_totals.ecall_count }}{% else %}—{% endif %}</div>
+            {% if row.figures_differ %}<span class="flag warn">{{ t("admin.hr_review_figures_differ") }}</span>{% endif %}
+          </td>
+          <td>
+            {% for snap in row.payroll_results %}
+              <div>#{{ snap.run_id }} ({{ snap.created_at_hkt.strftime('%Y-%m-%d %H:%M') }} HKT) · OT {{ fmt_money(snap.ot_amount) }} · {{ snap.currency }} {{ fmt_money(snap.net_amount) }}</div>
+            {% else %}{{ t("admin.hr_review_no_payroll_snapshot") }}{% endfor %}
+          </td>
+          <td class="row-actions">
+            {% if row.batch_item %}<a class="mini-btn" href="{{ url_for('attendance.attendance_home', item_id=row.batch_item.id) }}">{{ t("admin.hr_review_open_batch_item") }}</a>{% endif %}
+            {% if row.summary %}<a class="mini-btn" href="{{ url_for('attendance.attendance_home', summary_id=row.summary.id) }}">{{ t("hr.current_attendance") }}</a>{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="empty-cell">{{ t("common.no_results") }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="section-head compact">
+    <div>
+      <h2>{{ t("admin.hr_review_daily_injuries") }}</h2>
+      <p>{{ t("admin.hr_review_injury_desc") }}</p>
+    </div>
+  </div>
+  <div class="table-wrap flat">
+    <table class="dense-table">
+      <thead>
+        <tr>
+          <th>{{ t("common.employee") }}</th>
+          <th>{{ t("work_injury.accident_date") }}</th>
+          <th>{{ t("admin.hr_review_injury_period") }}</th>
+          <th>{{ t("hr.daily_reference") }}</th>
+          <th>{{ t("work_injury.confirmed_income") }}</th>
+          <th>{{ t("admin.hr_review_payroll_snapshots") }}</th>
+          <th>{{ t("common.actions") }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in injury_rows %}
+        <tr class="{{ 'blocked-row' if row.suspect else '' }}">
+          <td><a href="{{ url_for('employees.view_employee', employee_id=row.employee.id, tab='leave') }}">{{ row.employee.employee_no }} · {{ row.employee.display_name }}</a></td>
+          <td>{{ fmt_date(row.injury.accident_date) }}</td>
+          <td>{{ fmt_date(row.injury.payroll_start_date) }} – {{ fmt_date(row.injury.payroll_end_date) if row.injury.payroll_end_date else t("admin.hr_review_ongoing") }}</td>
+          <td>{% if row.daily_rate is not none %}{{ row.salary_currency }} {{ fmt_money(row.daily_rate) }}{% else %}—{% endif %}</td>
+          <td>
+            <strong>{{ row.injury.currency }} {{ fmt_money(row.injury.confirmed_monthly_earnings) }}</strong>
+            {% if row.suspect %}<span class="flag danger">{{ t("admin.hr_review_injury_suspect_flag") }}</span>{% endif %}
+          </td>
+          <td>
+            {% for snap in row.payroll_results %}
+              <div>{{ snap.year_month }} · #{{ snap.run_id }} ({{ snap.work_injury_days }} {{ t("leave.days") }} · {{ snap.currency }} {{ fmt_money(snap.work_injury_amount) }} / {{ t("payroll.net") }} {{ fmt_money(snap.net_amount) }})</div>
+            {% else %}{{ t("admin.hr_review_no_payroll_snapshot") }}{% endfor %}
+          </td>
+          <td><a class="mini-btn" href="{{ url_for('leave.leave_home', view='injury', employee_id=row.employee.id) }}">{{ t("common.view") }}</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="empty-cell">{{ t("common.no_results") }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="section-head compact">
+    <div>
+      <h2>{{ t("admin.hr_review_unlinked_renewals") }}</h2>
+      <p>{{ t("admin.hr_review_unlinked_desc") }}</p>
+    </div>
+  </div>
+  <div class="table-wrap flat">
+    <table class="dense-table">
+      <thead>
+        <tr>
+          <th>{{ t("common.employee") }}</th>
+          <th>{{ t("admin.hr_review_credential_type") }}</th>
+          <th>{{ t("admin.hr_review_old_credential") }}</th>
+          <th>{{ t("admin.hr_review_candidate_credential") }}</th>
+          <th>{{ t("common.actions") }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in renewal_rows %}
+        <tr>
+          <td><a href="{{ url_for('employees.view_employee', employee_id=row.employee.id, tab='credentials') }}#{{ row.anchor }}">{{ row.employee.employee_no }} · {{ row.employee.display_name }}</a></td>
+          <td>{{ option_t("identity_type", row.label, row.label) if row.kind == "identity" else row.label }}</td>
+          <td>{{ row.old_no }} · {{ fmt_date(row.old_expiry) }} <span class="flag {{ 'danger' if row.state_code == 'expired' else 'warn' }}">{{ t("admin.hr_review_expired") if row.state_code == "expired" else t("admin.hr_review_expiring") }}</span></td>
+          <td>{{ row.candidate_no }} · {{ t("employee.long_term") if row.candidate_long_term else fmt_date(row.candidate_expiry) }}</td>
+          <td><a class="mini-btn" href="{{ url_for('employees.view_employee', employee_id=row.employee.id, tab='credentials') }}#{{ row.anchor }}">{{ t("common.view") }}</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="empty-cell">{{ t("common.no_results") }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -89,8 +89,15 @@
 {% set pending=resume_batch.items|selectattr('status','equalto','pending')|list %}
 {% set saved=resume_batch.items|selectattr('status','equalto','saved')|list %}
 <p>{{ batch_month_label(resume_batch) }} · {{ resume_batch.items|length }} PDF</p><strong>{{ t('hr.batch_counts',saved=saved|length,pending=pending|length) }}</strong>
-{% if pending %}<p>{{ pending[0].original_filename }}</p><a class="primary-btn" href="{{ url_for('attendance.attendance_home',month=pending[0].effective_year_month,batch_id=resume_batch.id,item_id=pending[0].id,view='collection') }}">{{ t('hr.continue_entry') }} →</a>{% else %}<p>{{ t('hr.queue_clear') }}</p>{% endif %}
+{% if pending %}<p>{{ pending[0].original_filename }}</p><a class="primary-btn" href="{{ url_for('attendance.attendance_home',month=pending[0].effective_year_month,batch_id=resume_batch.id,item_id=pending[0].id,view='collection') }}">{{ t('hr.continue_entry') }} →</a>{% else %}<p>{{ t('hr.month_queue_clear', month=month_t(year_month)) }}</p>{% endif %}
 {% else %}<p>{{ t('hr.no_batch') }}</p>{% endif %}
+{% if other_pending_batches %}
+  <div class="intake-other-months">
+    {% for other in other_pending_batches %}
+      <a href="{{ url_for('attendance.attendance_home', month=other.year_month, batch_id=other.batch.id, item_id=other.first_pending.id, view='collection') }}">{{ t('hr.other_month_pending', month=month_t(other.year_month), count=other.pending_count) }} →</a>
+    {% endfor %}
+  </div>
+{% endif %}
 </section></div>
 <a class="intake-missing" href="{{ url_for('attendance.attendance_home',view='details',status='missing',month=year_month) }}">{{ t('hr.missing_people', month=month_t(year_month), count=missing|length) }} →</a>
 {% endif %}
@@ -122,7 +129,7 @@
     {% if edit_summary_mode or selected_summary %}
       <button class="attendance-context-action attendance-context-action-primary" type="submit" form="attendance-review-form">{{ t("attendance.save_correction") if selected_summary else t("common.save") }}</button>
     {% elif existing_document %}
-      <button class="attendance-context-action attendance-context-action-primary" type="submit" name="replace_document_id" value="{{ existing_document.id }}" form="attendance-review-form">{{ t("hr.replace") }}</button>
+      <button class="attendance-context-action attendance-context-action-replace" type="submit" name="replace_document_id" value="{{ existing_document.id }}" data-explicit-replace="1" form="attendance-review-form">{{ t("hr.replace") }}</button>
     {% else %}
       <button class="attendance-context-action attendance-context-action-primary" type="submit" form="attendance-review-form">{{ t("attendance.save_next") }}</button>
     {% endif %}
@@ -245,7 +252,12 @@
   <aside class="workbench-review" id="attendance-input" tabindex="-1">
     {% if selected_item or edit_summary_mode %}
       <form id="attendance-review-form" data-replace-label="{{ t('hr.replace') }}" data-existing-label="{{ t('hr.already_received') }}" class="stack-form" method="post" action="{{ url_for('attendance.correct_summary', summary_id=selected_summary.id) if selected_summary else url_for('attendance.save_item', item_id=selected_item.id) }}" data-selected-workweek="{{ selected_workweek_days }}" data-statutory-dates='{{ selectable_statutory_holiday_dates|tojson }}'>
-        {% if selected_summary %}<input type="hidden" name="editing_document_id" value="{{ selected_summary.document_id or '' }}">{% endif %}
+        {% if selected_summary %}
+          <input type="hidden" name="editing_document_id" value="{{ selected_summary.document_id or '' }}">
+          <input type="hidden" name="summary_revision" value="{{ summary_revision }}">
+        {% elif selected_item %}
+          <input type="hidden" name="expected_item_status" value="pending">
+        {% endif %}
         {% if originating_payroll_url %}
           {% for key in ('from_payroll', 'pay_group', 'pay_entity', 'pay_status', 'pay_q', 'pay_employee') %}
             <input type="hidden" name="{{ key }}" value="{{ request.args.get(key, '') }}">
@@ -298,7 +310,7 @@
             </div>
           </details>
           {% if existing_document %}
-          <p class="inline-alert attendance-replacement-notice" role="status">{{ t('documents.duplicate_attendance') if duplicate_document else t('hr.already_received') }} <strong>{{ existing_document.original_filename }}</strong> · {{ t('hr.reselect_or_replace') }}</p>
+          <p class="inline-alert attendance-replacement-notice" role="status" data-replacement-notice tabindex="-1">{{ t('documents.duplicate_attendance') if duplicate_document else t('hr.already_received') }} <strong>{{ existing_document.original_filename }}</strong> · {{ t('hr.reselect_or_replace') }}</p>
           {% endif %}
         </section>
         {% if linked_absences or absence_recheck or absence_issues %}
@@ -1254,10 +1266,42 @@ document.getElementById("attendance-review-form")?.addEventListener("submit", (e
     document.querySelector("[data-attendance-entry-summary]")?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 });
+function focusReplacementNotice(form) {
+  const target = form.querySelector("[data-replacement-notice], [data-submit-message]")
+    || document.querySelector("[data-replacement-notice], [data-submit-message]");
+  if (!target) return false;
+  if (!target.hasAttribute("tabindex")) target.tabIndex = -1;
+  target.focus();
+  target.scrollIntoView({ behavior: "smooth", block: "center" });
+  return true;
+}
+function hasExplicitReplaceState(form) {
+  const topSubmit = document.querySelector("button[type='submit'][form='attendance-review-form']");
+  return Boolean(
+    topSubmit?.dataset.explicitReplace === "1"
+    || topSubmit?.name === "replace_document_id"
+    || form.querySelector("button[name='replace_document_id']")
+  );
+}
 document.getElementById("attendance-review-form")?.addEventListener("keydown", (event) => {
-  if (!(event.ctrlKey && event.key === "Enter")) return;
-  event.preventDefault();
-  document.querySelector("button[type='submit'][form='attendance-review-form']")?.click();
+  const form = event.currentTarget;
+  if (event.ctrlKey && event.key === "Enter") {
+    event.preventDefault();
+    if (hasExplicitReplaceState(form)) {
+      focusReplacementNotice(form);
+      return;
+    }
+    document.querySelector("button[type='submit'][form='attendance-review-form']")?.click();
+    return;
+  }
+  if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key === "Enter") {
+    const input = event.target.closest("input");
+    if (!input || input.matches("[data-attendance-employee-search]")) return;
+    if (hasExplicitReplaceState(form)) {
+      event.preventDefault();
+      focusReplacementNotice(form);
+    }
+  }
 });
 updateSpecialDayHandlingVisibility();
 updateAttendanceEntrySummary();

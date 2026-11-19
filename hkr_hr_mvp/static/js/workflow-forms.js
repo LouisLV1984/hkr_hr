@@ -17,13 +17,16 @@
         if (result.replace_document_id) {
           alert.textContent = form.dataset.existingLabel + " " + result.filename + " ";
           const replace = document.createElement("button");
-          replace.className = "secondary-btn";
+          replace.className = "secondary-btn danger-text";
           replace.type = "submit";
           replace.name = "replace_document_id";
           replace.value = result.replace_document_id;
+          replace.dataset.explicitReplace = "1";
           replace.textContent = form.dataset.replaceLabel;
           alert.append(replace);
-          replace.focus();
+          alert.tabIndex = -1;
+          alert.focus();
+          alert.scrollIntoView({ behavior: "smooth", block: "center" });
         } else if (result.errors) alert.textContent = result.errors.join(" · ");
         else if (result.redirect) { location.assign(result.redirect); return; }
       } catch (error) { alert.textContent = form.dataset.retryText || "連線中斷，輸入已保留，請重試。"; }

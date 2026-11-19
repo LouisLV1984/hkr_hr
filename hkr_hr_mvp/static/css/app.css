@@ -882,6 +882,17 @@ label > small {
   background: #ffe27a;
 }
 .attendance-context-action-primary:hover { color: #173a35; background: #fff0a8; }
+.attendance-context-action-replace {
+  border-color: #f3b5b5;
+  color: #7f1d1d;
+  background: #fee2e2;
+  font-weight: 700;
+}
+.attendance-context-action-replace:hover {
+  border-color: #dc2626;
+  color: #7f1d1d;
+  background: #fecaca;
+}
 .attendance-period-context .attendance-context-month {
   justify-self: center;
   flex-wrap: wrap;

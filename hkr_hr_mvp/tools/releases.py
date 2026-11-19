@@ -1,5 +1,47 @@
 RELEASES = [
 {
+    "version": "V0.7.4",
+    "date": "2026-11-19",
+    "title": {
+        "zh-Hant": "防誤換表、月份／公司篩選及管理員歷史核對",
+        "zh-Hans": "防误换表、月份／公司筛选及管理员历史核对",
+        "en": "Safer replacement shortcuts, scoped lists and historical review"
+    },
+    "features": {
+        "zh-Hant": [
+            "本月已收考勤表時，按 Ctrl + Enter 或 Enter 不會誤按「替換原表」；同時操作同一份考勤表時不會靜默覆蓋他人剛保存的數字。",
+            "管理員可在「歷史核對」唯讀查閱曾替換的考勤 PDF、日工工傷核實月收入對照，以及未綁定續證的舊證提醒。"
+        ],
+        "zh-Hans": [
+            "本月已收考勤表时，按 Ctrl + Enter 或 Enter 不会误按“替换原表”；同时操作同一份考勤表时不会静默覆盖他人刚保存的数字。",
+            "管理员可在“历史核对”只读查阅曾替换的考勤 PDF、日工工伤核实月收入对照，以及未绑定续证的旧证提醒。"
+        ],
+        "en": [
+            "Ctrl + Enter and Enter stop before replacing an existing attendance sheet, and concurrent saves to the same attendance item or summary reject stale edits.",
+            "Admins have a read-only Historical Review page checking replaced attendance PDFs, daily-worker injury verified earnings and unlinked credential renewals."
+        ]
+    },
+    "improvements": {
+        "zh-Hant": [
+            "考勤「繼續錄入」僅處理所選月份；其他月份尚有待錄批次時另行顯示連結。",
+            "「當月已保存工資表」嚴格依選定的發薪單位與薪酬組別過濾，時間欄名改為香港時間。"
+        ],
+        "zh-Hans": [
+            "考勤“继续录入”仅处理所选月份；其他月份尚有待录批次时另行显示链接。",
+            "“当月已保存工资表”严格按选定的发薪单位与薪酬组别筛选，时间列名改为香港时间。"
+        ],
+        "en": [
+            "Continue entry stays within the selected attendance month and links separately to unfinished batches from other months.",
+            "Saved monthly payroll runs follow the selected paying entity and payroll group strictly, and label saved timestamps as HKT."
+        ]
+    },
+    "limitations": {
+        "zh-Hant": [],
+        "zh-Hans": [],
+        "en": []
+    }
+},
+{
     "version": "V0.7.3",
     "date": "2026-11-18",
     "title": {
@@ -2547,4 +2589,4 @@ RELEASES = [
 CURRENT_VERSION = RELEASES[0]["version"]
 
 # The next published release follows the current version without skipping.
-NEXT_VERSION = "V0.7.4"
+NEXT_VERSION = "V0.7.5"
