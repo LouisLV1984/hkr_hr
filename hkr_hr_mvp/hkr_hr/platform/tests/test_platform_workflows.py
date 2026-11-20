@@ -386,29 +386,28 @@ class PlatformWorkflowTests(HrAppTestCase):
             self.assertIsNotNone(db.session.get(Employee, employee_id))
 
     def test_search_fields_disable_browser_history_without_breaking_password_manager_tokens(self):
-        base_source = (APP_ROOT / "templates" / "base.html").read_text(
-            encoding="utf-8"
-        )
+        def read_tpl(name):
+            return self.app.jinja_loader.get_source(self.app.jinja_env, name)[0]
+
+        base_source = read_tpl("base.html")
         self.assertNotIn("hkr-disabled-", base_source)
         self.assertIn('input[type="search"], [data-no-browser-history]', base_source)
 
-        for relative_path in [
-            "templates/attendance/index.html",
-            "templates/employees/list.html",
-            "templates/leave/index.html",
-            "templates/payroll/index.html",
+        for template_name in [
+            "attendance/index.html",
+            "employees/list.html",
+            "leave/index.html",
+            "payroll/index.html",
         ]:
-            source = (APP_ROOT / relative_path).read_text(encoding="utf-8")
+            source = read_tpl(template_name)
             search_controls = re.findall(r'<input type="search"[^>]*>', source)
-            self.assertTrue(search_controls, relative_path)
+            self.assertTrue(search_controls, template_name)
             for control in search_controls:
-                self.assertIn('autocomplete="off"', control, relative_path)
-                self.assertIn('autocapitalize="off"', control, relative_path)
-                self.assertIn('spellcheck="false"', control, relative_path)
+                self.assertIn('autocomplete="off"', control, template_name)
+                self.assertIn('autocapitalize="off"', control, template_name)
+                self.assertIn('spellcheck="false"', control, template_name)
 
-        login_source = (APP_ROOT / "templates" / "auth" / "login.html").read_text(
-            encoding="utf-8"
-        )
+        login_source = read_tpl("auth/login.html")
         self.assertIn('autocomplete="username"', login_source)
         self.assertIn('autocomplete="current-password"', login_source)
 

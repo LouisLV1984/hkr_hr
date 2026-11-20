@@ -1,21 +1,27 @@
 from datetime import datetime, timedelta
+from pathlib import Path
 import re
 from urllib.parse import urlencode
 
 from dotenv import load_dotenv
 from flask import Flask, abort, jsonify, redirect, render_template, request, session, url_for
 from flask_login import current_user
+from jinja2 import ChoiceLoader, FileSystemLoader
 
 
 load_dotenv()
 
-from config import Config
+from hkr_hr.platform.config import Config
+from hkr_hr.platform.manifest import TEMPLATE_DIR as PLATFORM_TEMPLATES
+from hkr_hr.references.manifest import TEMPLATE_DIR as REFERENCES_TEMPLATES
+from hkr_hr.employees.manifest import TEMPLATE_DIR as EMPLOYEES_TEMPLATES
+from hkr_hr.documents.manifest import TEMPLATE_DIR as DOCUMENTS_TEMPLATES
 from tools.payroll_exchange import hkd_summary
 from models import db, login_manager
 from routes.admin import admin_bp
 from routes.attendance import attendance_bp
 from routes.attendance_corrections import bp as attendance_corrections_bp
-from routes.auth import auth_bp
+from hkr_hr.platform.web.auth import auth_bp
 from routes.dashboard import dashboard_bp
 from routes.documents import documents_bp
 from routes.employees import employees_bp
@@ -52,6 +58,18 @@ WEAK_PRODUCTION_SECRETS = {
 
 def create_app(config_overrides=None):
     app = Flask(__name__)
+    template_dirs = [
+        str(d)
+        for d in (
+            PLATFORM_TEMPLATES,
+            REFERENCES_TEMPLATES,
+            EMPLOYEES_TEMPLATES,
+            DOCUMENTS_TEMPLATES,
+            Path(__file__).resolve().parent / "templates",
+        )
+        if Path(d).is_dir()
+    ]
+    app.jinja_loader = ChoiceLoader([FileSystemLoader(d) for d in template_dirs])
     app.config.from_object(Config)
     if config_overrides:
         app.config.update(config_overrides)

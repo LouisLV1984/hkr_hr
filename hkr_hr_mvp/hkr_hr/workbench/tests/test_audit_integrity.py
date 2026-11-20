@@ -182,7 +182,7 @@ class AuditIntegrityTests(PayrollTestCase):
 
     def test_unsaved_prefill_does_not_claim_saved(self):
         from pathlib import Path
-        source=(APP_ROOT/'templates/attendance/index.html').read_text(encoding='utf-8')
+        source = self.app.jinja_loader.get_source(self.app.jinja_env, "attendance/index.html")[0]
         self.assertNotIn("prefill_source or 'saved'",source)
         self.assertIn('hasSavedComparison',source)
         self.assertIn('attendance.tail_pending_review',source)

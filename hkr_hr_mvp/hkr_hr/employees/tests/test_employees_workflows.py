@@ -579,15 +579,12 @@ class EmployeesWorkflowTests(HrAppTestCase):
         self.assertNotIn("MPF 資料未填寫", departed_page)
 
     def test_record_editors_use_shared_dialogs(self):
-        employee_template = (
-            APP_ROOT / "templates" / "employees" / "detail.html"
-        ).read_text(encoding="utf-8")
-        leave_template = (
-            APP_ROOT / "templates" / "leave" / "index.html"
-        ).read_text(encoding="utf-8")
-        change_history_template = (
-            APP_ROOT / "templates" / "employees" / "_change_history.html"
-        ).read_text(encoding="utf-8")
+        def read_tpl(name):
+            return self.app.jinja_loader.get_source(self.app.jinja_env, name)[0]
+
+        employee_template = read_tpl("employees/detail.html")
+        leave_template = read_tpl("leave/index.html")
+        change_history_template = read_tpl("employees/_change_history.html")
         combined = employee_template + change_history_template + leave_template
 
         self.assertNotIn("floating-editor", combined)

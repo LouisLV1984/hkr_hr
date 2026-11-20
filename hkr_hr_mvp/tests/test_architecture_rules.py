@@ -12,12 +12,12 @@ PKG_ROOT = APP_ROOT / "hkr_hr"
 LAYERS: dict[str, int] = {
     "platform": 0,
     "references": 1,
-    "documents": 1,
     "employees": 2,
-    "leave": 3,
-    "attendance": 3,
-    "payroll": 4,
-    "workbench": 5,
+    "documents": 3,
+    "attendance": 4,
+    "leave": 5,
+    "payroll": 6,
+    "workbench": 7,
 }
 COMPOSITION_ROOTS = {"app"}
 

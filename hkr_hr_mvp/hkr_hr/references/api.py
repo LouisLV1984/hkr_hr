@@ -1,0 +1,68 @@
+"""Public API for the ``references`` module (L1)."""
+from hkr_hr.references.models import (
+    MpfScheme,
+    ReferenceList,
+    ReferenceValue,
+    WorkCalendarHoliday,
+    WorkProject,
+)
+from hkr_hr.references.rules.holidays import (
+    HolidayImportError,
+    PUBLIC_SOURCE_URL_TEMPLATE,
+    SOURCE_URL_TEMPLATE,
+    fetch_hong_kong_public_holidays,
+    fetch_hong_kong_statutory_holidays,
+    parse_hong_kong_public_holidays,
+    parse_hong_kong_statutory_holidays,
+)
+from hkr_hr.references.rules.sorting import (
+    DEFAULT_DEPARTMENT_ORDER,
+    normalize_reference_display,
+    reference_sort_key,
+    reference_sort_order,
+    slug_code,
+)
+from hkr_hr.references.service.catalog import (
+    DEFAULT_MPF_SCHEMES,
+    DEFAULT_PROJECTS,
+    DEFAULT_REFERENCE_VALUES,
+    EMPLOYEE_TYPES,
+    REFERENCE_LISTS,
+    employee_type_by_code,
+    ensure_reference_seed,
+    ensure_reference_value,
+    reference_by_code,
+    reference_map,
+    reference_options,
+)
+
+__all__ = [
+    "DEFAULT_DEPARTMENT_ORDER",
+    "DEFAULT_MPF_SCHEMES",
+    "DEFAULT_PROJECTS",
+    "DEFAULT_REFERENCE_VALUES",
+    "EMPLOYEE_TYPES",
+    "HolidayImportError",
+    "MpfScheme",
+    "PUBLIC_SOURCE_URL_TEMPLATE",
+    "REFERENCE_LISTS",
+    "ReferenceList",
+    "ReferenceValue",
+    "SOURCE_URL_TEMPLATE",
+    "WorkCalendarHoliday",
+    "WorkProject",
+    "employee_type_by_code",
+    "ensure_reference_seed",
+    "ensure_reference_value",
+    "fetch_hong_kong_public_holidays",
+    "fetch_hong_kong_statutory_holidays",
+    "normalize_reference_display",
+    "parse_hong_kong_public_holidays",
+    "parse_hong_kong_statutory_holidays",
+    "reference_by_code",
+    "reference_map",
+    "reference_options",
+    "reference_sort_key",
+    "reference_sort_order",
+    "slug_code",
+]
