@@ -1,5 +1,5 @@
 import unittest
-from tools.i18n import TRANSLATIONS
+from hkr_hr.app.words import TRANSLATIONS
 
 
 class DailyPrefillCopyTests(unittest.TestCase):

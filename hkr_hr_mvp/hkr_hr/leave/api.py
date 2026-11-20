@@ -1,0 +1,87 @@
+"""Public API for the ``leave`` module (L5)."""
+from hkr_hr.leave.models import (
+    EmployeeAnnualLeaveAllocation,
+    EmployeeAnnualLeaveBalance,
+    EmployeeAnnualLeaveRecord,
+    EmployeeCompLeaveAllocation,
+    EmployeeCompLeaveCredit,
+    EmployeeWorkInjuryMonthlyExpense,
+    EmployeeWorkInjuryPeriod,
+)
+from hkr_hr.leave.rules.entitlement import (
+    active_for,
+    annual_leave_days_between,
+    annual_leave_expiry,
+    annual_rate,
+    entitlement,
+    statutory_annual_leave_days,
+)
+from hkr_hr.leave.service.absence_integrity import (
+    absence_data_issues,
+    absences_changed_since_attendance,
+    conflicting_absence,
+    leave_date_label,
+)
+from hkr_hr.leave.service.buckets import (
+    allocate_annual_leave_with_comp,
+    annual_leave_allocated_days,
+    annual_leave_bucket,
+    annual_leave_buckets,
+    annual_leave_summary,
+    annual_leave_taken_days,
+    clear_leave_allocations,
+    comp_leave_credit_remaining,
+    comp_leave_summary,
+    ensure_annual_leave_balance,
+    set_annual_leave_allocations,
+)
+from hkr_hr.leave.service.outlook import leave_outlook
+from hkr_hr.leave.service.policy import freeze_balance, rollover, save_current_balance
+from hkr_hr.leave.service.setup import (
+    apply as apply_leave_setup,
+    preview as preview_leave_setup,
+    state as leave_setup_state,
+    token as leave_setup_token,
+    validate as validate_leave_setup,
+    validate_date_choice as validate_leave_date_choice,
+)
+
+__all__ = [
+    "EmployeeAnnualLeaveAllocation",
+    "EmployeeAnnualLeaveBalance",
+    "EmployeeAnnualLeaveRecord",
+    "EmployeeCompLeaveAllocation",
+    "EmployeeCompLeaveCredit",
+    "EmployeeWorkInjuryMonthlyExpense",
+    "EmployeeWorkInjuryPeriod",
+    "absence_data_issues",
+    "absences_changed_since_attendance",
+    "active_for",
+    "allocate_annual_leave_with_comp",
+    "annual_leave_allocated_days",
+    "annual_leave_bucket",
+    "annual_leave_buckets",
+    "annual_leave_days_between",
+    "annual_leave_expiry",
+    "annual_leave_summary",
+    "annual_leave_taken_days",
+    "annual_rate",
+    "apply_leave_setup",
+    "clear_leave_allocations",
+    "comp_leave_credit_remaining",
+    "comp_leave_summary",
+    "conflicting_absence",
+    "ensure_annual_leave_balance",
+    "entitlement",
+    "freeze_balance",
+    "leave_date_label",
+    "leave_outlook",
+    "leave_setup_token",
+    "preview_leave_setup",
+    "rollover",
+    "save_current_balance",
+    "set_annual_leave_allocations",
+    "statutory_annual_leave_days",
+    "validate_leave_date_choice",
+    "validate_leave_setup",
+]

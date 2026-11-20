@@ -7,7 +7,7 @@ These are executable development, data-safety, and deployment rules. Stable doma
 - HKR HR is independent from TMC. Never connect it to a TMC database, schema, route, template, deployment root, file root, service, or credential.
 - Pattern-level reuse from TMC is allowed only after removing TMC-specific business concepts and runtime dependencies. See [ADR-0005](docs/adr/0005-tmc-pattern-reuse-without-runtime-coupling.md).
 - Runtime data uses PostgreSQL database `hkr_hr_db`; never place HR tables in `tmc_platform`.
-- `models.py` is schema truth until a migration system supersedes it.
+- `hkr_hr/*/models.py` (aggregated by `hkr_hr/app/models.py`) is schema truth until a migration system supersedes it. See [`docs/architecture.md`](docs/architecture.md) for module boundaries and layering rules.
 - Do not add a production SQLite fallback.
 - Keep credentials and connection strings in `.env`; never hardcode new production secrets.
 - Treat HKID, address, phone, bank, salary, contract, and attachment data as sensitive.
@@ -23,10 +23,10 @@ These are executable development, data-safety, and deployment rules. Stable doma
 
 1. Inspect the current route, model, template, config, and relevant ADR before changing behavior.
 2. Preserve the approved single employee-create flow in [ADR-0002](docs/adr/0002-single-employee-create-flow.md).
-3. Run the smallest relevant validation. For broad Python changes, compile all application modules:
+3. Run the smallest relevant validation (module tests under `hkr_hr/<module>/tests/` plus `tests/test_architecture_rules.py`). For broad Python changes, compile all application modules:
 
 ```powershell
-$files = @('app.py','config.py','models.py') + (Get-ChildItem routes -Filter *.py | ForEach-Object FullName) + (Get-ChildItem tools -Filter *.py | ForEach-Object FullName) + (Get-ChildItem scripts -Filter *.py | ForEach-Object FullName)
+$files = @('app.py') + (Get-ChildItem hkr_hr -Recurse -Filter *.py | Where-Object { $_.FullName -notmatch '\\(__pycache__|tests)\\' } | ForEach-Object FullName) + (Get-ChildItem scripts -Filter *.py | ForEach-Object FullName)
 .\.venv\Scripts\python.exe -m py_compile $files
 ```
 
@@ -37,7 +37,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy_to_hkr_hr.p
 ```
 
 5. Report copying/deployment separately from process restart and live browser verification. Use the HKR HR restart inbox after its one-time installation documented in [README.md](README.md). If it is unavailable, the mini-PC operator can use `D:\HKR_HR\scripts\mini_pc_restart_hkr_hr_app.bat`.
-6. For every release, review [`操作指南.md`](操作指南.md) together with `tools/releases.py`. Any user-facing change to navigation, forms, fields, permissions, document handling, attendance, Payroll, exports, or operating rules must update the guide in the same change. Keep its applicable version and update date aligned with `CURRENT_VERSION`; internal-only fixes may leave the guide body unchanged after confirming that no operator instruction changed.
+6. For every release, review [`操作指南.md`](操作指南.md) together with `hkr_hr/workbench/service/releases.py`. Any user-facing change to navigation, forms, fields, permissions, document handling, attendance, Payroll, exports, or operating rules must update the guide in the same change. Keep its applicable version and update date aligned with `CURRENT_VERSION`; internal-only fixes may leave the guide body unchanged after confirming that no operator instruction changed.
 7. Do not fold a later material set of business rules or workflow changes into an already published release. Add a new release entry with its actual publication date, preserve the prior release's date and scope, and align the operator guide to the new current version.
 
 ## Deployment Safety

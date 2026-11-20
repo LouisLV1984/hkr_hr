@@ -3,9 +3,11 @@ import unittest
 from datetime import date, timedelta
 
 from tests.fixtures import PayrollTestCase, pdf_bytes
-from models import db, AttendanceBatchItem, AttendanceMonthlySummary, EmployeeCertificate
-from tools.hr_core import reference_by_code
-from tools.profile_integrity import credential_alerts, credential_state
+from hkr_hr.platform.db import db
+from hkr_hr.attendance.api import AttendanceBatchItem, AttendanceMonthlySummary
+from hkr_hr.employees.api import EmployeeCertificate
+from hkr_hr.references.api import reference_by_code
+from hkr_hr.employees.api import credential_alerts, credential_state
 
 
 class AttendanceAndRenewalTests(PayrollTestCase):

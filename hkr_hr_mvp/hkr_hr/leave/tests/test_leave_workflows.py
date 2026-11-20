@@ -1,4 +1,4 @@
-from tools.profile_revision import profile_revision
+from hkr_hr.attendance.api import profile_revision
 import io
 import json
 import re
@@ -15,97 +15,28 @@ from sqlalchemy import inspect, text
 from werkzeug.datastructures import FileStorage
 
 from app import create_app
-from models import (
-    AuditLog,
-    AttendanceBatch,
-    AttendanceBatchItem,
-    AttendanceMonthlySummary,
-    AttendanceSegment,
-    AttendanceSpecialDay,
-    Employee,
-    EmployeeAttendancePolicy,
-    EmployeeAnnualLeaveBalance,
-    EmployeeAnnualLeaveAllocation,
-    EmployeeAnnualLeaveRecord,
-    EmployeeAllowance,
-    EmployeeBankAccount,
-    EmployeeCertificate,
-    EmployeeCompLeaveAllocation,
-    EmployeeCompLeaveCredit,
-    EmployeeDocument,
-    EmployeeEmploymentPeriod,
-    EmployeeFinalPaymentCase,
-    EmployeeIdentity,
-    EmployeeAssignment,
-    EmployeeQualification,
-    EmployeeSalary,
-    EmployeeMpfEnrollment,
-    EmployeeVisa,
-    EmployeeWorkInjuryPeriod,
-    EmployeeWorkInjuryMonthlyExpense,
-    GeneratedContract,
-    PayrollAdjustment,
-    PayrollEmployeeResult,
-    PayrollRun,
-    MpfScheme,
-    ReferenceList,
-    ReferenceValue,
-    User,
-    WorkProject,
-    WorkCalendarHoliday,
-    db,
-)
-from tools.hr_core import (
-    annual_leave_buckets,
-    annual_leave_days_between,
-    annual_leave_summary,
-    create_mpf_enrollment,
-    employee_type_by_code,
-    ensure_reference_seed,
-    reference_by_code,
-    store_employee_file,
-    uploaded_file_sha256,
-)
-from tools.hk_statutory_holidays import (
-    parse_hong_kong_public_holidays,
-    parse_hong_kong_statutory_holidays,
-)
-from tools.final_payment import (
-    calculate_benefit,
-    calculate_final_payment,
-    service_portion_days,
-)
-from tools.payroll_engine import (
-    calculate_payroll,
-    casual_daily_mpf,
-    employee_warnings,
-    forecast_tail,
-)
-from tools.attendance_policy import (
-    automatic_attendance_rows,
-    is_legacy_inferred_special_day_summary,
-    special_work_day_units,
-)
-from routes.payroll import mpf_preview_rows, result_lines
-from routes.attendance import (
-    validate_attendance_segment_totals,
-    validate_sunday_holiday_entries,
-)
-from tools.completeness import employee_data_items
-from tools.releases import CURRENT_VERSION, NEXT_VERSION, RELEASES
-from tools.schema_migrations import (
-    apply_additive_migrations,
-    repair_legacy_inferred_special_day_attendance,
-    retire_obsolete_audit_events,
-    retire_legacy_tables,
-    schema_compatibility_issues,
-)
-from tools.security import (
-    LoginRateLimiter,
-    UploadValidationError,
-    safe_next_url,
-    validate_uploaded_file,
-)
+from hkr_hr.platform.db import AuditLog, User, db
+from hkr_hr.attendance.api import AttendanceBatch, AttendanceBatchItem, AttendanceMonthlySummary, AttendanceSegment, AttendanceSpecialDay
+from hkr_hr.employees.api import Employee, EmployeeAttendancePolicy, EmployeeAllowance, EmployeeBankAccount, EmployeeCertificate, EmployeeEmploymentPeriod, EmployeeIdentity, EmployeeAssignment, EmployeeQualification, EmployeeSalary, EmployeeMpfEnrollment, EmployeeVisa
+from hkr_hr.leave.api import EmployeeAnnualLeaveBalance, EmployeeAnnualLeaveAllocation, EmployeeAnnualLeaveRecord, EmployeeCompLeaveAllocation, EmployeeCompLeaveCredit, EmployeeWorkInjuryPeriod, EmployeeWorkInjuryMonthlyExpense
+from hkr_hr.documents.api import EmployeeDocument, GeneratedContract
+from hkr_hr.payroll.api import EmployeeFinalPaymentCase, PayrollAdjustment, PayrollEmployeeResult, PayrollRun
+from hkr_hr.references.api import MpfScheme, ReferenceList, ReferenceValue, WorkProject, WorkCalendarHoliday
+from hkr_hr.leave.api import annual_leave_buckets, annual_leave_summary
+from hkr_hr.platform.dates import annual_leave_days_between
+from hkr_hr.employees.api import create_mpf_enrollment
+from hkr_hr.references.api import employee_type_by_code, ensure_reference_seed, reference_by_code
+from hkr_hr.platform.files import store_employee_file, uploaded_file_sha256
+from hkr_hr.references.api import parse_hong_kong_public_holidays, parse_hong_kong_statutory_holidays
+from hkr_hr.payroll.api import calculate_benefit, calculate_final_payment, service_portion_days
+from hkr_hr.payroll.api import calculate_payroll, casual_daily_mpf, employee_warnings, forecast_tail
+from hkr_hr.attendance.api import automatic_attendance_rows, is_legacy_inferred_special_day_summary, special_work_day_units
+from hkr_hr.payroll.api import mpf_preview_rows, result_lines
+from hkr_hr.workbench.api import validate_attendance_segment_totals, validate_sunday_holiday_entries
+from hkr_hr.payroll.api import employee_data_items
+from hkr_hr.workbench.api import CURRENT_VERSION, NEXT_VERSION, RELEASES
+from hkr_hr.workbench.api import apply_additive_migrations, repair_legacy_inferred_special_day_attendance, retire_obsolete_audit_events, retire_legacy_tables, schema_compatibility_issues
+from hkr_hr.platform.security import LoginRateLimiter, UploadValidationError, safe_next_url, validate_uploaded_file
 
 
 from tests.fixtures import (

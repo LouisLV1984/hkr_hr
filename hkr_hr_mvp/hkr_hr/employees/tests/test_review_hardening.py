@@ -8,9 +8,12 @@ from types import SimpleNamespace
 from openpyxl import load_workbook
 from werkzeug.datastructures import FileStorage
 from tests.fixtures import ProfileTestCase, current_profile_revision, pdf_bytes
-from models import db, Employee, EmployeeSalary, EmployeeDocument, AttendanceBatchItem, AttendanceMonthlySummary, User
-from tools.payroll_engine import currency_summary, project_summary
-from tools.security import validate_uploaded_file, UploadValidationError
+from hkr_hr.platform.db import db, User
+from hkr_hr.employees.api import Employee, EmployeeSalary
+from hkr_hr.documents.api import EmployeeDocument
+from hkr_hr.attendance.api import AttendanceBatchItem, AttendanceMonthlySummary
+from hkr_hr.payroll.api import currency_summary, project_summary
+from hkr_hr.platform.security import validate_uploaded_file, UploadValidationError
 
 
 class ReviewHardeningTests(ProfileTestCase):
@@ -123,9 +126,9 @@ class ReviewHardeningTests(ProfileTestCase):
 
     def test_preloaded_leave_summary_matches_query_path(self):
         from datetime import date
-        from models import EmployeeAnnualLeaveBalance, EmployeeAnnualLeaveRecord
-        from tools.hr_core import annual_leave_summary
-        from tools.employee_loading import workbench_options
+        from hkr_hr.leave.api import EmployeeAnnualLeaveBalance, EmployeeAnnualLeaveRecord
+        from hkr_hr.leave.api import annual_leave_summary
+        from hkr_hr.employees.api import workbench_options
         eid = self.employee()
         with self.app.app_context():
             db.session.add(EmployeeAnnualLeaveBalance(employee_id=eid, year=2026,

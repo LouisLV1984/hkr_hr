@@ -5,20 +5,13 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from tests.fixtures import PayrollTestCase, pdf_bytes
-from models import (
-    AttendanceBatchItem,
-    AttendanceMonthlySummary,
-    AuditLog,
-    Employee,
-    EmployeeCertificate,
-    EmployeeIdentity,
-    EmployeeWorkInjuryPeriod,
-    PayrollRun,
-    User,
-    db,
-)
-from tools.hr_core import reference_by_code
-from tools.payroll_engine import calculate_employee, snapshot_payroll
+from hkr_hr.attendance.api import AttendanceBatchItem, AttendanceMonthlySummary
+from hkr_hr.platform.db import AuditLog, User, db
+from hkr_hr.employees.api import Employee, EmployeeCertificate, EmployeeIdentity
+from hkr_hr.leave.api import EmployeeWorkInjuryPeriod
+from hkr_hr.payroll.api import PayrollRun
+from hkr_hr.references.api import reference_by_code
+from hkr_hr.payroll.api import calculate_employee, snapshot_payroll
 
 
 class HistoricalReviewTests(PayrollTestCase):

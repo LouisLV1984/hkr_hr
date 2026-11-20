@@ -4,10 +4,12 @@ from unittest.mock import patch
 import unittest
 
 from tests.fixtures import PayrollTestCase
-from models import db, Employee, EmployeeAnnualLeaveBalance, EmployeeAnnualLeaveRecord, AuditLog
-from tools.annual_leave_policy import annual_rate, entitlement, rollover
-from tools.annual_leave_setup import token
-from tools.hr_core import annual_leave_summary
+from hkr_hr.platform.db import db, AuditLog
+from hkr_hr.employees.api import Employee
+from hkr_hr.leave.api import EmployeeAnnualLeaveBalance, EmployeeAnnualLeaveRecord
+from hkr_hr.leave.api import annual_rate, entitlement, rollover
+from hkr_hr.leave.api import leave_setup_token as token
+from hkr_hr.leave.api import annual_leave_summary
 
 
 class FormulaTests(unittest.TestCase):
@@ -36,7 +38,7 @@ class FormulaTests(unittest.TestCase):
 class SetupTests(PayrollTestCase):
 
     def test_date_change_requires_choice_and_keep_is_current_year_only(self):
-        from tools.annual_leave_setup import apply
+        from hkr_hr.leave.api import apply_leave_setup as apply
         eid,_=self.employee('management')
         self.setup(eid,preserve='0')
         with self.app.test_request_context():
@@ -102,7 +104,7 @@ class SetupTests(PayrollTestCase):
 
     def test_row_read_order_is_not_a_business_change(self):
         from itsdangerous import URLSafeSerializer
-        from tools.annual_leave_setup import state,apply
+        from hkr_hr.leave.api import leave_setup_state as state, apply_leave_setup as apply
         eid,_=self.employee('management')
         with self.app.test_request_context():
             e=db.session.get(Employee,eid)
@@ -221,7 +223,7 @@ class SetupTests(PayrollTestCase):
         class NewYear(date):
             @classmethod
             def today(cls): return date(2027,1,1)
-        with self.app.test_request_context(),patch('tools.annual_leave_policy.date',NewYear):
+        with self.app.test_request_context(),patch('hkr_hr.leave.service.policy.date',NewYear):
             rollover();rollover()
             e=db.session.get(Employee,eid)
             self.assertEqual(annual_leave_summary(e,2027)['entitled'],9)
@@ -234,8 +236,8 @@ class SetupTests(PayrollTestCase):
         class NewYear(date):
             @classmethod
             def today(cls): return date(2027,1,5)
-        with patch('tools.annual_leave_policy.date',NewYear),patch('routes.leave.date',NewYear),\
-             patch('tools.annual_leave_setup.date',NewYear),patch('tools.hr_core.date',NewYear),patch('models.date',NewYear):
+        with patch('hkr_hr.leave.service.policy.date',NewYear),patch('hkr_hr.workbench.web.leave.date',NewYear),\
+             patch('hkr_hr.leave.service.setup.date',NewYear),patch('hkr_hr.leave.service.buckets.date',NewYear),patch('hkr_hr.employees.models.date',NewYear):
             response=self.client.get(f'/annual-leave?employee_id={eid}')
             self.assertEqual(response.status_code,200)
             self.assertIn('2027年度年假',response.get_data(as_text=True))
@@ -254,9 +256,9 @@ class SetupTests(PayrollTestCase):
             self.assertIsNone(db.session.get(Employee,eid).current_period.end_date)
 
     def test_overuse_deduction_missing_rate_and_net(self):
-        from models import EmployeeFinalPaymentCase
-        from tools.final_payment import calculate_final_payment
-        from tools.hr_core import ensure_annual_leave_balance, set_annual_leave_allocations
+        from hkr_hr.payroll.api import EmployeeFinalPaymentCase
+        from hkr_hr.payroll.api import calculate_final_payment
+        from hkr_hr.leave.api import ensure_annual_leave_balance, set_annual_leave_allocations
         eid,_=self.employee()
         self.setup(eid,start='2026-07-01')
         with self.app.app_context():

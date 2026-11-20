@@ -8,9 +8,13 @@ from datetime import date, datetime
 from decimal import Decimal
 from unittest.mock import patch
 
-from models import (db, Employee, ReferenceValue, SalaryRecord, AuditLog, EmployeeDocument,
-                    PayrollRun, PayrollEmployeeResult, EmployeeAnnualLeaveRecord)
-from tools.salary_records import annual_summary, money
+from hkr_hr.platform.db import db, AuditLog
+from hkr_hr.employees.api import Employee
+from hkr_hr.references.api import ReferenceValue
+from hkr_hr.payroll.api import SalaryRecord, PayrollRun, PayrollEmployeeResult
+from hkr_hr.documents.api import EmployeeDocument
+from hkr_hr.leave.api import EmployeeAnnualLeaveRecord
+from hkr_hr.payroll.api import annual_summary, salary_record_money as money
 from openpyxl import load_workbook
 
 
@@ -18,14 +22,14 @@ class SalaryRecordTests(PayrollTestCase):
 
     def entity(self):
         with self.app.app_context():
-            from tools.hr_core import reference_by_code
+            from hkr_hr.references.api import reference_by_code
             return reference_by_code('payroll_entity','HK_RIVER').id
 
     def form(self,eid,month='2026-04',entity=None):
         page=self.client.get('/salary-records',query_string=dict(month=month,entity_id=entity or self.entity(),employee_id=eid))
         self.assertEqual(page.status_code,200,page.get_data(as_text=True)[:500])
         token=html.unescape(re.search(r'name="editor_token" value="([^"]+)"',page.get_data(as_text=True))[1])
-        from routes.salary_records import serializer
+        from hkr_hr.payroll.api import salary_record_serializer as serializer
         with self.app.app_context(): data=serializer().loads(token)
         form={'editor_token':token}
         for key,row in data['rows'].items():
@@ -58,7 +62,7 @@ class SalaryRecordTests(PayrollTestCase):
     def test_configured_currency_dropdown_grouped_amounts_and_noop_save(self):
         eid,_=self.employee()
         with self.app.app_context():
-            from models import ReferenceList
+            from hkr_hr.references.api import ReferenceList
             db.session.add(ReferenceValue(list_id=ReferenceList.query.filter_by(code='currency').one().id,
                 code='EUR',display_name='Euro QA',normalized_name='euro qa'))
             db.session.commit()
@@ -133,7 +137,7 @@ class SalaryRecordTests(PayrollTestCase):
             employee.employment_periods[0].start_date=date(2026,4,15)
             employee.employment_periods[0].end_date=date(2026,6,5)
             employee.status='terminated'
-            from models import ReferenceList
+            from hkr_hr.references.api import ReferenceList
             entity=ReferenceValue(list_id=ReferenceList.query.filter_by(code='payroll_entity').one().id,code='QA_OTHER',display_name='QA Other',normalized_name='qa other')
             db.session.add(entity); db.session.commit(); other=entity.id
         self.save(self.values(self.form(eid),eid))
@@ -227,7 +231,7 @@ class SalaryRecordTests(PayrollTestCase):
         form[f'{eid}.evidence']=(io.BytesIO(pdf_bytes('QA')),'owned.pdf')
         self.save(form)
         with self.app.app_context():
-            from routes.references import usage_count, historical_reference_employee_ids
+            from hkr_hr.workbench.api import usage_count, historical_reference_employee_ids
             record=SalaryRecord.query.one(); did=record.evidence_document_id
             entity=record.payroll_entity
             self.assertGreaterEqual(usage_count(entity),2)
@@ -246,7 +250,7 @@ class SalaryRecordTests(PayrollTestCase):
             db.session.commit()
         self.login('hr_test','test-hr-password')
         self.assertEqual(self.save(self.values(self.form(eid,'2026-07'),eid)).status_code,200)
-        with self.app.app_context(), patch('tools.salary_records.date', wraps=date) as test_date:
+        with self.app.app_context(), patch('hkr_hr.payroll.service.salary_records.date', wraps=date) as test_date:
             test_date.today.return_value = date(2026, 9, 30)
             rows,_,_=annual_summary(2026)
             self.assertEqual(rows[0]['missing'],['2026-08','2026-09'])
@@ -255,7 +259,7 @@ class SalaryRecordTests(PayrollTestCase):
         eid,_=self.employee()
         form=self.values(self.form(eid),eid)
         form[f'{eid}.evidence']=(io.BytesIO(pdf_bytes('QA')),'rollback.pdf')
-        with patch('routes.salary_records.write_audit',side_effect=ValueError('salary_record.stale')):
+        with patch('hkr_hr.payroll.web.salary_records.write_audit',side_effect=ValueError('salary_record.stale')):
             self.assertEqual(self.save(form).status_code,422)
         with self.app.app_context():
             self.assertEqual(SalaryRecord.query.count(),0)

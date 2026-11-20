@@ -9,14 +9,17 @@ from openpyxl import load_workbook
 from sqlalchemy import text, inspect
 import unittest
 from tests.fixtures import PayrollTestCase, pdf_bytes
-from models import (db, Employee, EmployeeSalary, GeneratedContract, PayrollRun, User,
-                    EmployeeFinalPaymentCase, AttendanceBatch, AttendanceBatchItem,
-                    AttendanceMonthlySummary, AttendanceSegment, WorkCalendarHoliday)
-from tools.payroll_engine import calculate_employee, snapshot_payroll, apply_actual_segments
-from tools.attendance_rates import allocation_issue
-from tools.completeness import payroll_items
-from routes.payroll import build_group_workbook, mpf_preview_rows
-from routes.documents import contract_context
+from hkr_hr.platform.db import db, User
+from hkr_hr.employees.api import Employee, EmployeeSalary
+from hkr_hr.documents.api import GeneratedContract
+from hkr_hr.payroll.api import PayrollRun, EmployeeFinalPaymentCase
+from hkr_hr.attendance.api import AttendanceBatch, AttendanceBatchItem, AttendanceMonthlySummary, AttendanceSegment
+from hkr_hr.references.api import WorkCalendarHoliday
+from hkr_hr.payroll.api import calculate_employee, snapshot_payroll, apply_actual_segments
+from hkr_hr.attendance.api import allocation_issue
+from hkr_hr.payroll.api import payroll_items
+from hkr_hr.payroll.api import build_group_workbook, mpf_preview_rows
+from hkr_hr.documents.api import contract_context
 
 class WorkflowImprovementsTests(PayrollTestCase):
 
@@ -161,7 +164,7 @@ class WorkflowImprovementsTests(PayrollTestCase):
         self.assertIn(b"Synthetic holiday",self.client.get("/references/work-calendar/csv?calendar_year=2027").data)
 
     def test_additive_rate_columns_preserve_existing_rows(self):
-        from tools.schema_migrations import apply_additive_migrations
+        from hkr_hr.workbench.api import apply_additive_migrations
         with self.app.app_context():
             for table in ("attendance_segments", "employee_final_payment_cases"):
                 db.session.execute(text(f'ALTER TABLE "{table}" DROP COLUMN rate_allocations'))

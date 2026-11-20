@@ -5,8 +5,10 @@ from datetime import date, timedelta
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from test_profile_integrity import ProfileIntegrityTests
-from models import db, EmployeeCertificate, EmployeeAnnualLeaveRecord, EmployeeSalary, EmployeeAssignment
-from tools.hr_core import reference_by_code
+from hkr_hr.platform.db import db
+from hkr_hr.employees.api import EmployeeCertificate, EmployeeSalary, EmployeeAssignment
+from hkr_hr.leave.api import EmployeeAnnualLeaveRecord
+from hkr_hr.references.api import reference_by_code
 
 
 def main():

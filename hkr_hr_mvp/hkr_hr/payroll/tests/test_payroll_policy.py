@@ -4,11 +4,15 @@ from decimal import Decimal
 import unittest
 
 from tests.fixtures import PayrollTestCase
-from models import db, Employee, AttendanceMonthlySummary, EmployeeAnnualLeaveRecord, PayrollAdjustment, PayrollRun, User, AuditLog
-from tools.attendance_policy import set_long_term_attendance_policy
-from tools.hr_core import reference_by_code
-from tools.payroll_engine import calculate_employee, snapshot_payroll
-from tools.payroll_exchange import hkd_summary
+from hkr_hr.platform.db import db, User, AuditLog
+from hkr_hr.employees.api import Employee
+from hkr_hr.attendance.api import AttendanceMonthlySummary
+from hkr_hr.leave.api import EmployeeAnnualLeaveRecord
+from hkr_hr.payroll.api import PayrollAdjustment, PayrollRun
+from hkr_hr.attendance.api import set_long_term_attendance_policy
+from hkr_hr.references.api import reference_by_code
+from hkr_hr.payroll.api import calculate_employee, snapshot_payroll
+from hkr_hr.payroll.api import hkd_summary
 
 
 class PayrollPolicyTests(PayrollTestCase):
@@ -84,7 +88,7 @@ class PayrollPolicyTests(PayrollTestCase):
             self.assertNotIn("payroll_hkd_rate", reference_by_code("currency", "CNY").metadata_json)
 
     def test_mpf_and_final_exports_block_negative_employee_with_name(self):
-        from tools.final_payment import calculate_final_payment
+        from hkr_hr.payroll.api import calculate_final_payment
         eid = self.ready()
         with self.app.app_context():
             employee = db.session.get(Employee, eid)

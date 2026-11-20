@@ -12,9 +12,9 @@ sys.path.insert(0, str(PROJECT_DIR))
 load_dotenv(PROJECT_DIR / ".env")
 
 from app import create_app
-from models import User, db
-from tools.hr_core import ensure_reference_seed
-from tools.schema_migrations import ensure_schema, reset_postgres_schema
+from hkr_hr.platform.db import User, db
+from hkr_hr.references.api import ensure_reference_seed
+from hkr_hr.workbench.api import ensure_schema, reset_postgres_schema
 
 
 def main():

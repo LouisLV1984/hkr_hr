@@ -4,11 +4,13 @@ from decimal import Decimal
 import unittest
 
 from tests.fixtures import PayrollTestCase
-from models import db, Employee, EmployeeAssignment, EmployeeAnnualLeaveRecord, WorkCalendarHoliday, AuditLog
-from tools.attendance_policy import (leave_day_units, saved_leave_units, scheduled_work_units,
-                                    employee_nonattendance_units)
-from tools.payroll_engine import monthly_salary_components, daily_leave_components
-from tools.absence_integrity import absence_data_issues
+from hkr_hr.platform.db import db, AuditLog
+from hkr_hr.employees.api import Employee, EmployeeAssignment
+from hkr_hr.leave.api import EmployeeAnnualLeaveRecord
+from hkr_hr.references.api import WorkCalendarHoliday
+from hkr_hr.attendance.api import leave_day_units, saved_leave_units, scheduled_work_units, employee_nonattendance_units
+from hkr_hr.payroll.api import monthly_salary_components, daily_leave_components
+from hkr_hr.leave.api import absence_data_issues
 
 
 class LeaveCalendarTests(PayrollTestCase):

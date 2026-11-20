@@ -23,8 +23,8 @@ COMPOSITION_ROOTS = {"app"}
 
 PURE_RULE_BANNED_ROOTS = {"flask", "flask_login", "flask_sqlalchemy", "sqlalchemy"}
 
-# Flipped to True once Phase 3 retires all legacy root packages.
-ENFORCE_NO_LEGACY_ROOTS = False
+# Strict mode: all application code and templates live under hkr_hr/.
+ENFORCE_NO_LEGACY_ROOTS = True
 
 
 def _iter_module_py_files(include_tests: bool = False):

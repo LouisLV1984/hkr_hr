@@ -5,10 +5,13 @@ from decimal import Decimal
 from io import BytesIO
 
 from tests.fixtures import PayrollTestCase, pdf_bytes
-from models import AttendanceCorrection, Employee, PayrollAdjustment, User, db
-from routes.payroll import build_final_payment_workbook, build_group_workbook
-from tools.final_payment import calculate_final_payment
-from tools.payroll_engine import calculate_employee, snapshot_payroll
+from hkr_hr.attendance.api import AttendanceCorrection
+from hkr_hr.employees.api import Employee
+from hkr_hr.payroll.api import PayrollAdjustment
+from hkr_hr.platform.db import User, db
+from hkr_hr.payroll.api import build_final_payment_workbook, build_group_workbook
+from hkr_hr.payroll.api import calculate_final_payment
+from hkr_hr.payroll.api import calculate_employee, snapshot_payroll
 
 
 class AttendanceCorrectionTests(PayrollTestCase):
@@ -17,7 +20,7 @@ class AttendanceCorrectionTests(PayrollTestCase):
         eid, project = self.employee("site_daily", 1)
         self.client.post("/attendance/batches", data={
             "year_month": "2026-11", "files": (BytesIO(pdf_bytes("November")), "November.pdf")})
-        from models import AttendanceBatchItem
+        from hkr_hr.attendance.api import AttendanceBatchItem
         with self.app.app_context():
             item_id = AttendanceBatchItem.query.one().id
         self.client.post(f"/attendance/items/{item_id}/save", data={
@@ -55,7 +58,7 @@ class AttendanceCorrectionTests(PayrollTestCase):
         saved = self.client.post(url, data={**form, "revision": str(revision)})
         self.assertEqual(Decimal(saved.get_json()["total"]), -150)
         with self.app.app_context():
-            from models import PayrollRun
+            from hkr_hr.payroll.api import PayrollRun
             record = AttendanceCorrection.query.one()
             self.assertEqual(len(record.documents), 2)
             self.assertEqual(build_group_workbook(db.session.get(PayrollRun, run_id), "site_daily").active["AG7"].value, -175)

@@ -6,13 +6,16 @@ from decimal import Decimal
 import unittest
 
 from tests.fixtures import PayrollTestCase, pdf_bytes
-from models import (db, Employee, WorkProject, AttendanceMonthlySummary, AttendanceSegment,
-                    EmployeeAllowance, EmployeeAnnualLeaveRecord, EmployeeMpfEnrollment, User,
-                    WorkCalendarHoliday, EmployeeDocument, AttendanceBatchItem, EmployeeAssignment, AttendanceSpecialDay)
-from tools.payroll_engine import calculate_employee, snapshot_payroll
-from tools.project_allocation import allocation_dates, allocation_weights, WORKDAY_BASIS, ProjectAllocationError
-from tools.completeness import mpf_data_item
-from routes.payroll import build_group_workbook, mpf_export_issues, monthly_values, result_lines
+from hkr_hr.platform.db import db, User
+from hkr_hr.employees.api import Employee, EmployeeAllowance, EmployeeMpfEnrollment, EmployeeAssignment
+from hkr_hr.references.api import WorkProject, WorkCalendarHoliday
+from hkr_hr.attendance.api import AttendanceMonthlySummary, AttendanceSegment, AttendanceBatchItem, AttendanceSpecialDay
+from hkr_hr.leave.api import EmployeeAnnualLeaveRecord
+from hkr_hr.documents.api import EmployeeDocument
+from hkr_hr.payroll.api import calculate_employee, snapshot_payroll
+from hkr_hr.attendance.api import allocation_dates, allocation_weights, WORKDAY_BASIS, ProjectAllocationError
+from hkr_hr.payroll.api import mpf_data_item
+from hkr_hr.payroll.api import build_group_workbook, mpf_export_issues, monthly_values, result_lines
 
 
 class ProjectAllocationTests(PayrollTestCase):
@@ -159,7 +162,7 @@ class ProjectAllocationTests(PayrollTestCase):
 
     def test_legacy_save_preserves_rule_until_explicit_conversion(self):
         from werkzeug.datastructures import MultiDict
-        from tools.project_allocation import update_allocation_from_form
+        from hkr_hr.attendance.api import update_allocation_from_form
         with self.app.app_context():
             employee,a,b,summary=self.setup_monthly()
             summary.monthly_project_allocation=[dict(project_id=b.id,start='2026-08-01',end='2026-08-31')]

@@ -14,15 +14,9 @@ sys.path.insert(0, str(PROJECT_DIR))
 load_dotenv(PROJECT_DIR / ".env")
 
 from app import create_app
-from models import User, db
-from tools.hr_core import ensure_reference_seed
-from tools.schema_migrations import (
-    apply_additive_migrations,
-    ensure_schema,
-    format_schema_issues,
-    reset_postgres_schema,
-    schema_compatibility_issues,
-)
+from hkr_hr.platform.db import User, db
+from hkr_hr.references.api import ensure_reference_seed
+from hkr_hr.workbench.api import apply_additive_migrations, ensure_schema, format_schema_issues, reset_postgres_schema, schema_compatibility_issues
 
 
 INCOMPATIBLE_SCHEMA_EXIT = 20

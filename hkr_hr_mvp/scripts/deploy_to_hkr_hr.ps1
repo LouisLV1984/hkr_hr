@@ -121,6 +121,9 @@ function Test-DeployablePath {
     if ($normalized -match "(^|\\)__pycache__(\\|$)") {
         return $false
     }
+    if ($normalized -match "(^|\\)tests(\\|$)") {
+        return $false
+    }
     if ($excludedNames -contains (Split-Path -Leaf $normalized)) {
         return $false
     }
@@ -139,31 +142,17 @@ if (-not $SkipCompile) {
     if (-not (Test-Path -LiteralPath $python)) {
         $python = "python"
     }
-    & $python -m py_compile `
-        (Join-Path $SourceRoot "app.py") `
-        (Join-Path $SourceRoot "config.py") `
-        (Join-Path $SourceRoot "models.py") `
-        (Join-Path $SourceRoot "routes\admin.py") `
-        (Join-Path $SourceRoot "routes\auth.py") `
-        (Join-Path $SourceRoot "routes\dashboard.py") `
-        (Join-Path $SourceRoot "routes\documents.py") `
-        (Join-Path $SourceRoot "routes\employees.py") `
-        (Join-Path $SourceRoot "routes\exports.py") `
-        (Join-Path $SourceRoot "routes\attendance.py") `
-        (Join-Path $SourceRoot "routes\leave.py") `
-        (Join-Path $SourceRoot "routes\payroll.py") `
-        (Join-Path $SourceRoot "routes\references.py") `
-        (Join-Path $SourceRoot "scripts\init_db.py") `
-        (Join-Path $SourceRoot "scripts\bootstrap_production_db.py") `
-        (Join-Path $SourceRoot "scripts\seed_acceptance_data.py") `
-        (Join-Path $SourceRoot "tools\hr_core.py") `
-        (Join-Path $SourceRoot "tools\completeness.py") `
-        (Join-Path $SourceRoot "tools\i18n.py") `
-        (Join-Path $SourceRoot "tools\payroll_engine.py") `
-        (Join-Path $SourceRoot "tools\releases.py") `
-        (Join-Path $SourceRoot "tools\security.py") `
-        (Join-Path $SourceRoot "tools\schema_migrations.py") `
-        (Join-Path $SourceRoot "tools\text_search.py")
+    $compileTargets = @(
+        (Join-Path $SourceRoot "app.py"),
+        (Join-Path $SourceRoot "scripts\init_db.py"),
+        (Join-Path $SourceRoot "scripts\bootstrap_production_db.py"),
+        (Join-Path $SourceRoot "scripts\seed_acceptance_data.py")
+    ) + (
+        Get-ChildItem -LiteralPath (Join-Path $SourceRoot "hkr_hr") -Recurse -Filter "*.py" -File |
+            Where-Object { $_.FullName -notmatch "\\(__pycache__|tests)\\" } |
+            ForEach-Object { $_.FullName }
+    )
+    & $python -m py_compile $compileTargets
     if ($LASTEXITCODE -ne 0) {
         throw "py_compile failed; deployment aborted."
     }
@@ -274,6 +263,8 @@ foreach ($scriptName in $staleAppScripts) {
 }
 
 $staleAppFiles = @(
+    "config.py",
+    "models.py",
     "routes\intake.py",
     "tools\hr_intake.py",
     "templates\intake\index.html",
@@ -284,7 +275,7 @@ $staleAppFiles = @(
     "templates\employees\attachments.html",
     "templates\employees\certificates.html",
     "templates\employees\export_placeholder.html",
-    "templates\employees\phase2_placeholder.html"
+    "templates\employees\phase2_placeholder.html",
     "templates\admin\import.html"
 )
 foreach ($relativePath in $staleAppFiles) {
@@ -302,7 +293,10 @@ $staleAppDirectories = @(
     "docs",
     "employee_attachments",
     "payroll_templates",
-    "tests"
+    "routes",
+    "templates",
+    "tests",
+    "tools"
 )
 $appTargetFull = [System.IO.Path]::GetFullPath($AppTarget).TrimEnd('\', '/')
 foreach ($relativePath in $staleAppDirectories) {

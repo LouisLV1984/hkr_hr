@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from routes.admin import latest_log_status
+from hkr_hr.workbench.api import latest_log_status
 
 
 class BackupStatusTests(unittest.TestCase):
@@ -13,7 +13,7 @@ class BackupStatusTests(unittest.TestCase):
             root = Path(directory)
             logs = root / "03.Output" / "logs"
             logs.mkdir(parents=True)
-            with patch("routes.admin.application_root", return_value=root):
+            with patch("hkr_hr.workbench.web.admin.application_root", return_value=root):
                 self.assertEqual(latest_log_status("restore_verify_*.log", "Restore verification passed.")["state"], "missing")
                 file = logs / "restore_verify_test.log"
                 for content in ("Restore verification passed.",

@@ -11,27 +11,17 @@ from werkzeug.datastructures import FileStorage
 from werkzeug.security import generate_password_hash
 
 import app as app_module
-from models import (
-    AttendanceBatch,
-    Employee,
-    EmployeeDocument,
-    EmployeeEmploymentPeriod,
-    MpfScheme,
-    User,
-    WorkProject,
-    db,
-)
-from tools.attendance_policy import set_long_term_attendance_policy
-from tools.hr_core import (
-    create_mpf_enrollment,
-    employee_type_by_code,
-    ensure_reference_seed,
-    reference_by_code,
-    store_employee_file,
-    uploaded_file_sha256,
-)
-from tools.payroll_engine import calculate_employee
-from tools.profile_revision import profile_revision
+from hkr_hr.attendance.api import AttendanceBatch
+from hkr_hr.employees.api import Employee, EmployeeEmploymentPeriod
+from hkr_hr.documents.api import EmployeeDocument
+from hkr_hr.references.api import MpfScheme, WorkProject
+from hkr_hr.platform.db import User, db
+from hkr_hr.attendance.api import set_long_term_attendance_policy
+from hkr_hr.employees.api import create_mpf_enrollment
+from hkr_hr.references.api import employee_type_by_code, ensure_reference_seed, reference_by_code
+from hkr_hr.platform.files import store_employee_file, uploaded_file_sha256
+from hkr_hr.payroll.api import calculate_employee
+from hkr_hr.attendance.api import profile_revision
 
 
 APP_ROOT = Path(__file__).resolve().parents[2]

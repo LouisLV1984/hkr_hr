@@ -5,11 +5,14 @@ from unittest import TestCase
 
 from flask import template_rendered
 from tests.fixtures import PayrollTestCase
-from models import (db, Employee, EmployeeWorkInjuryPeriod, EmployeeAnnualLeaveRecord, AttendanceBatch, AttendanceBatchItem,
-                    AttendanceMonthlySummary, PayrollRun, PayrollAdjustment)
-from tools.attendance_policy import attendance_required, automatic_attendance_rows
-from tools.attendance_rates import allocation_issue, rate_windows
-from tools.payroll_engine import calculate_employee
+from hkr_hr.platform.db import db
+from hkr_hr.employees.api import Employee
+from hkr_hr.leave.api import EmployeeWorkInjuryPeriod, EmployeeAnnualLeaveRecord
+from hkr_hr.attendance.api import AttendanceBatch, AttendanceBatchItem, AttendanceMonthlySummary
+from hkr_hr.payroll.api import PayrollRun, PayrollAdjustment
+from hkr_hr.attendance.api import attendance_required, automatic_attendance_rows
+from hkr_hr.attendance.api import allocation_issue, rate_windows
+from hkr_hr.payroll.api import calculate_employee
 
 
 class WorkbenchConsistencyTests(PayrollTestCase):

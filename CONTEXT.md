@@ -27,7 +27,7 @@ HKR HR may adapt useful interaction patterns observed in TMC, but it does not sh
 | Runtime database | PostgreSQL `hkr_hr_db` |
 | LAN login | `http://192.168.128.70:5000/login` |
 
-`models.py` is current application schema truth. PostgreSQL stores file paths and metadata; document binaries remain on the filesystem.
+`hkr_hr/*/models.py` (assembled by `hkr_hr/app/models.py`, governed by [`hkr_hr_mvp/docs/architecture.md`](hkr_hr_mvp/docs/architecture.md)) is current application schema truth. PostgreSQL stores file paths and metadata; document binaries remain on the filesystem.
 
 GitHub source control contains application source and current project documentation only. Employee, attendance, payroll, contract, credential, runtime, generated, backup, and local verification data remain outside version control.
 

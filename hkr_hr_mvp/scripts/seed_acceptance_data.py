@@ -12,30 +12,14 @@ WORKSPACE_ROOT = APP_ROOT.parent
 sys.path.insert(0, str(APP_ROOT))
 
 from app import create_app
-from models import (
-    AttendanceMonthlySummary,
-    AttendanceSegment,
-    Employee,
-    EmployeeCertificate,
-    EmployeeDocument,
-    EmployeeEmploymentPeriod,
-    EmployeeIdentity,
-    EmployeeVisa,
-    MpfScheme,
-    ReferenceValue,
-    User,
-    WorkProject,
-    db,
-)
-from tools.hr_core import (
-    create_assignment,
-    create_mpf_enrollment,
-    create_salary,
-    employee_type_by_code,
-    ensure_reference_seed,
-    file_sha256,
-    reference_by_code,
-)
+from hkr_hr.attendance.api import AttendanceMonthlySummary, AttendanceSegment
+from hkr_hr.employees.api import Employee, EmployeeCertificate, EmployeeEmploymentPeriod, EmployeeIdentity, EmployeeVisa
+from hkr_hr.documents.api import EmployeeDocument
+from hkr_hr.references.api import MpfScheme, ReferenceValue, WorkProject
+from hkr_hr.platform.db import User, db
+from hkr_hr.employees.api import create_assignment, create_mpf_enrollment, create_salary
+from hkr_hr.references.api import employee_type_by_code, ensure_reference_seed, reference_by_code
+from hkr_hr.platform.files import file_sha256
 
 
 YEAR_MONTH = "2026-07"

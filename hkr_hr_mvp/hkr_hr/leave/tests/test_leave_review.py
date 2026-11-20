@@ -4,10 +4,13 @@ from decimal import Decimal
 import unittest
 
 from tests.fixtures import PayrollTestCase
-from models import (db, Employee, EmployeeAnnualLeaveRecord, PayrollRun, PayrollEmployeeResult,
-                    AttendanceMonthlySummary, AttendanceSegment, AuditLog, User, EmployeeFinalPaymentCase)
-from tools.payroll_engine import calculate_employee, snapshot_payroll
-from tools.leave_review import review_rows, review_token
+from hkr_hr.platform.db import db, AuditLog, User
+from hkr_hr.employees.api import Employee
+from hkr_hr.leave.api import EmployeeAnnualLeaveRecord
+from hkr_hr.payroll.api import PayrollRun, PayrollEmployeeResult, EmployeeFinalPaymentCase
+from hkr_hr.attendance.api import AttendanceMonthlySummary, AttendanceSegment
+from hkr_hr.payroll.api import calculate_employee, snapshot_payroll
+from hkr_hr.payroll.api import review_rows, review_token
 
 
 class LeaveReviewTests(PayrollTestCase):
@@ -83,7 +86,7 @@ class LeaveReviewTests(PayrollTestCase):
         self.assertIn("核對後可一次更新",profile)
 
     def test_payroll_latest_snapshot_and_next_month_recalculated_no_attendance_edit(self):
-        from routes.payroll import build_group_workbook
+        from hkr_hr.payroll.api import build_group_workbook
         eid,project=self.employee("management")
         a=self.legacy(eid)
         old=self.saved_payroll(eid,project,"2026-08")
@@ -122,7 +125,7 @@ class LeaveReviewTests(PayrollTestCase):
             self.assertEqual(AuditLog.query.filter_by(action="leave_corrected").count(),0)
 
     def test_annual_allocations_and_final_pay_preserve_manual_delta(self):
-        from tools.final_payment import leave_defaults, calculate_final_payment
+        from hkr_hr.payroll.api import leave_defaults, calculate_final_payment
         eid,_=self.employee("management")
         self.request_leave(eid,start="2026-08-14",end="2026-08-17",leave_type="annual")
         with self.app.app_context():
@@ -158,7 +161,7 @@ class LeaveReviewTests(PayrollTestCase):
             self.assertEqual(AuditLog.query.filter_by(action="final_payment_leave_recalculated").count(),1)
 
     def test_cross_month_saved_units_and_daily_payroll(self):
-        from tools.attendance_policy import saved_leave_units
+        from hkr_hr.attendance.api import saved_leave_units
         eid,project=self.employee("site_daily")
         with self.app.app_context():
             row=EmployeeAnnualLeaveRecord(employee_id=eid, leave_date=date(2026,7,31),
@@ -195,7 +198,7 @@ class LeaveReviewTests(PayrollTestCase):
         response=self.submit([first,annual],eid=eid)
         self.assertIn("已更新 2 筆假期",response.get_data(as_text=True))
         with self.app.app_context():
-            from tools.hr_core import annual_leave_buckets
+            from hkr_hr.leave.api import annual_leave_buckets
             self.assertEqual(db.session.get(EmployeeAnnualLeaveRecord,first).days,2)
             row=db.session.get(EmployeeAnnualLeaveRecord,annual)
             self.assertLess(row.days,59)

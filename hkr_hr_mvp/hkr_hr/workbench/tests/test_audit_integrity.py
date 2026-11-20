@@ -8,15 +8,16 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 from tests.fixtures import APP_ROOT, PayrollTestCase
-from models import (db, Employee, EmployeeAnnualLeaveRecord, EmployeeAnnualLeaveBalance,
-                    AttendanceMonthlySummary, AttendanceSegment, EmployeeCompLeaveCredit,
-                    EmployeeWorkInjuryPeriod, User, AuditLog)
-from tools.absence_integrity import (absence_data_issues, absences_changed_since_attendance,
-                                    leave_date_label)
-from tools.hr_core import annual_leave_days_between, allocate_annual_leave_with_comp
-from tools.payroll_engine import calculate_employee, snapshot_payroll, project_summary
-from routes.payroll import build_group_workbook
-from routes.attendance import replace_summary_segments
+from hkr_hr.platform.db import db, User, AuditLog
+from hkr_hr.employees.api import Employee
+from hkr_hr.leave.api import EmployeeAnnualLeaveRecord, EmployeeAnnualLeaveBalance, EmployeeCompLeaveCredit, EmployeeWorkInjuryPeriod
+from hkr_hr.attendance.api import AttendanceMonthlySummary, AttendanceSegment
+from hkr_hr.leave.api import absence_data_issues, absences_changed_since_attendance, leave_date_label
+from hkr_hr.platform.dates import annual_leave_days_between
+from hkr_hr.leave.api import allocate_annual_leave_with_comp
+from hkr_hr.payroll.api import calculate_employee, snapshot_payroll, project_summary
+from hkr_hr.payroll.api import build_group_workbook
+from hkr_hr.workbench.api import replace_summary_segments
 
 
 class AuditIntegrityTests(PayrollTestCase):

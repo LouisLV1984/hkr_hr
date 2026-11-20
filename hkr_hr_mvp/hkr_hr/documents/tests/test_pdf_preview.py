@@ -3,7 +3,9 @@ import io
 import unittest
 from pathlib import Path
 from tests.fixtures import HrAppTestCase, pdf_bytes
-from models import db, AttendanceBatchItem, EmployeeDocument
+from hkr_hr.platform.db import db
+from hkr_hr.attendance.api import AttendanceBatchItem
+from hkr_hr.documents.api import EmployeeDocument
 
 class PdfPreviewTests(HrAppTestCase):
 

@@ -6,16 +6,10 @@ import re
 from datetime import date, timedelta
 from decimal import Decimal
 
-from models import (
-    db,
-    Employee,
-    EmployeeAssignment,
-    EmployeeCertificate,
-    EmployeeSalary,
-    PayrollEmployeeResult,
-    PayrollRun,
-)
-from tools.hr_core import reference_by_code
+from hkr_hr.platform.db import db
+from hkr_hr.employees.api import Employee, EmployeeAssignment, EmployeeCertificate, EmployeeSalary
+from hkr_hr.payroll.api import PayrollEmployeeResult, PayrollRun
+from hkr_hr.references.api import reference_by_code
 
 
 class ProfileWorkspaceTests(ProfileTestCase):
@@ -279,7 +273,7 @@ class ProfileWorkspaceTests(ProfileTestCase):
         self.assertIn("history-disclosure-chevron", dashboard_page)
         self.assertIn(expiring_on.strftime("%Y/%m/%d"), dashboard_page)
 
-        from tools.i18n import TRANSLATIONS
+        from hkr_hr.app.words import TRANSLATIONS
         ph = re.compile(r"\{([a-zA-Z0-9_]+)\}")
         self.assertEqual([k for k, v in TRANSLATIONS["zh-Hant"].items() if "導出" in v], [])
         self.assertEqual([k for k, v in TRANSLATIONS["zh-Hant"].items() if "Payroll" in v], [])

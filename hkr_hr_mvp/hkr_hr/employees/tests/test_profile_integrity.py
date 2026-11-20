@@ -6,11 +6,13 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from tests.fixtures import ProfileTestCase, pdf_bytes
-from models import (db, Employee, EmployeeDocument, EmployeeEmploymentPeriod,
-                    EmployeeIdentity, EmployeeCertificate, EmployeeQualification,
-                    EmployeeAnnualLeaveRecord, EmployeeAllowance, AuditLog)
-from tools.hr_core import reference_by_code
-from tools.profile_integrity import credential_state, credential_alerts, document_reference_count
+from hkr_hr.platform.db import db, AuditLog
+from hkr_hr.employees.api import Employee, EmployeeEmploymentPeriod, EmployeeIdentity, EmployeeCertificate, EmployeeQualification, EmployeeAllowance
+from hkr_hr.documents.api import EmployeeDocument
+from hkr_hr.leave.api import EmployeeAnnualLeaveRecord
+from hkr_hr.references.api import reference_by_code
+from hkr_hr.employees.api import credential_state, credential_alerts
+from hkr_hr.documents.api import document_reference_count
 
 
 class ProfileIntegrityTests(ProfileTestCase):

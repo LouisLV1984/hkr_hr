@@ -5,10 +5,11 @@ from unittest.mock import patch
 from PIL import Image
 
 from werkzeug.datastructures import FileStorage
-from tools.security import validate_uploaded_file, UploadValidationError
-from tools.i18n import TRANSLATIONS
+from hkr_hr.platform.security import validate_uploaded_file, UploadValidationError
+from hkr_hr.app.words import TRANSLATIONS
 from tests.fixtures import ProfileTestCase
-from models import db, EmployeeAnnualLeaveRecord
+from hkr_hr.platform.db import db
+from hkr_hr.leave.api import EmployeeAnnualLeaveRecord
 
 
 def image_bytes(fmt="JPEG"):
@@ -49,7 +50,7 @@ class UploadMessageTests(unittest.TestCase):
                 self.assertEqual(stream.tell(), 2)
 
     def test_image_pixel_limit_remains_enabled(self):
-        with patch('tools.security.Image.open') as opened:
+        with patch('hkr_hr.platform.security.Image.open') as opened:
             opened.return_value.__enter__.return_value.width = 10000
             opened.return_value.__enter__.return_value.height = 10000
             with self.assertRaisesRegex(UploadValidationError, 'upload.image_too_large'):
@@ -83,8 +84,8 @@ class UploadMessageTests(unittest.TestCase):
 class UploadErrorPageTests(ProfileTestCase):
     def employee(self):
         from datetime import date
-        from models import EmployeeAssignment
-        from tools.hr_core import reference_by_code
+        from hkr_hr.employees.api import EmployeeAssignment
+        from hkr_hr.references.api import reference_by_code
         eid = super().employee()
         with self.app.app_context():
             db.session.add(EmployeeAssignment(employee_id=eid, effective_from=date(2026, 1, 1),
@@ -99,7 +100,7 @@ class UploadErrorPageTests(ProfileTestCase):
         self.assertIn('data-profile-workspace', response.get_data(as_text=True))
 
     def test_sick_evidence_jpeg_metadata_saves_original_once(self):
-        from models import EmployeeDocument
+        from hkr_hr.documents.api import EmployeeDocument
         from pathlib import Path
         eid = self.employee()
         data = image_bytes() + bytes(range(24))

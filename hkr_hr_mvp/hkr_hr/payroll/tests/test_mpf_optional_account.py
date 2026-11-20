@@ -5,9 +5,12 @@ import unittest
 from datetime import date
 from openpyxl import load_workbook
 from tests.fixtures import HrAppTestCase
-from models import db, Employee, MpfScheme, EmployeeMpfEnrollment, AuditLog, AttendanceMonthlySummary
-from tools.completeness import mpf_data_item
-from routes.payroll import mpf_export_issues
+from hkr_hr.platform.db import db, AuditLog
+from hkr_hr.employees.api import Employee, EmployeeMpfEnrollment
+from hkr_hr.references.api import MpfScheme
+from hkr_hr.attendance.api import AttendanceMonthlySummary
+from hkr_hr.payroll.api import mpf_data_item
+from hkr_hr.payroll.api import mpf_export_issues
 
 
 class OptionalMpfAccountTests(HrAppTestCase):

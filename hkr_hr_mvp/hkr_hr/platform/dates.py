@@ -203,3 +203,27 @@ def month_days(year_month):
 def masked_bank_account(value):
     text = re.sub(r"\s+", "", str(value or ""))
     return f"•••• {text[-4:]}" if text else "-"
+
+
+def annual_leave_days_between(
+    start_date,
+    end_date,
+    start_session="am",
+    end_session="pm",
+):
+    if (
+        not start_date
+        or not end_date
+        or end_date < start_date
+        or start_session not in {"am", "pm"}
+        or end_session not in {"am", "pm"}
+        or (start_date == end_date and start_session == "pm" and end_session == "am")
+    ):
+        return None
+    days = Decimal((end_date - start_date).days + 1)
+    if start_session == "pm":
+        days -= Decimal("0.5")
+    if end_session == "am":
+        days -= Decimal("0.5")
+    return days
+

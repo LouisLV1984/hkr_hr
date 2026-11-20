@@ -2,25 +2,20 @@ from datetime import date
 from unittest import TestCase, mock
 
 from tests.fixtures import PayrollTestCase
-from models import (
-    AttendanceMonthlySummary,
-    AttendanceSegment,
-    Employee,
-    EmployeeWorkInjuryPeriod,
-    PayrollRun,
-    ReferenceList,
-    ReferenceValue,
-    User,
-    db,
-)
-from tools.payroll_engine import calculate_employee, snapshot_payroll
+from hkr_hr.attendance.api import AttendanceMonthlySummary, AttendanceSegment
+from hkr_hr.employees.api import Employee
+from hkr_hr.leave.api import EmployeeWorkInjuryPeriod
+from hkr_hr.payroll.api import PayrollRun
+from hkr_hr.references.api import ReferenceList, ReferenceValue
+from hkr_hr.platform.db import User, db
+from hkr_hr.payroll.api import calculate_employee, snapshot_payroll
 
 
 class PayrollDirectoryTests(PayrollTestCase):
 
     def test_browse_cards_without_calculating_payroll(self):
         eid, _ = self.employee()
-        with mock.patch("routes.employees.calculate_payroll", side_effect=AssertionError("paid roster requested")):
+        with mock.patch("hkr_hr.workbench.web.employees.directory.calculate_payroll", side_effect=AssertionError("paid roster requested")):
             for grouping in ("department", "position"):
                 page = self.client.get("/employees?group_by=" + grouping).get_data(as_text=True)
                 self.assertIn(f'/employees/{eid}?origin=directory', page)
