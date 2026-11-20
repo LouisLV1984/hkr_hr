@@ -188,6 +188,14 @@ def specialist_upload_target(employee, upload_type):
         )
     if destination == "attendance":
         return url_for("attendance.attendance_home", employee_id=employee.id)
+    if upload_type == "bank_record":
+        return url_for(
+            "employees.view_employee",
+            employee_id=employee.id,
+            tab="personal",
+            focus="bank_account",
+            _anchor="bank-accounts",
+        )
     return url_for(
         "employees.view_employee",
         employee_id=employee.id,
@@ -262,6 +270,8 @@ def new_document(employee_id):
     ).strip()
     target = specialist_upload_target(employee, upload_type)
     if target and request.method == "GET":
+        if upload_type == "bank_record":
+            flash("請在下方「當前銀行賬戶」區塊新增或更正賬戶，並同時上傳銀行證明文件。", "info")
         return redirect(target)
     selected_category = (
         upload_type if upload_type in DIRECT_UPLOAD_CATEGORIES else ""

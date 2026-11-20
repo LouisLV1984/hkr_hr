@@ -209,7 +209,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'employee.terminate': ('辦理離職', '办理离职', 'Terminate employment'),
     'employee.termination': ('離職資料', '离职资料', 'Termination details'),
     'employee.termination_evidence': ('離職信 / 終止通知', '离职信 / 终止通知', 'Resignation / termination notice'),
-    'employee.termination_hint': ('預填平均工資只作 HR 核對參考；未到最後工作日前，員工仍保持在職及出現在考勤與出糧。', '预填平均工资只作 HR 核对参考；未到最后工作日前，员工仍保持在职及出现在考勤与出粮。', 'The average wage is a review aid. Before the last working day, the employee remains active in attendance and Payroll.'),
+    'employee.termination_hint': ('預填平均工資只作 HR 核對參考；設定最後工作日後，該員工於離職當月將由「離職結算」單獨計薪（不再出現在當月普通工資表）。', '预填平均工资只作 HR 核对参考；设定最后工作日后，该员工于离职当月将由「离职结算」单独计薪（不再出现在当月普通工资表）。', 'The average wage is a review aid. Once a last working day is set, that departure month is settled exclusively in Departure Payroll.'),
     'employee.timeline': ('時間線', '时间线', 'Timeline'),
     'employee.timeline_hint': ('最近的資料更新、任職、薪酬及附件記錄。', '最近的资料更新、任职、薪酬及附件记录。', 'Recent data, employment, salary and document activity.'),
     'employee.unified_employment_history_hint': ('集中記錄任職、薪酬、固定補貼、MPF 及入職／轉正／離職狀態的歷史與憑證；點擊標題列可收合。', '集中记录任职、薪酬、固定补贴、MPF 及入职／转正／离职状态的历史与凭证；点击标题栏可折叠。', 'Combined history and evidence for assignments, salary, allowances, MPF, probation and departure; click the header to collapse.'),

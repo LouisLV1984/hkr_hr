@@ -20,17 +20,41 @@ for (const duration of document.querySelectorAll("[data-leave-duration]")) {
   synchronize();
 }
 
+for (const select of document.querySelectorAll("[data-leave-type]")) {
+  const form = select.closest("form");
+  const rule = form?.querySelector("[data-leave-rule]");
+  if (!rule) continue;
+  const rules = {
+    annual: select.dataset.ruleAnnual || "",
+    sick: select.dataset.ruleSick || "",
+    unpaid: select.dataset.ruleUnpaid || "",
+  };
+  const syncRule = () => {
+    if (rules[select.value]) rule.textContent = rules[select.value];
+  };
+  select.addEventListener("change", syncRule);
+  syncRule();
+}
+
 for (const rates of document.querySelectorAll("[data-injury-rates]")) {
   const fields = rates.closest("form").elements;
   const hint = rates.parentElement.querySelector("[data-injury-rate]");
+  const rows = Array.from(rates.children).map(node => node.dataset);
   function updateReference() {
     const day = fields.accident_date.value;
-    const rate = Array.from(rates.children).map(node => node.dataset)
-      .find(row => row.from <= day && (!row.to || row.to >= day));
-    fields.confirmed_monthly_earnings.value = rate?.basis === "monthly" ? rate.amount : "";
-    hint.textContent = rate ? (rate.basis === "monthly" ? rates.dataset.monthly : rates.dataset.daily) +
-      " · " + rate.currency + " " + rate.amount : "";
-    if (rate) fields.currency.value = rate.currency;
+    const rate = day
+      ? rows.find(row => row.from <= day && (!row.to || row.to >= day))
+      : rows[0];
+    if (day) {
+      fields.confirmed_monthly_earnings.value = rate?.basis === "monthly" ? rate.amount : "";
+    }
+    if (rate) {
+      const label = rate.basis === "monthly" ? rates.dataset.monthly : rates.dataset.daily;
+      hint.textContent = `${label} · ${rate.currency} ${rate.amount}${day ? "" : "（填寫意外日期後按該日薪酬更新）"}`;
+      if (day) fields.currency.value = rate.currency;
+    } else {
+      hint.textContent = "";
+    }
   }
   fields.accident_date.addEventListener("change", updateReference);
   updateReference();

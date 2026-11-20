@@ -969,19 +969,14 @@ def update_attendance_policies():
                 before_policy.effective_from_month if before_policy else None
             ),
         }
-        policy = EmployeeAttendancePolicy.query.filter_by(
-            employee_id=employee.id,
-            effective_from_month=year_month,
-        ).first()
-        if not policy:
-            policy = EmployeeAttendancePolicy(
-                employee=employee,
-                effective_from_month=year_month,
-                created_by=current_user.id,
-            )
-            db.session.add(policy)
-        policy.requires_attendance = requires_attendance
-        policy.remarks = request.form.get("remarks", "").strip() or None
+        policy = set_long_term_attendance_policy(
+            employee,
+            year_month,
+            requires_attendance,
+            created_by=current_user.id,
+            remarks=request.form.get("remarks", "").strip() or None,
+        )
+        db.session.add(policy)
         db.session.flush()
         write_audit(
             (
@@ -1783,7 +1778,10 @@ def save_item(item_id):
         (row for row in item.batch.items if row.status == "pending" and row.id > item.id),
         next((row for row in item.batch.items if row.status == "pending"), None),
     )
-    flash("考勤已保存。", "success")
+    if next_item:
+        flash("考勤已保存，已切換至下一份。", "success")
+    else:
+        flash("考勤已保存；此批次所有考勤已處理完成。", "success")
     target = {
         "month": next_item.effective_year_month if next_item else year_month,
         "view": "collection",

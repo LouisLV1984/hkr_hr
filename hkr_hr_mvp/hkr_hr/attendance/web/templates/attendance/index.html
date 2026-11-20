@@ -410,7 +410,7 @@
               </div>
             {% if prefill_source and prefill_source != 'saved' %}
               <p class="form-note attendance-prefill-note" data-prefill-source="{{ prefill_source }}" data-prefill-period="{{ kind }}">
-                {% if prefill_source == 'prior_forecast' %}{{ t("attendance.prefill_prior_forecast") }}{% elif actual %}{{ t("attendance.prefill_actual_calendar") }}{% else %}{{ t("attendance.prefill_forecast_calendar") }}{% endif %}
+                {% if prefill_source == 'prior_forecast' %}{{ t("attendance.prefill_prior_forecast") }}{% elif kind == 'previous_21_end_forecast' %}系統內無上月考勤紀錄，請依上月實際已發預估日數手動核對或填入。{% elif actual %}{{ t("attendance.prefill_actual_calendar") }}{% else %}{{ t("attendance.prefill_forecast_calendar") }}{% endif %}
               </p>
             {% endif %}
             <div class="segment-list" data-segments="{{ kind }}">
@@ -564,7 +564,7 @@
   {% elif detail_status == "received" %}
   <article class="panel" id="received">
     <div class="section-head"><h2>{{ t("attendance.received") }}</h2><strong>{{ received|length }}</strong></div>
-    <div class="attendance-status-list">{% for summary in received %}<div class="attendance-status-row"><a href="{{ url_for('employees.view_employee', employee_id=summary.employee.id, tab='attendance') }}"><strong>{{ summary.employee.employee_no }} · {{ summary.employee.display_name }}</strong><span>{{ t("employees.payroll_group") }}：{{ option_t("payroll_group", summary.employee.payroll_group, summary.employee.payroll_group) }}</span><small>{{ t("common.project") }}：{{ attendance_roster_projects.get(summary.employee.id, [])|join("、") or t("common.not_set") }}</small></a>{% if summary.document %}<a class="mini-btn" target="_blank" href="{{ url_for('documents.open_document', document_id=summary.document.id) }}">{{ t("attendance.open_pdf") }}</a>{% endif %}</div>{% else %}<span>{{ t("dashboard.no_tasks") }}</span>{% endfor %}</div>
+    <div class="attendance-status-list">{% for summary in received %}<div class="attendance-status-row"><a href="{{ url_for('employees.view_employee', employee_id=summary.employee.id, tab='attendance') }}"><strong>{{ summary.employee.employee_no }} · {{ summary.employee.display_name }}</strong><span>{{ t("employees.payroll_group") }}：{{ option_t("payroll_group", summary.employee.payroll_group, summary.employee.payroll_group) }}</span><small>{{ t("common.project") }}：{{ attendance_roster_projects.get(summary.employee.id, [])|join("、") or t("common.not_set") }}</small></a><div class="row-actions"><a class="mini-btn" href="{{ url_for('attendance.attendance_home', month=year_month, employee_id=summary.employee.id, summary_id=summary.id) }}">{{ t("common.correct") }}</a>{% if summary.document %}<a class="mini-btn" target="_blank" href="{{ url_for('documents.open_document', document_id=summary.document.id) }}">{{ t("attendance.open_pdf") }}</a>{% endif %}</div></div>{% else %}<span>{{ t("dashboard.no_tasks") }}</span>{% endfor %}</div>
   </article>
   {% endif %}
 </section>

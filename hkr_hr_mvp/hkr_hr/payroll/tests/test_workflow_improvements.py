@@ -109,10 +109,10 @@ class WorkflowImprovementsTests(PayrollTestCase):
         response=self.client.post("/mpf-contributions/export",data={"year_month":"2026-08","scheme_code":"all"})
         self.assertEqual(response.status_code,200)
         html=self.client.get("/final-payment?year_month=2026-08").get_data(as_text=True)
-        self.assertNotIn(f'id="payroll-adjustment-{eid}"',html)
         self.assertIn("rate_allocations", self.app.jinja_loader.get_source(self.app.jinja_env,"payroll/final_payment.html")[0])
         response=self.client.post(f"/employees/{eid}/payroll-adjustments",data={"year_month":"2026-08","label":"Correction","amount":"100","return_to":"final_payment"})
-        self.assertEqual(response.status_code,404)
+        self.assertEqual(response.status_code,302)
+        self.assertIn("/final-payment",response.headers["Location"])
 
     def test_queue_and_duplicate_keep_same_batch_and_form(self):
         eid=self.ready()

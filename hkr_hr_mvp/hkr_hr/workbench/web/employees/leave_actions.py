@@ -473,7 +473,8 @@ def add_work_injury_expense(period_id):
         detail=f"{year_month}: {amount}",
     )
     db.session.commit()
-    flash("工傷復診／醫療開支已保存，將匯入該月工資表的 AN 欄。", "success")
+    column = "AM" if period.employee.payroll_group == "site_daily" else "AN"
+    flash(f"工傷復診／醫療開支已保存，將匯入該月工資表的 {column} 欄（不計入 MPF）。", "success")
     return redirect(url_for("leave.leave_home", view="injury", employee_id=period.employee_id))
 
 

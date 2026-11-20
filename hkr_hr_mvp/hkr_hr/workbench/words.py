@@ -170,7 +170,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'exports.salary_certificate_hint': ('按已生成的工資表紀錄製作僱員收入證明，保留原有 Excel 格式及實收薪金公式。', '按已生成的工资表记录制作雇员收入证明，保留原有 Excel 格式及实收薪金公式。', 'Create an employee income certificate from generated Payroll records while preserving the Excel layout and net-pay formulas.'),
     'exports.salary_certificate_rule': ('系統使用截至所選月份最近三個已生成的出糧月份；如尚未生成工資表，將不會輸出空白證明。', '系统使用截至所选月份最近三个已生成的 发薪月份；如尚未生成工资表，将不会输出空白证明。', 'The latest three generated Payroll months up to the selected month are used. A blank certificate is not produced when Payroll is unavailable.'),
     'exports.subtitle': ('計算每月薪酬，或匯出員工資料及在職附件。', '计算每月薪酬，或导出员工资料及在职附件。', 'Calculate monthly payroll or export employee records and active attachments.'),
-    'exports.title': ('薪酬與匯出', '薪酬与导出', 'Payroll & Exports'),
+    'exports.title': ('匯出與歷史', '导出与历史', 'Exports & History'),
     'exports.up_to_month': ('截至月份', '截至月份', 'Up to month'),
     'guide.title': ('操作指南', '操作指南', 'User Guide'),
     'task.progress.in_progress': ('跟進中', '跟进中', 'In progress'),

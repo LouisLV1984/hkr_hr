@@ -2,7 +2,7 @@ from hkr_hr.payroll.models import PayrollEmployeeResult, PayrollRun
 from hkr_hr.platform.dates import money, parse_decimal, previous_month
 import calendar
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from hkr_hr.attendance.api import AttendanceCorrection, AttendanceMonthlySummary
 from hkr_hr.payroll.models import EmployeeFinalPaymentCase, PayrollAdjustment
@@ -11,13 +11,17 @@ from hkr_hr.leave.api import EmployeeWorkInjuryMonthlyExpense
 from hkr_hr.leave.api import annual_leave_buckets
 from hkr_hr.employees.api import current_assignment_on, current_mpf_on, current_salary_on
 from hkr_hr.platform.dates import parse_year_month
-from hkr_hr.payroll.service.engine import ECALL_FLAT_AMOUNT, active_allowances, decimal_value, mpf_amounts, rounded, salary_rate_for_date
+from hkr_hr.payroll.service.engine import ECALL_FLAT_AMOUNT, active_allowances, decimal_value, monthly_salary_components, mpf_amounts, rounded, salary_rate_for_date
 
 
 TRANSITION_DATE = date(2025, 5, 1)
 SP_LSP_ANNUAL_CAP = Decimal("15000")
 SP_LSP_TOTAL_CAP = Decimal("390000")
-FINAL_PAYMENT_RULE_VERSION = "V1.4-2026-11-17"
+FINAL_PAYMENT_RULE_VERSION = "V1.5-2026-11-20"
+
+
+def round_leave_days(value):
+    return decimal_value(value).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
 
 
 def periods_for_final_payment(
@@ -168,9 +172,9 @@ def leave_defaults(period):
     )
     total = legacy_raw + regular_raw
     payable_total = max(Decimal("0"), total)
-    legacy = min(max(Decimal("0"), legacy_raw), payable_total)
-    regular = max(Decimal("0"), payable_total - legacy)
-    overused = max(Decimal("0"), -total)
+    legacy = round_leave_days(min(max(Decimal("0"), legacy_raw), payable_total))
+    regular = round_leave_days(max(Decimal("0"), payable_total - legacy))
+    overused = round_leave_days(max(Decimal("0"), -total))
     return legacy, regular, overused, buckets
 
 
@@ -293,6 +297,11 @@ def calculate_final_payment(period):
         and salary.salary_basis == "monthly"
         and salary.monthly_pay_method == "attendance_days"
     )
+    calendar_prorated_monthly = bool(
+        salary
+        and salary.salary_basis == "monthly"
+        and salary.monthly_pay_method != "attendance_days"
+    )
     allowance_attendance_days = (
         decimal_value(
             case.actual_working_days
@@ -379,23 +388,54 @@ def calculate_final_payment(period):
     from hkr_hr.attendance.api import active_allocations, allocation_issue, rate_windows
     from types import SimpleNamespace
     rate_windows_for_month = rate_windows(employee, rate_start, period.end_date)
-    rate_totals = SimpleNamespace(working_days=working_days, ot_hours=ot_hours, sunday_holiday_days=holiday_days, large_ecall_count=large_ecall_count, rate_allocations=case.rate_allocations if case else None)
+    sick_leave_amount = Decimal("0")
+    work_injury_amount = Decimal("0")
+    unpaid_leave_deduction = Decimal("0")
+    sick_leave_days = Decimal("0")
+    unpaid_leave_days = Decimal("0")
+    work_injury_days = Decimal("0")
+    calendar_active_days = Decimal("0")
+    if calendar_prorated_monthly:
+        monthly_components = monthly_salary_components(employee, rate_start, period.end_date)
+        calendar_active_days = Decimal((period.end_date - rate_start).days + 1)
+        sick_leave_amount = monthly_components["sick"]
+        work_injury_amount = monthly_components["injury"]
+        unpaid_leave_deduction = monthly_components["unpaid_deduction"]
+        sick_leave_days = monthly_components["sick_days"]
+        unpaid_leave_days = monthly_components["unpaid_days"]
+        work_injury_days = monthly_components["injury_days"]
+        working_days = max(
+            Decimal("0"),
+            calendar_active_days - unpaid_leave_days - sick_leave_days - work_injury_days,
+        )
+        base_amount = monthly_components["base"]
+    else:
+        base_amount = base_rate * working_days
+    rate_totals = SimpleNamespace(
+        working_days=Decimal("0") if calendar_prorated_monthly else working_days,
+        ot_hours=ot_hours,
+        sunday_holiday_days=holiday_days,
+        large_ecall_count=large_ecall_count,
+        rate_allocations=case.rate_allocations if case else None,
+    )
     rate_issue = allocation_issue(employee, rate_totals, rate_start, period.end_date)
     if rate_issue:
         blockers.append(rate_issue)
-    base_amount = base_rate * working_days
     ot_amount = ot_rate * ot_hours
     holiday_amount = holiday_rate * holiday_days
     ecall_amount = base_rate * large_ecall_count + ECALL_FLAT_AMOUNT * ecall_count
 
     if len(rate_windows_for_month) > 1 and not rate_issue and case and case.rate_allocations:
-        base_amount = ot_amount = holiday_amount = Decimal("0")
+        if not calendar_prorated_monthly:
+            base_amount = Decimal("0")
+        ot_amount = holiday_amount = Decimal("0")
         ecall_amount = ECALL_FLAT_AMOUNT * ecall_count
         for part in active_allocations(case.rate_allocations, rate_windows_for_month):
             applicable = salary_rate_for_date(employee, date.fromisoformat(part["start"]), project)
             if not applicable:
                 continue
-            base_amount += applicable["base_rate"] * decimal_value(part.get("working_days"))
+            if not calendar_prorated_monthly:
+                base_amount += applicable["base_rate"] * decimal_value(part.get("working_days"))
             ot_amount += applicable["ot_rate"] * decimal_value(part.get("ot_hours"))
             part_holiday_rate = holiday_rate if case.holiday_daily_rate_override is not None else applicable["holiday_rate"]
             holiday_amount += part_holiday_rate * decimal_value(part.get("sunday_holiday_days"))
@@ -414,13 +454,13 @@ def calculate_final_payment(period):
     overpay = decimal_value(case.overpay_amount if case else 0)
     underpay = decimal_value(case.underpay_amount if case else 0)
     special = decimal_value(case.special_compensation if case else 0)
-    legacy_days = decimal_value(
+    legacy_days = round_leave_days(
         case.legacy_leave_days if case and case.legacy_leave_days is not None else legacy_default
     )
-    regular_days = decimal_value(
+    regular_days = round_leave_days(
         case.post_2024_leave_days if case and case.post_2024_leave_days is not None else regular_default
     )
-    statutory_days = decimal_value(
+    statutory_days = round_leave_days(
         case.statutory_holiday_days if case and case.statutory_holiday_days is not None else 0
     )
 
@@ -466,6 +506,8 @@ def calculate_final_payment(period):
     payment_in_lieu = decimal_value(period.payment_in_lieu)
     wage_income = (
         base_amount
+        + sick_leave_amount
+        + work_injury_amount
         + ot_amount
         + holiday_amount
         + ecall_amount
@@ -518,6 +560,8 @@ def calculate_final_payment(period):
         "salary": salary,
         "attendance": attendance,
         "confirmed": confirmed,
+        "calendar_prorated_monthly": calendar_prorated_monthly,
+        "calendar_active_days": calendar_active_days,
         "working_days": working_days,
         "rate_windows": rate_windows_for_month,
         "ot_hours": ot_hours,
@@ -528,6 +572,12 @@ def calculate_final_payment(period):
         "ot_rate": rounded(ot_rate),
         "holiday_rate": rounded(holiday_rate),
         "base_amount": rounded(base_amount),
+        "sick_leave_amount": rounded(sick_leave_amount),
+        "work_injury_amount": rounded(work_injury_amount),
+        "unpaid_leave_deduction": rounded(unpaid_leave_deduction),
+        "sick_leave_days": sick_leave_days,
+        "unpaid_leave_days": unpaid_leave_days,
+        "work_injury_days": work_injury_days,
         "ot_amount": rounded(ot_amount),
         "holiday_amount": rounded(holiday_amount),
         "ecall_amount": rounded(ecall_amount),

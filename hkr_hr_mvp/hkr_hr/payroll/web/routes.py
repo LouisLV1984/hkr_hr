@@ -40,8 +40,9 @@ from hkr_hr.references.api import MpfScheme, ReferenceValue, WorkProject
 from hkr_hr.platform.db import db
 from hkr_hr.payroll.service.final_payment import FINAL_PAYMENT_RULE_VERSION, calculate_final_payments, final_payment_case, group_for_period
 from hkr_hr.platform.dates import PAYROLL_GROUPS, parse_decimal, parse_year_month
-from hkr_hr.employees.api import current_assignment_on, current_mpf_on
+from hkr_hr.employees.api import current_assignment_on, current_mpf_on, current_salary_on
 from hkr_hr.platform.files import file_sha256, store_employee_file
+from hkr_hr.platform.security import CANONICAL_MIME_TYPES, validate_uploaded_file
 from hkr_hr.references.api import reference_options
 from hkr_hr.platform.audit import write_audit
 from hkr_hr.payroll.service.engine import PAYROLL_GROUP_CODES, RULE_VERSION, calculate_payroll, employees_for_payroll, decimal_value, project_summary, rounded, snapshot_payroll, snapshot_employee
@@ -209,6 +210,11 @@ def attendance_payroll():
         if not payroll_entity_id or entity == payroll_entity_id:
             scope.append(employee)
     rows = calculate_payroll(year_month, employees=scope)
+    mpf_warning_rows = []
+    for row in rows:
+        row["mpf_warnings"] = mpf_profile_warnings(row) if is_payroll_ready(row) else []
+        if row["mpf_warnings"]:
+            mpf_warning_rows.append(row)
     blockers = [row for row in rows if not is_payroll_ready(row)]
     counts = {
         code: sum(1 for row in rows if row["group"] == code)
@@ -300,7 +306,181 @@ def attendance_payroll():
             WorkProject.name
         ).all(),
         corrections_by_employee=pay_month_corrections(year_month),
+        adjustments_by_employee=pay_month_adjustments(year_month),
+        mpf_warning_rows=mpf_warning_rows,
     )
+
+
+def pay_month_adjustments(year_month):
+    records = {}
+    for item in (
+        PayrollAdjustment.query.filter_by(year_month=year_month, status="active")
+        .order_by(PayrollAdjustment.id.desc())
+        .all()
+    ):
+        records.setdefault(item.employee_id, []).append(item)
+    return records
+
+
+def mpf_profile_warnings(row):
+    enrollment = row.get("mpf_enrollment")
+    if enrollment and enrollment.is_exempt and not enrollment.scheme:
+        return []
+    issues = []
+    if not enrollment or not enrollment.scheme:
+        issues.append(("未設定 MPF 計劃", "employment"))
+    if not employee_hkid(row["employee"]):
+        issues.append(("未填寫香港身份證", "credentials"))
+    if not row["employee"].english_name:
+        issues.append(("未填寫身份證英文姓名", "personal"))
+    return issues
+
+
+def adjustment_redirect(employee_id, year_month):
+    return_to = request.form.get("return_to", "employee")
+    if return_to == "payroll":
+        return redirect(
+            url_for(
+                "payroll.attendance_payroll",
+                year_month=request.form.get("pay_month") or year_month,
+                payroll_group=request.form.get("pay_group") or "all",
+                payroll_entity_id=request.form.get("pay_entity") or "",
+                status=request.form.get("pay_status") or "",
+            )
+        )
+    if return_to == "final_payment":
+        return redirect(
+            url_for(
+                "payroll.final_payment",
+                year_month=request.form.get("pay_month") or year_month,
+                payroll_group=request.form.get("pay_group") or "all",
+                payroll_entity_id=request.form.get("pay_entity") or "",
+            )
+        )
+    return redirect(
+        url_for(
+            "employees.view_employee",
+            employee_id=employee_id,
+            tab="employment",
+            _anchor="pay-adjustments",
+        )
+    )
+
+
+@payroll_bp.route(
+    "/employees/<int:employee_id>/payroll-adjustments",
+    methods=["POST"],
+)
+@login_required
+def add_payroll_adjustment(employee_id):
+    employee = db.get_or_404(Employee, employee_id)
+    year_month = (request.form.get("year_month") or "").strip()
+    label = (request.form.get("label") or "").strip()[:160]
+    amount = parse_decimal(request.form.get("amount"))
+    remarks = (request.form.get("remarks") or "").strip() or None
+    project_raw = (request.form.get("project_id") or "").strip()
+    project_id = int(project_raw) if project_raw.isdigit() else None
+    try:
+        parse_year_month(year_month)
+    except (TypeError, ValueError):
+        flash("請選擇有效的適用月份。", "error")
+        return adjustment_redirect(employee.id, selected_month())
+    if not label:
+        flash("請填寫調整原因或項目名稱。", "error")
+        return adjustment_redirect(employee.id, year_month)
+    if amount is None or amount == Decimal("0"):
+        flash("請填寫非零調整金額（正數為補發／獎金，負數為扣回）。", "error")
+        return adjustment_redirect(employee.id, year_month)
+    if project_id is not None and not db.session.get(WorkProject, project_id):
+        project_id = None
+    upload = request.files.get("evidence")
+    evidence_doc = None
+    created_path = None
+    if upload and upload.filename:
+        try:
+            validate_uploaded_file(upload)
+            created_path = store_employee_file(employee, upload, "change_evidence")
+            suffix = Path(upload.filename).suffix.lower()
+            evidence_doc = EmployeeDocument(
+                employee=employee,
+                category="change_evidence",
+                title=f"{year_month} 一次性調整：{label}",
+                original_filename=upload.filename,
+                stored_path=str(created_path),
+                mime_type=CANONICAL_MIME_TYPES.get(suffix, "application/octet-stream"),
+                file_ext=suffix,
+                file_size=created_path.stat().st_size,
+                content_sha256=file_sha256(created_path),
+                status="active",
+                uploaded_by=current_user.id,
+            )
+            db.session.add(evidence_doc)
+            db.session.flush()
+        except ValueError as exc:
+            db.session.rollback()
+            if created_path:
+                created_path.unlink(missing_ok=True)
+            flash(str(exc), "error")
+            return adjustment_redirect(employee.id, year_month)
+    item = PayrollAdjustment(
+        employee_id=employee.id,
+        year_month=year_month,
+        label=label,
+        amount=rounded(amount),
+        status="active",
+        project_id=project_id,
+        evidence_document_id=evidence_doc.id if evidence_doc else None,
+        remarks=remarks,
+    )
+    db.session.add(item)
+    db.session.flush()
+    write_audit(
+        "payroll_adjustment_added",
+        "PayrollAdjustment",
+        item.id,
+        employee_id=employee.id,
+        detail=f"{year_month} {label} {item.amount:+.2f}",
+        after={
+            "year_month": year_month,
+            "label": label,
+            "amount": str(item.amount),
+            "project_id": project_id,
+            "evidence_document_id": item.evidence_document_id,
+            "remarks": remarks,
+        },
+    )
+    db.session.commit()
+    flash(f"已新增 {year_month} 一次性調整「{label}」（{item.amount:+,.2f}）。", "success")
+    return adjustment_redirect(employee.id, year_month)
+
+
+@payroll_bp.route(
+    "/payroll-adjustments/<int:adjustment_id>/withdraw",
+    methods=["POST"],
+)
+@login_required
+def withdraw_payroll_adjustment(adjustment_id):
+    item = db.get_or_404(PayrollAdjustment, adjustment_id)
+    reason = (request.form.get("reason") or "").strip() or "撤回一次性調整"
+    before = {
+        "year_month": item.year_month,
+        "label": item.label,
+        "amount": str(item.amount),
+        "status": item.status,
+    }
+    item.status = "voided"
+    write_audit(
+        "payroll_adjustment_voided",
+        "PayrollAdjustment",
+        item.id,
+        employee_id=item.employee_id,
+        detail=f"{item.year_month} {item.label}：{reason}",
+        before=before,
+        after={**before, "status": "voided"},
+    )
+    db.session.commit()
+    flash(f"已撤回 {item.year_month} 一次性調整「{item.label}」。", "success")
+    return adjustment_redirect(item.employee_id, item.year_month)
 
 
 def pay_month_corrections(year_month):
@@ -373,8 +553,8 @@ def mpf_preview_rows(year_month):
                 "traffic_meal_allowance_amount"
             ],
             "special_allowance_amount": final["special_allowance_amount"],
-            "sick_leave_amount": Decimal("0"),
-            "work_injury_amount": Decimal("0"),
+            "sick_leave_amount": final["sick_leave_amount"],
+            "work_injury_amount": final["work_injury_amount"],
             "annual_leave_amount": final["annual_leave_pay"],
             "adjustment_amount": final["other_payment"],
             "attendance_other_allowance_amount": final[
@@ -415,16 +595,16 @@ def mpf_preview_rows(year_month):
                 "special_allowance_amount": final[
                     "special_allowance_amount"
                 ],
-                "sick_leave_amount": Decimal("0"),
-                "work_injury_amount": Decimal("0"),
+                "sick_leave_amount": final["sick_leave_amount"],
+                "work_injury_amount": final["work_injury_amount"],
                 "work_injury_medical_reimbursement_amount": final[
                     "work_injury_medical_reimbursement_amount"
                 ],
-                "unpaid_leave_deduction": Decimal("0"),
+                "unpaid_leave_deduction": final["unpaid_leave_deduction"],
                 "annual_leave_days": final["legacy_leave_days"] + final["post_2024_leave_days"],
-                "sick_leave_days": Decimal("0"),
-                "unpaid_leave_days": Decimal("0"),
-                "work_injury_days": Decimal("0"),
+                "sick_leave_days": final["sick_leave_days"],
+                "unpaid_leave_days": final["unpaid_leave_days"],
+                "work_injury_days": final["work_injury_days"],
                 "adjustment_amount": final["other_payment"],
                 "attendance_other_allowance_amount": final[
                     "attendance_other_allowance_amount"
@@ -590,9 +770,15 @@ def save_final_payment(period_id):
         "legacy_leave_days": str(case.legacy_leave_days or ""),
         "post_2024_leave_days": str(case.post_2024_leave_days or ""),
     }
+    salary_on_end = current_salary_on(period.employee, period.end_date)
+    calendar_prorated_monthly = bool(
+        salary_on_end
+        and salary_on_end.salary_basis == "monthly"
+        and salary_on_end.monthly_pay_method != "attendance_days"
+    )
     rate_issue = None
     try:
-        case.actual_working_days = nonnegative_form_decimal("actual_working_days")
+        case.actual_working_days = nonnegative_form_decimal("actual_working_days", Decimal("0"))
         case.actual_ot_hours = nonnegative_form_decimal("actual_ot_hours")
         case.actual_holiday_days = nonnegative_form_decimal(
             "actual_holiday_days"
@@ -645,7 +831,18 @@ def save_final_payment(period_id):
         )
         period.payment_in_lieu = nonnegative_form_decimal("payment_in_lieu")
         case.rate_allocations = json.loads(request.form.get("rate_allocations") or "[]")
-        rate_issue = allocation_issue(period.employee, SimpleNamespace(working_days=case.actual_working_days, ot_hours=case.actual_ot_hours, sunday_holiday_days=case.actual_holiday_days, large_ecall_count=case.large_ecall_count, rate_allocations=case.rate_allocations), max(period.start_date, period.end_date.replace(day=1)), period.end_date)
+        rate_issue = allocation_issue(
+            period.employee,
+            SimpleNamespace(
+                working_days=Decimal("0") if calendar_prorated_monthly else case.actual_working_days,
+                ot_hours=case.actual_ot_hours,
+                sunday_holiday_days=case.actual_holiday_days,
+                large_ecall_count=case.large_ecall_count,
+                rate_allocations=case.rate_allocations,
+            ),
+            max(period.start_date, period.end_date.replace(day=1)),
+            period.end_date,
+        )
         if rate_issue:
             raise ValueError(rate_issue)
     except (ValueError, TypeError):
@@ -1731,6 +1928,8 @@ def build_final_payment_workbook(year_month, group, rows):
         leave_payment = (
             result["annual_leave_pay"]
             + result["statutory_holiday_pay"]
+            + result["sick_leave_amount"]
+            + result["work_injury_amount"]
             - result["annual_leave_overuse_deduction"]
         )
         base_rate = (
@@ -1796,6 +1995,21 @@ def build_final_payment_workbook(year_month, group, rows):
                             if result[
                                 "work_injury_medical_reimbursement_amount"
                             ]
+                            else None
+                        ),
+                        (
+                            f"按日曆天折算（在職 {int(result['calendar_active_days'])} 天）"
+                            if result.get("calendar_prorated_monthly")
+                            else None
+                        ),
+                        (
+                            f"病假薪金 {result['sick_leave_amount']:,.2f}"
+                            if result.get("sick_leave_amount")
+                            else None
+                        ),
+                        (
+                            f"工傷薪金 {result['work_injury_amount']:,.2f}"
+                            if result.get("work_injury_amount")
                             else None
                         ),
                         (

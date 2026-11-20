@@ -61,13 +61,16 @@
            {% if module in ['references', 'exports'] %}aria-current="page"{% endif %}>
           {{ t("nav.settings") }}
         </a>
+        {% if current_user.role == "admin" %}
+          <a class="guide-link {% if module == 'admin' %}active{% endif %}"
+             href="{{ url_for('admin.users') }}"
+             {% if module == 'admin' %}aria-current="page"{% endif %}>
+            {{ t("nav.section.admin") }}
+          </a>
+        {% endif %}
         <a class="guide-link" href="{{ url_for('dashboard.guide') }}">{{ t("nav.guide") }}</a>
         <a class="version-link" href="{{ url_for('dashboard.updates') }}">{{ current_version }}</a>
-        {% if current_user.role == "admin" %}
-          <a class="user" href="{{ url_for('admin.users') }}" title="{{ t('admin.users') }}">{{ current_user.username }}</a>
-        {% else %}
-          <span class="user">{{ current_user.username }}</span>
-        {% endif %}
+        <span class="user">{{ current_user.username }}</span>
         <form class="logout-form" method="post" action="{{ url_for('auth.logout') }}"><button class="logout" type="submit">{{ t("nav.logout") }}</button></form>
       {% endif %}
     </div>
@@ -119,14 +122,17 @@
           {% elif module == "payroll" %}
             <section class="context-nav-group">
               <div class="context-nav-title">{{ t("nav.section.payroll_exports") }}</div>
-              <a class="context-nav-item {% if endpoint.startswith('salary_records.') %}active{% endif %}" href="{{ url_for('salary_records.index', entity_id=request.args.get('payroll_entity_id') or request.args.get('entity_id')) }}">
-                <strong>{{ t('salary_record.title') }}</strong><span>{{ t('salary_record.subtitle') }}</span>
-              </a>
               <a class="context-nav-item {% if endpoint == 'payroll.attendance_payroll' %}active{% endif %}"
                   href="{{ url_for('payroll.attendance_payroll', year_month=operating_month) }}"
                  {% if endpoint == 'payroll.attendance_payroll' %}aria-current="page"{% endif %}>
                 <strong>{{ t("payroll.monthly_payroll") }}</strong>
                 <span>{{ t("nav.payroll.subtitle") }}</span>
+              </a>
+              <a class="context-nav-item {% if endpoint == 'payroll.final_payment' %}active{% endif %}"
+                 href="{{ url_for('payroll.final_payment', year_month=operating_month) }}"
+                 {% if endpoint == 'payroll.final_payment' %}aria-current="page"{% endif %}>
+                <strong>{{ t("final_payment.title") }}</strong>
+                <span>{{ t("final_payment.nav_hint") }}</span>
               </a>
               <a class="context-nav-item {% if endpoint == 'payroll.mpf_contributions' %}active{% endif %}"
                   href="{{ url_for('payroll.mpf_contributions', year_month=operating_month) }}"
@@ -134,11 +140,8 @@
                 <strong>{{ t("mpf.export_title") }}</strong>
                 <span>{{ t("mpf.export_nav_hint") }}</span>
               </a>
-              <a class="context-nav-item {% if endpoint == 'payroll.final_payment' %}active{% endif %}"
-                 href="{{ url_for('payroll.final_payment', year_month=operating_month) }}"
-                 {% if endpoint == 'payroll.final_payment' %}aria-current="page"{% endif %}>
-                <strong>{{ t("final_payment.title") }}</strong>
-                <span>{{ t("final_payment.nav_hint") }}</span>
+              <a class="context-nav-item {% if endpoint.startswith('salary_records.') %}active{% endif %}" href="{{ url_for('salary_records.index', entity_id=request.args.get('payroll_entity_id') or request.args.get('entity_id')) }}">
+                <strong>{{ t('salary_record.title') }}</strong><span>{{ t('salary_record.subtitle') }}</span>
               </a>
             </section>
           {% elif module in ["references", "exports"] %}
@@ -356,6 +359,9 @@
       if (!dialog || dialog.open) return;
       dialog._opener = trigger;
       dialog.showModal();
+      dialog.scrollTop = 0;
+      const body = dialog.querySelector(".record-editor-body");
+      if (body) body.scrollTop = 0;
     }
     document.querySelectorAll("[data-dialog-open]").forEach((button) => {
       button.addEventListener("click", () => openAppDialog(button));

@@ -175,7 +175,8 @@ def new_employee():
             )
             db.session.add(employee)
             db.session.flush()
-            if request.form.get("requires_attendance", "1") == "0":
+            default_required = "0" if payroll_group == "management" else "1"
+            if request.form.get("requires_attendance", default_required) == "0":
                 db.session.add(
                     set_long_term_attendance_policy(
                         employee,

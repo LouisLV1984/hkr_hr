@@ -18,7 +18,22 @@
     if (autofill && row.dataset.netManual !== '1' && gross !== null && mpf !== null && Number.isFinite(gross) && Number.isFinite(mpf)) fields.net_amount.value = displayMoney(gross-mpf);
     const net = number(fields.net_amount), note = row.querySelector('.salary-record-difference');
     const values = [gross,mpf,net];
-    note.textContent = values.every(n => n !== null && Number.isFinite(n)) && Math.abs(gross-mpf-net) > 0.005 ? labels.difference : '';
+    const nonMpf = Number(row.dataset.nonMpfAdditions || '0') || 0;
+    const medical = Number(row.dataset.medicalReimbursement || '0') || 0;
+    note.classList.remove('info-note');
+    if (values.every(n => n !== null && Number.isFinite(n))) {
+      const diff = net - (gross - mpf);
+      if (Math.abs(diff) <= 0.005) {
+        note.textContent = '';
+      } else if (nonMpf > 0 && Math.abs(diff - nonMpf) <= 0.005) {
+        note.textContent = medical > 0 ? `含工傷醫療實銷等非 MPF 款項 ${displayMoney(nonMpf)}` : `含非 MPF 款項 ${displayMoney(nonMpf)}`;
+        note.classList.add('info-note');
+      } else {
+        note.textContent = labels.difference;
+      }
+    } else {
+      note.textContent = '';
+    }
     if (values.some(n => n !== null && n < 0)) note.textContent += ' ' + labels.negative;
   }
   form.querySelectorAll('[data-salary-row]').forEach(row => refresh(row));
@@ -63,6 +78,8 @@
           const input = row.querySelector('[name="' + row.dataset.employeeId + '.' + key + '"]');
           input.value = value; if (input.matches('[data-money]')) formatInput(input);
         });
+        row.dataset.nonMpfAdditions = data.non_mpf_additions || '0';
+        row.dataset.medicalReimbursement = data.medical_reimbursement || '0';
         row.dataset.netManual = '1'; dirty = true; refresh(row); filled++;
       }
       message.textContent = labels.batch_prefilled.replace('{filled}', filled).replace('{skipped}', skipped);
@@ -86,6 +103,8 @@
           input.value=value;
           if (input.matches('[data-money]')) formatInput(input);
         });
+        row.dataset.nonMpfAdditions = data.non_mpf_additions || '0';
+        row.dataset.medicalReimbursement = data.medical_reimbursement || '0';
         row.dataset.netManual='1'; dirty=true; refresh(row); message.textContent=data.message;
       } catch(error) { message.textContent=error.message || labels.failed; }
       finally { prefill.disabled=false; }

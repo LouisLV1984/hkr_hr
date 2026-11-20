@@ -9,6 +9,7 @@ for (const button of document.querySelectorAll("[data-dialog-open$='-add-dialog'
     if (past) {
       past.remove();
       form.reset();
+      form.querySelectorAll(".unified-file-picker span").forEach(span => { span.textContent = "未選擇文件"; });
       title.textContent = title.dataset.originalTitle;
       begins.required = false;
     }

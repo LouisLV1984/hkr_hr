@@ -2479,7 +2479,12 @@ details[open] > summary .when-closed { display: none; }
 .activity-detail-grid small { color: var(--muted); }
 .activity-detail-grid .wide { grid-column: 1 / -1; }
 .app-dialog {
-  width: min(520px, calc(100% - 28px));
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: min(520px, calc(100vw - 28px));
+  max-width: calc(100vw - 28px);
+  max-height: calc(100dvh - 28px);
   padding: 0;
   border: 0;
   border-radius: 8px;
@@ -2495,12 +2500,12 @@ details[open] > summary .when-closed { display: none; }
 }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 9px; padding-top: 4px; }
 .record-editor-dialog {
-  width: min(860px, calc(100% - 28px));
+  width: min(860px, calc(100vw - 28px));
   height: fit-content;
-  min-width: min(560px, calc(100% - 28px));
-  min-height: min(420px, calc(100vh - 28px));
+  min-width: min(560px, calc(100vw - 28px));
+  min-height: min(360px, calc(100dvh - 28px));
   max-width: calc(100vw - 28px);
-  max-height: calc(100vh - 28px);
+  max-height: calc(100dvh - 28px);
   overflow: auto;
   resize: both;
 }
@@ -3308,6 +3313,8 @@ details[open] > summary .when-closed { display: none; }
 .salary-record-table [data-money] { text-align:right; font-variant-numeric:tabular-nums; }
 .salary-record-table small { display:block; margin-top:5px; }
 .salary-record-table .salary-record-difference { color:#925b00; }
+.salary-record-table .salary-record-difference.info-note { color: var(--primary); }
+.mpf-inline-warning { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .salary-record-table details label { display:block; margin-top:10px; }
 .salary-record-table details button { margin-top:8px; }
 /* Monthly cost allocation shares the attendance input styling. */

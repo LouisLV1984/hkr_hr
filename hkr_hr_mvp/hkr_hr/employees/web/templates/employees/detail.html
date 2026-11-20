@@ -35,7 +35,9 @@
     <div class="profile-facts">
       <span>{{ t("common.active") if employee.derived_status == "active" else t("common.departed") }}</span>
       {% if employee.scheduled_departure_date %}
-        <span>{{ t("employee.scheduled_departure") }} {{ fmt_date(employee.scheduled_departure_date) }}</span>
+        <span>{{ t("employee.scheduled_departure") }} {{ fmt_date(employee.scheduled_departure_date) }} · <a href="{{ url_for('payroll.final_payment', year_month=employee.scheduled_departure_date.strftime('%Y-%m'), payroll_group=employee.payroll_group) }}">前往離職結算 →</a></span>
+      {% elif period and period.end_date %}
+        <span>{{ t("employee.last_working_day") }} {{ fmt_date(period.end_date) }} · <a href="{{ url_for('payroll.final_payment', year_month=period.end_date.strftime('%Y-%m'), payroll_group=employee.payroll_group) }}">前往離職結算 →</a></span>
       {% endif %}
       {% if assignment and assignment.primary_position %}<span>{{ assignment.primary_position.display_name }}</span>{% endif %}
       <span>{{ employee.employee_type.display_name }}</span>
@@ -123,7 +125,25 @@
       </ul>
     </article>
     {% endif %}
-    <article id="pay-attendance-policy" class="panel current-state-card{{ ' span-wide' if employee.payroll_group == 'site_daily' else '' }}">
+    <article id="pay-adjustments" class="panel current-state-card">
+      <div class="section-head"><div><span class="eyebrow">指定月份一次性調整</span><h2>{{ payroll_adjustments|selectattr('status', 'equalto', 'active')|list|length }} 筆</h2></div><button class="mini-btn" type="button" data-dialog-open="add-payroll-adjustment-dialog">新增一次性調整</button></div>
+      <p class="form-note">供非考勤的一次性獎金、補發（正數）或扣回（負數），計入當月應發工資與 MPF 相關入息；考勤／OT 差額請於考勤 PDF 內更正。</p>
+      <ul class="compact-list">
+        {% for item in payroll_adjustments if item.status == 'active' %}
+          <li>
+            <div>
+              <strong>{{ item.year_month }} · {{ item.label }} · {{ '%+.2f'|format(item.amount) }}</strong>
+              <span>{% if item.project %}{{ item.project.name }}{% endif %}{% if item.evidence_document %}{% if item.project %} · {% endif %}<a target="_blank" href="{{ url_for('documents.open_document', document_id=item.evidence_document.id) }}">{{ item.evidence_document.original_filename }}</a>{% else %}{% if item.project %} · {% endif %}<span class="flag warn">憑證待補</span>{% endif %}{% if item.remarks %} · {{ item.remarks }}{% endif %}</span>
+            </div>
+            <form class="mini-form" method="post" action="{{ url_for('payroll.withdraw_payroll_adjustment', adjustment_id=item.id) }}" data-confirm="確定撤回此筆一次性調整？">
+              <input type="hidden" name="return_to" value="employee">
+              <button class="mini-btn danger-text" type="submit">{{ t("common.withdraw") }}</button>
+            </form>
+          </li>
+        {% else %}<li><span>{{ t("common.not_set") }}</span></li>{% endfor %}
+      </ul>
+    </article>
+    <article id="pay-attendance-policy" class="panel current-state-card">
       <div class="section-head"><div><span class="eyebrow">{{ t("employee.current_attendance_policy") }}</span><h2>{{ t("attendance.required") if attendance_required_now else t("attendance.long_term_exempt") }}</h2></div><button class="mini-btn" type="button" data-dialog-open="edit-attendance-policy-dialog">{{ t("common.edit") }}</button></div>
       <dl class="detail-grid"><div><dt>{{ t("employee.effective_date") }}</dt><dd>{% if attendance_policy %}{{ t("attendance.effective_from_value", month=attendance_policy.effective_from_month) }}{% else %}{{ t("employee.default_rule") }}{% endif %}</dd></div><div><dt>{{ t("employee.policy_effect") }}</dt><dd>{{ t("attendance.monthly_required_field_hint") }}</dd></div></dl>
     </article>
@@ -207,6 +227,24 @@
         <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
       </form>
     </dialog>{% endif %}
+    <dialog class="app-dialog record-editor-dialog" id="add-payroll-adjustment-dialog">
+      <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('payroll.add_payroll_adjustment', employee_id=employee.id) }}" enctype="multipart/form-data">
+        <input type="hidden" name="return_to" value="employee">
+        <div class="section-head record-editor-head"><div><h2>新增指定月份一次性調整</h2><p>支援正數（獎金／補發）與負數（扣回）；計入當月應發工資與 MPF 相關入息。</p></div><button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button></div>
+        <div class="record-editor-body">
+        <p class="form-note">考勤／OT 差額請走考勤 PDF 內的「更正過往考勤」；此處僅作非考勤補發或扣款。</p>
+        <div class="form-grid">
+          <label><span>適用月份 *</span><input type="month" name="year_month" value="{{ default_payroll_month }}" required></label>
+          <label><span>調整金額（正數＝補發，負數＝扣回）*</span><input type="number" step="0.01" name="amount" required placeholder="例如 1000 或 -500"></label>
+          <label class="wide"><span>調整原因／項目名稱 *</span><input name="label" maxlength="160" required placeholder="例如：項目獎金、預支薪金扣回、多發補貼追扣"></label>
+          <label><span>所屬項目（可選）</span><select name="project_id"><option value="">{{ t("common.unassigned") }}</option>{% for project in projects %}<option value="{{ project.id }}" {% if assignment and assignment.project_id == project.id %}selected{% endif %}>{{ project.name }}</option>{% endfor %}</select></label>
+          <label><span>憑證附件（可選）</span><input type="file" name="evidence"></label>
+          <label class="wide"><span>{{ t("common.remarks") }}</span><textarea name="remarks"></textarea></label>
+        </div>
+        </div>
+        <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.save") }}</button></div>
+      </form>
+    </dialog>
     <dialog class="app-dialog record-editor-dialog" id="edit-attendance-policy-dialog">
       <form class="dialog-panel record-editor-form" method="post" action="{{ url_for('employees.update_personal', employee_id=employee.id) }}">
         <input type="hidden" name="form_scope" value="attendance_policy"><input type="hidden" name="profile_revision" value="{{ profile_revision(employee, 'attendance_policy') }}">
@@ -317,7 +355,7 @@
             <label><span>{{ t("employee.valid_from") }}</span><input type="date" name="valid_from"></label>
             <label><span>{{ t("employee.expiry_date") }}</span><input type="date" name="expiry_date"><small>{{ t("profile.expiry_required") }}</small></label>
             <label class="check-line"><input type="checkbox" name="is_long_term"><span>{{ t("employee.long_term") }}</span></label>
-            <label><span>{{ t("documents.file") }}</span><input type="file" name="evidence"></label>
+            <label class="wide"><span>{{ t("documents.file") }}（可同時上傳新證件檔案）</span><input type="file" name="evidence"></label>
             </div>
             <div class="dialog-actions record-editor-actions"><button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button><button class="primary-btn" type="submit">{{ t("common.add") }}</button></div>
           </form>

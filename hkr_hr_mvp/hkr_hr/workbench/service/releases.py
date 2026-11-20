@@ -1,5 +1,59 @@
 RELEASES = [
 {
+    "version": "V0.7.8",
+    "date": "2026-11-20",
+    "title": {
+        "zh-Hant": "離職結算日曆天折算、指定月份一次性調整與全站操作邏輯優化",
+        "zh-Hans": "离职结算日历天折算、指定月份一次性调整与全站操作逻辑优化",
+        "en": "Calendar-day departure payroll, controlled one-off adjustments, and workflow usability fixes"
+    },
+    "features": {
+        "zh-Hant": [
+            "離職結算（Final Payment）：標準月薪（全月制）離職月基本工資改為與每月工資表一致的「按日曆天自動折算」（自動扣減期間無薪假、病假與工傷）；日工及「按出勤日數折算月薪」維持按實際出勤日數結算。同時修正未結算年假餘額小數位數過長導致折疊區靜默阻擋保存的問題。",
+            "重新開放受控的「指定月份一次性調整」入口（員工詳情「任職與薪酬」與「每月工資表」均可快速操作），支援非考勤項目之正數補發／獎金與負數扣回，強制填寫原因、可附憑證並寫入審計日誌，計入當月應發工資與 MPF 相關入息。",
+            "新建立「管理人員及總部人員」檔案預設為長期免交考勤；當 HR 新保存「長期免交考勤」或「需要每月考勤」時，自動覆蓋該生效月份原有的單月例外設定。",
+            "「每月工資表」為缺少 MPF 計劃、香港身份證或英文姓名的可出糧員工掛出醒目頂部警告與行內直達修正標籤（不硬攔截工資表匯出，提前提醒避免 MPF ZIP 匯出受阻）。"
+        ],
+        "zh-Hans": [
+            "离职结算（Final Payment）：标准月薪（全月制）离职月基本工资改为与每月工资表一致的“按日历天自动折算”（自动扣减期间无薪假、病假与工伤）；日工及“按出勤日数折算月薪”维持按实际出勤日数结算。同时修复未结算年假余额小数位数过长导致折叠区静默阻挡保存的问题。",
+            "重新开放受控的“指定月份一次性调整”入口（员工详情“任职与薪酬”与“每月工资表”均可快速操作），支持非考勤项目的正数补发／奖金与负数扣回，强制填写原因、可附凭证并写入审计日志，计入当月应发工资与 MPF 相关入息。",
+            "新建立“管理人员及总部人员”档案默认为长期免交考勤；当 HR 新保存“长期免交考勤”或“需要每月考勤”时，自动覆盖该生效月份原有的单月例外设定。",
+            "“每月工资表”为缺少 MPF 计划、香港身份证或英文姓名的可出粮员工挂出醒目顶部警告与行内直达修正标签（不硬拦截工资表导出，提前提醒避免 MPF ZIP 导出受阻）。"
+        ],
+        "en": [
+            "Departure Payroll (Final Payment): standard full-month salaried staff now calculate final-month basic salary using automatic calendar-day pro-rata (deducting unpaid leave, sick leave, and work injury identically to Monthly Payroll), while daily workers and attendance-prorated monthly staff remain on actual working days; also rounded prefilled leave balances to 3 decimal places and auto-expanded collapsed sections on form validation errors.",
+            "Re-opened controlled one-off monthly payroll adjustments in both Employee Profile (Employment & Salary) and Monthly Payroll rows, supporting positive bonuses and negative deductions with mandatory reason, optional evidence upload, and audit logging (counted in relevant income / MPF).",
+            "Defaulted newly created Management/Office employees to long-term attendance exemption, and made saving a long-term attendance policy automatically clear any conflicting single-month override for that effective month.",
+            "Added prominent top-level and inline warnings on Monthly Payroll when payroll-ready staff are missing an MPF scheme, HKID, or English name without blocking payroll export."
+        ]
+    },
+    "improvements": {
+        "zh-Hant": [
+            "修復全域 `<dialog>` 彈窗定位，確保在 `1280×800` 等桌面螢幕中一律置中於可視區域內顯示。",
+            "左側薪酬選單調整為「每月工資表 → 離職結算 → MPF 供款匯出 → 實際發薪紀錄」；「實際發薪紀錄」每行補上直接預填按鈕並於含工傷醫療實銷等非 MPF 款項時改為清晰說明而非誤報差異警告；切換發薪單位時保留原狀態篩選。",
+            "「工傷管理」補上頂部「登記工傷」選員按鈕與清晰空態指引、於新增工傷及醫療實銷彈窗即時顯示員工參考薪酬，並修正日工醫療實銷提示欄位為 `AM`（月工／總部為 `AN`）；病假表單於所有頁面正確切換病假規則說明。",
+            "新增員工頁面顯示員工編號前綴（`HKR`／`PRO`／`HKRD`）；文件中心選「當前銀行賬戶」跳轉並定位至銀行賬戶卡片附引導提示；考勤單份批次完成時顯示明確完成提示、「考勤詳情」已收表行補上「更正」入口、無上月考勤時明確提示手動填寫原預估日數；辦理離職文案與實際行為一致並於員工檔案加上直達「離職結算」連結；管理員頂部補上「Admin 專區」按鈕、`/exports` 標題統一為「匯出與歷史」並補齊審計日誌動作與對象中文翻譯。"
+        ],
+        "zh-Hans": [
+            "修复全局 `<dialog>` 弹窗定位，确保在 `1280×800` 等桌面屏幕中一律居中于可视区域内显示。",
+            "左侧薪酬菜单调整为“每月工资表 → 离职结算 → MPF 供款导出 → 实际发薪记录”；“实际发薪记录”每行补上直接预填按钮并于含工伤医疗实销等非 MPF 款项时改为清晰说明而非误报差异警告；切换发薪单位时保留原状态筛选。",
+            "“工伤管理”补上顶部“登记工伤”选员按钮与清晰空态指引、于新增工伤及医疗实销弹窗即时显示员工参考薪酬，并修正日工医疗实销提示栏位为 `AM`（月工／总部为 `AN`）；病假表单于所有页面正确切换病假规则说明。",
+            "新增员工页面显示员工编号前缀（`HKR`／`PRO`／`HKRD`）；文件中心选“当前银行账户”跳转并定位至银行账户卡片附引导提示；考勤单份批次完成时显示明确完成提示、“考勤详情”已收表行补上“更正”入口、无上月考勤时明确提示手动填写原预估日数；办理离职文案与实际行为一致并于员工档案加上直达“离职结算”链接；管理员顶部补上“Admin 专区”按钮、`/exports` 标题统一为“导出与历史”并补齐审计日志动作与对象中文翻译。"
+        ],
+        "en": [
+            "Fixed global `<dialog>` centering and viewport bounds so modals always open inside the visible viewport on 1280×800 screens.",
+            "Reordered the Payroll sidebar to Monthly Payroll → Departure Payroll → MPF Contributions → Actual Salary Records; added inline prefill buttons and non-MPF reimbursement recognition on Actual Salary Records; preserved status filters when changing payroll entity.",
+            "Added a direct Register Work Injury chooser and clear empty state on Work Injury Management, immediate salary references in injury & expense dialogs, dynamic `AM`/`AN` column notices for daily vs monthly staff, and consistent leave-type rule hints across all leave dialogs.",
+            "Added ID prefix labels on New Employee, guided anchor redirect for bank account uploads, explicit completion toast and Edit buttons on Attendance, aligned termination copy with direct Departure Payroll links on Employee Profile, visible Admin topbar link, unified Exports & History heading, and complete Chinese/English audit log translations."
+        ]
+    },
+    "limitations": {
+        "zh-Hant": [],
+        "zh-Hans": [],
+        "en": []
+    }
+},
+{
     "version": "V0.7.7",
     "date": "2026-11-19",
     "title": {

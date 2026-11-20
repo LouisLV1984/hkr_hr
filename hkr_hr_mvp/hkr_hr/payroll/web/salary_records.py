@@ -216,8 +216,17 @@ def prefill():
     record = next((r for r in candidates if (r.calculation_json or {}).get("payroll_entity_code") == entity.code), None)
     if record is None:
         return jsonify(error=t("salary_record.no_snapshot")), 404
-    return jsonify(values={**{f:str(getattr(record,f)) for f in MONEY_FIELDS}, "currency":record.currency},
-                   message=t("salary_record.prefilled", run=record.run_id))
+    calc = record.calculation_json or {}
+    medical = Decimal(str(calc.get("work_injury_medical_reimbursement_amount") or 0))
+    pil = Decimal(str(calc.get("payment_in_lieu") or 0))
+    sp_lsp = Decimal(str(calc.get("severance_long_service") or 0))
+    non_mpf_additions = medical + pil + sp_lsp
+    return jsonify(
+        values={**{f: str(getattr(record, f)) for f in MONEY_FIELDS}, "currency": record.currency},
+        non_mpf_additions=str(non_mpf_additions),
+        medical_reimbursement=str(medical),
+        message=t("salary_record.prefilled", run=record.run_id),
+    )
 
 
 @salary_records_bp.get("/salary-records/annual")

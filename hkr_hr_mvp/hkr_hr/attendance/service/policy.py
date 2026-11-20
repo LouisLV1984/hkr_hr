@@ -284,6 +284,15 @@ def set_long_term_attendance_policy(
     created_by=None,
     remarks=None,
 ):
+    from hkr_hr.platform.db import db
+
+    monthly_override = AttendanceMonthlySummary.query.filter(
+        AttendanceMonthlySummary.employee_id == employee.id,
+        AttendanceMonthlySummary.year_month == effective_from_month,
+        AttendanceMonthlySummary.status.in_(("required", "not_required")),
+    ).first()
+    if monthly_override:
+        db.session.delete(monthly_override)
     policy = EmployeeAttendancePolicy.query.filter_by(
         employee_id=employee.id,
         effective_from_month=effective_from_month,

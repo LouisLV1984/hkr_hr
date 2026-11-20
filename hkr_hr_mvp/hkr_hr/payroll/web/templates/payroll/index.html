@@ -6,6 +6,8 @@
 <section class="payroll-main">
   <section class="panel payroll-controls payroll-desk">
   <form class="hr-inline-form" method="get" data-payroll-filter>
+    {% if selected_status %}<input type="hidden" name="status" value="{{ selected_status }}">{% endif %}
+    {% if employee_q %}<input type="hidden" name="q" value="{{ employee_q }}">{% endif %}
     <label><span>{{ t("payroll.current_payroll_month") }}</span><input type="month" name="year_month" value="{{ year_month }}" required></label>
     <label><span>{{ t("employees.payroll_group") }}</span><select name="payroll_group"><option value="all" {% if selected_group == "all" %}selected{% endif %}>{{ t("payroll.group_all") }}</option>{% for code, label in payroll_groups %}<option value="{{ code }}" {% if selected_group == code %}selected{% endif %}>{{ option_t("payroll_group", code, label) }}</option>{% endfor %}</select></label>
     <label><span>{{ t("employee.payroll_entity") }}</span><select name="payroll_entity_id"><option value="" {% if selected_payroll_entity_id is none %}selected{% endif %}>{{ t("payroll.entity_all_preview") }}</option>{% for item in payroll_entities %}<option value="{{ item.id }}" {% if selected_payroll_entity_id == item.id %}selected{% endif %}>{{ item.display_name }}</option>{% endfor %}</select><small>{{ t("payroll.entity_filter_hint") }}</small></label>
@@ -47,6 +49,12 @@
     </div>
   </details>
   <p class="muted">{{ t("review.export_not_approval") }}<br>{{ t("review.net_formula") }} {% for item in summary.currencies %}{{ item.currency }} {{ fmt_money(item.medical) }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+  {% if mpf_warning_rows %}
+  <div class="inline-alert warn" role="alert">
+    <strong>MPF 申報資料未齊（{{ mpf_warning_rows|length }} 人）</strong>
+    <span>以下可出糧員工仍缺 MPF 計劃、香港身份證或身份證英文姓名；每月工資表仍可照常匯出，但匯出全部 MPF 檔案前必須補齊：{% for wrow in mpf_warning_rows[:8] %}<a href="{{ url_for('employees.view_employee', employee_id=wrow.employee.id, tab=wrow.mpf_warnings[0][1]) }}">{{ wrow.employee.employee_no }} {{ wrow.employee.display_name }}（{{ wrow.mpf_warnings|map(attribute=0)|join('、') }}）</a>{% if not loop.last %}、{% endif %}{% endfor %}{% if mpf_warning_rows|length > 8 %} 等{% endif %}。 <a href="{{ url_for('payroll.mpf_contributions', year_month=year_month) }}">查看 MPF 供款頁 →</a></span>
+  </div>
+  {% endif %}
   <section class="panel payroll-employee-results">
     <div class="section-head"><div><h2>{{ t('hr.unassigned_list') if selected_status == 'unassigned' else t("payroll.employee_details") }}</h2>{% if selected_status != 'unassigned' %}<p>{{ t("payroll.employee_table_hint", month=month_t(year_month)) }}</p>{% endif %}</div></div>
     <form class="payroll-employee-filter" method="get">
@@ -72,6 +80,13 @@
           <td>{{ row.assignment.payroll_entity.display_name if row.assignment and row.assignment.payroll_entity else t("common.not_set") }}</td>
           <td class="pay-review">
             {% if is_payroll_ready(row) %}<span class="flag success">{{ t('readiness.payroll_ready') }}</span>{% endif %}
+            {% if row.get('mpf_warnings') %}
+              <div class="mpf-inline-warning">
+                {% for label, target_tab in row.mpf_warnings %}
+                  <a class="flag warn flag-link" href="{{ url_for('employees.view_employee', employee_id=row.employee.id, tab=target_tab) }}">⚠ {{ label }} →</a>
+                {% endfor %}
+              </div>
+            {% endif %}
             {% for reason, link, dates in row.get('tasks', []) %}
               <a class="review-task" href="{{ link }}">{{ t(reason) if reason.startswith(("hr.","leave.")) else message_t(reason) }} <span aria-hidden="true">→</span></a>
               {% if dates %}<small>{{ dates|join(' · ') }}</small>{% endif %}
@@ -86,6 +101,28 @@
           <td>{% if not row.blockers %}<strong>{{ row.currency }} {{ fmt_money(row.net_amount) }}</strong>{% else %}−{% endif %}</td>
           <td class="row-actions">
             {% if is_payroll_ready(row) %}<form method="post" action="{{ url_for('payroll.export_current_payroll') }}"><input type="hidden" name="year_month" value="{{ year_month }}"><input type="hidden" name="payroll_group" value="{{ selected_group }}"><input type="hidden" name="payroll_entity_id" value="{{ selected_payroll_entity_id or '' }}"><input type="hidden" name="scope" value="selected"><input type="hidden" name="employee_ids" value="{{ row.employee.id }}"><button class="mini-btn" type="submit" {% if selected_payroll_entity_id is none %}disabled{% endif %}>{{ t("payroll.export_employee") }}</button></form>{% endif %}
+            <button class="mini-btn" type="button" data-quick-adjustment-open data-employee-id="{{ row.employee.id }}" data-employee-label="{{ row.employee.employee_no }} · {{ row.employee.display_name }}" data-project-id="{{ row.assignment.project_id if row.assignment and row.assignment.project_id else '' }}">一次性調整</button>
+            {% set emp_adjustments = adjustments_by_employee.get(row.employee.id, []) %}
+            {% if emp_adjustments %}
+            <details class="review-notes">
+              <summary>本月調整 ({{ emp_adjustments|length }})</summary>
+              <ul>
+                {% for adj in emp_adjustments %}
+                <li>
+                  <span>{{ adj.label }}：<strong>{{ '%+.2f'|format(adj.amount) }}</strong>{% if adj.evidence_document %} · <a target="_blank" href="{{ url_for('documents.open_document', document_id=adj.evidence_document.id) }}">憑證</a>{% endif %}</span>
+                  <form class="mini-form" method="post" action="{{ url_for('payroll.withdraw_payroll_adjustment', adjustment_id=adj.id) }}" data-confirm="確定撤回此筆一次性調整？">
+                    <input type="hidden" name="return_to" value="payroll">
+                    <input type="hidden" name="pay_month" value="{{ year_month }}">
+                    <input type="hidden" name="pay_group" value="{{ selected_group }}">
+                    <input type="hidden" name="pay_entity" value="{{ selected_payroll_entity_id or '' }}">
+                    <input type="hidden" name="pay_status" value="{{ selected_status }}">
+                    <button class="mini-btn danger-text" type="submit">{{ t("common.withdraw") }}</button>
+                  </form>
+                </li>
+                {% endfor %}
+              </ul>
+            </details>
+            {% endif %}
 {% with records=corrections_by_employee.get(row.employee.id, []) %}{% include "attendance/_correction_history.html" %}{% endwith %}
           </td>
         </tr>{% else %}<tr><td colspan="8" class="empty-cell">{{ t("common.no_results") }}</td></tr>{% endfor %}</tbody>
@@ -122,10 +159,51 @@
   </details>
 
 </section>
+<dialog class="app-dialog record-editor-dialog" id="payroll-quick-adjustment-dialog">
+  <form class="dialog-panel record-editor-form" method="post" action="" enctype="multipart/form-data" data-quick-adjustment-form>
+    <input type="hidden" name="return_to" value="payroll">
+    <input type="hidden" name="pay_month" value="{{ year_month }}">
+    <input type="hidden" name="pay_group" value="{{ selected_group }}">
+    <input type="hidden" name="pay_entity" value="{{ selected_payroll_entity_id or '' }}">
+    <input type="hidden" name="pay_status" value="{{ selected_status }}">
+    <div class="section-head record-editor-head">
+      <div><h2>指定月份一次性調整</h2><p data-quick-adjustment-employee></p></div>
+      <button class="icon-btn" type="button" data-dialog-close aria-label="{{ t('common.close') }}">×</button>
+    </div>
+    <div class="record-editor-body">
+      <p class="form-note">考勤／OT 差額請走考勤 PDF 內的「更正過往考勤」；此處僅用於非考勤的一次性獎金、補發或扣回，金額會計入當月應發工資（進 Excel 的 Other Payment 欄並計入 MPF 相關入息）。</p>
+      <div class="form-grid">
+        <label><span>適用月份 *</span><input type="month" name="year_month" value="{{ year_month }}" required></label>
+        <label><span>調整金額（正數＝補發／獎金，負數＝扣回）*</span><input type="number" step="0.01" name="amount" required placeholder="例如 1000 或 -500"></label>
+        <label class="wide"><span>調整原因／項目名稱 *</span><input name="label" maxlength="160" required placeholder="例如：項目獎金、預支薪金扣回、多發補貼追扣"></label>
+        <label><span>所屬項目（可選）</span><select name="project_id"><option value="">{{ t("common.unassigned") }}</option>{% for project in projects %}<option value="{{ project.id }}">{{ project.name }}</option>{% endfor %}</select></label>
+        <label><span>憑證附件（可選）</span><input type="file" name="evidence"></label>
+        <label class="wide"><span>{{ t("common.remarks") }}</span><textarea name="remarks"></textarea></label>
+      </div>
+    </div>
+    <div class="dialog-actions record-editor-actions">
+      <button class="ghost-btn" type="button" data-dialog-close>{{ t("common.cancel") }}</button>
+      <button class="primary-btn" type="submit">{{ t("common.save") }}</button>
+    </div>
+  </form>
+</dialog>
 {% endblock %}
 {% block scripts %}<script>
 const payrollFilter=document.querySelector("[data-payroll-filter]");
 payrollFilter?.querySelectorAll("input, select").forEach((control)=>{control.addEventListener("change",()=>payrollFilter.requestSubmit());});
+const quickAdjDialog=document.getElementById("payroll-quick-adjustment-dialog");
+const quickAdjForm=quickAdjDialog?.querySelector("[data-quick-adjustment-form]");
+const quickAdjTitle=quickAdjDialog?.querySelector("[data-quick-adjustment-employee]");
+document.querySelectorAll("[data-quick-adjustment-open]").forEach((btn)=>{
+  btn.addEventListener("click",()=>{
+    if(!quickAdjDialog||!quickAdjForm)return;
+    quickAdjForm.action=`/employees/${btn.dataset.employeeId}/payroll-adjustments`;
+    if(quickAdjTitle)quickAdjTitle.textContent=btn.dataset.employeeLabel||"";
+    const proj=quickAdjForm.querySelector('select[name="project_id"]');
+    if(proj)proj.value=btn.dataset.projectId||"";
+    quickAdjDialog.showModal();
+  });
+});
 const payrollSelectAll=document.querySelector("[data-payroll-select-all]");
 const payrollEmployeeChecks=Array.from(document.querySelectorAll("[data-payroll-employee-checkbox]"));
 const payrollExportButton=document.querySelector("[data-payroll-selected-export]");

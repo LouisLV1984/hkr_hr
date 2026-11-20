@@ -76,7 +76,15 @@
         <p class="form-note">{{ t("final_payment.actual_attendance_hint") }}</p>
         <p class="form-note strong-note">{{ t("final_payment.pay_component_hint") }}</p>
         <div class="compact-form-grid four-columns">
+          {% if row.calendar_prorated_monthly %}
+          <div class="inline-note">
+            <strong>基本工資（按日曆天自動折算）</strong>
+            <span>在職 {{ row.calendar_active_days|int }} 個日曆天，計薪 {{ row.working_days }} 天{% if row.unpaid_leave_days %}（扣無薪假 {{ row.unpaid_leave_days }} 天）{% endif %}{% if row.sick_leave_days %}（另計病假 {{ row.sick_leave_days }} 天）{% endif %}{% if row.work_injury_days %}（另計工傷 {{ row.work_injury_days }} 天）{% endif %}。</span>
+            <input type="hidden" name="actual_working_days" value="0">
+          </div>
+          {% else %}
           <label><span>{{ t("attendance.working_days") }}</span><input type="number" min="0" step="0.01" name="actual_working_days" value="{{ row.working_days }}" required></label>
+          {% endif %}
           <label><span>{{ t("attendance.ot_hours") }}</span><input type="number" min="0" step="0.01" name="actual_ot_hours" value="{{ row.ot_hours }}" required></label>
           <label><span>{{ t("attendance.holiday_days") }}</span><input type="number" min="0" step="0.01" name="actual_holiday_days" value="{{ row.holiday_days }}" required></label>
           <label><span>{{ t("payroll.large_ecall") }}</span><input type="number" min="0" step="1" name="large_ecall_count" value="{{ row.large_ecall_count|int }}"></label>
@@ -127,7 +135,10 @@
       <h3>3 · {{ t("workflow.settlement_result") }}</h3>
       <div class="final-payment-breakdown">
         <span>工資、補貼及假期款項合計 <strong>{{ fmt_money(row.wage_income) }}</strong></span>
-        <span>離職月基本工資 <strong>{{ fmt_money(row.base_amount) }}</strong></span>
+        <span>離職月基本工資{% if row.calendar_prorated_monthly %}（日曆天折算）{% endif %} <strong>{{ fmt_money(row.base_amount) }}</strong></span>
+        {% if row.sick_leave_amount %}<span>病假薪金 <strong>{{ fmt_money(row.sick_leave_amount) }}</strong></span>{% endif %}
+        {% if row.work_injury_amount %}<span>工傷薪金 <strong>{{ fmt_money(row.work_injury_amount) }}</strong></span>{% endif %}
+        {% if row.unpaid_leave_deduction %}<span>無薪假扣減 <strong>-{{ fmt_money(row.unpaid_leave_deduction) }}</strong></span>{% endif %}
         <span>{{ t("final_payment.traffic_meal_allowance") }} <strong>{{ fmt_money(row.traffic_meal_allowance_amount) }}</strong></span>
         <span>{{ t("final_payment.special_allowance") }} <strong>{{ fmt_money(row.special_allowance_amount) }}</strong></span>
         {% if row.manual_allowance_amount %}<span>{{ t("final_payment.manual_allowance") }} <strong>{{ fmt_money(row.manual_allowance_amount) }}</strong></span>{% endif %}
@@ -172,6 +183,15 @@ document.querySelectorAll("[data-final-rate-editor]").forEach(editor => {
 const payrollFilter = document.querySelector("[data-payroll-filter]");
 payrollFilter?.querySelectorAll("input, select").forEach((control) => {
   control.addEventListener("change", () => payrollFilter.requestSubmit());
+});
+document.querySelectorAll("form.final-payment-form").forEach((form) => {
+  form.addEventListener("invalid", (event) => {
+    let parent = event.target.parentElement;
+    while (parent && parent !== form) {
+      if (parent.tagName === "DETAILS") parent.open = true;
+      parent = parent.parentElement;
+    }
+  }, true);
 });
 </script>
 {% endblock %}
