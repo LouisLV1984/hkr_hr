@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 
-from tests.fixtures import PayrollTestCase
+from tests.fixtures import APP_ROOT, PayrollTestCase
 from models import (db, Employee, EmployeeAnnualLeaveRecord, EmployeeAnnualLeaveBalance,
                     AttendanceMonthlySummary, AttendanceSegment, EmployeeCompLeaveCredit,
                     EmployeeWorkInjuryPeriod, User, AuditLog)
@@ -182,7 +182,7 @@ class AuditIntegrityTests(PayrollTestCase):
 
     def test_unsaved_prefill_does_not_claim_saved(self):
         from pathlib import Path
-        source=(Path(__file__).parents[1]/'templates/attendance/index.html').read_text(encoding='utf-8')
+        source=(APP_ROOT/'templates/attendance/index.html').read_text(encoding='utf-8')
         self.assertNotIn("prefill_source or 'saved'",source)
         self.assertIn('hasSavedComparison',source)
         self.assertIn('attendance.tail_pending_review',source)
