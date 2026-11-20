@@ -311,9 +311,13 @@ class ProfileWorkspaceTests(unittest.TestCase):
         self.assertIn("Work calendar", ref_en)
         self.assertIn("record-editor-dialog", ref_en)
         self.assertIn("panel history-disclosure", ref_en)
+        self.assertIn(">Filter</button>", ref_en)
+        ref_zh = self.client.get("/references?list=work_calendar&lang=zh-Hant").get_data(as_text=True)
+        self.assertIn(">篩選</button>", ref_zh)
 
         dash_expiry_en = self.client.get("/dashboard?panel=expiry&lang=en").get_data(as_text=True)
         self.assertIn("Due in 15d", dash_expiry_en)
+        self.assertIn(f"<td>{expiring_on.strftime('%Y/%m/%d')}</td>", dash_expiry_en)
 
         eid_tab3 = self.employee("C")
         pdf_same = pdf_bytes("SHARED-CONTRACT")

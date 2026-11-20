@@ -8,7 +8,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 from sqlalchemy import text, inspect
 import unittest
-from test_payroll_policy import PayrollPolicyTests
+import test_payroll_policy as policy_fixture
 from test_v1_workflows import pdf_bytes
 from models import (db, Employee, EmployeeSalary, GeneratedContract, PayrollRun, User,
                     EmployeeFinalPaymentCase, AttendanceBatch, AttendanceBatchItem,
@@ -20,13 +20,13 @@ from routes.payroll import build_group_workbook, mpf_preview_rows
 from routes.documents import contract_context
 
 class WorkflowImprovementsTests(unittest.TestCase):
-    setUp = PayrollPolicyTests.setUp
-    tearDown = PayrollPolicyTests.tearDown
-    login = PayrollPolicyTests.login
-    create_employee = PayrollPolicyTests.create_employee
-    complete_employee = PayrollPolicyTests.complete_employee
-    employee = PayrollPolicyTests.employee
-    ready = PayrollPolicyTests.ready
+    setUp = policy_fixture.PayrollPolicyTests.setUp
+    tearDown = policy_fixture.PayrollPolicyTests.tearDown
+    login = policy_fixture.PayrollPolicyTests.login
+    create_employee = policy_fixture.PayrollPolicyTests.create_employee
+    complete_employee = policy_fixture.PayrollPolicyTests.complete_employee
+    employee = policy_fixture.PayrollPolicyTests.employee
+    ready = policy_fixture.PayrollPolicyTests.ready
 
     def test_contract_drafts_keep_zero_effective_salary_and_original_files(self):
         eid = self.ready()
