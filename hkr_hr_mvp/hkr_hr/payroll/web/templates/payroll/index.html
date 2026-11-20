@@ -50,8 +50,8 @@
   </details>
   <p class="muted">{{ t("review.export_not_approval") }}<br>{{ t("review.net_formula") }} {% for item in summary.currencies %}{{ item.currency }} {{ fmt_money(item.medical) }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
   {% if mpf_warning_rows %}
-  <div class="inline-alert warn" role="alert">
-    <strong>MPF 申報資料未齊（{{ mpf_warning_rows|length }} 人）</strong>
+  <div class="inline-alert danger mpf-warning-banner" role="alert">
+    <strong>⚠ MPF 申報資料未齊（{{ mpf_warning_rows|length }} 人）</strong>
     <span>以下可出糧員工仍缺 MPF 計劃、香港身份證或身份證英文姓名；每月工資表仍可照常匯出，但匯出全部 MPF 檔案前必須補齊：{% for wrow in mpf_warning_rows[:8] %}<a href="{{ url_for('employees.view_employee', employee_id=wrow.employee.id, tab=wrow.mpf_warnings[0][1]) }}">{{ wrow.employee.employee_no }} {{ wrow.employee.display_name }}（{{ wrow.mpf_warnings|map(attribute=0)|join('、') }}）</a>{% if not loop.last %}、{% endif %}{% endfor %}{% if mpf_warning_rows|length > 8 %} 等{% endif %}。 <a href="{{ url_for('payroll.mpf_contributions', year_month=year_month) }}">查看 MPF 供款頁 →</a></span>
   </div>
   {% endif %}
@@ -83,7 +83,7 @@
             {% if row.get('mpf_warnings') %}
               <div class="mpf-inline-warning">
                 {% for label, target_tab in row.mpf_warnings %}
-                  <a class="flag warn flag-link" href="{{ url_for('employees.view_employee', employee_id=row.employee.id, tab=target_tab) }}">⚠ {{ label }} →</a>
+                  <a class="flag danger flag-link" href="{{ url_for('employees.view_employee', employee_id=row.employee.id, tab=target_tab) }}">⚠ {{ label }} →</a>
                 {% endfor %}
               </div>
             {% endif %}

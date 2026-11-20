@@ -3315,6 +3315,33 @@ details[open] > summary .when-closed { display: none; }
 .salary-record-table .salary-record-difference { color:#925b00; }
 .salary-record-table .salary-record-difference.info-note { color: var(--primary); }
 .mpf-inline-warning { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.inline-alert.danger,
+.mpf-warning-banner {
+  padding: 12px 14px;
+  border: 1px solid #eab8b1;
+  border-left: 4px solid var(--danger);
+  border-radius: 6px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  display: grid;
+  gap: 4px;
+}
+.inline-alert.danger strong,
+.inline-alert.danger span,
+.mpf-warning-banner strong,
+.mpf-warning-banner span {
+  color: var(--danger);
+}
+.inline-alert.danger a,
+.mpf-warning-banner a {
+  color: var(--danger);
+  font-weight: 600;
+  text-decoration: underline;
+}
+.inline-alert.danger a:hover,
+.mpf-warning-banner a:hover {
+  color: #8a1911;
+}
 .salary-record-table details label { display:block; margin-top:10px; }
 .salary-record-table details button { margin-top:8px; }
 /* Monthly cost allocation shares the attendance input styling. */
