@@ -3,7 +3,7 @@ from decimal import Decimal
 from unittest.mock import patch
 import unittest
 
-import test_audit_integrity as fixture
+from tests.fixtures import PayrollTestCase
 from models import db, Employee, EmployeeAnnualLeaveBalance, EmployeeAnnualLeaveRecord, AuditLog
 from tools.annual_leave_policy import annual_rate, entitlement, rollover
 from tools.annual_leave_setup import token
@@ -33,13 +33,7 @@ class FormulaTests(unittest.TestCase):
         self.assertEqual(entitlement(date(2026,3,4),7,2026,date(2026,3,31)),Decimal(7)*28/365)
 
 
-class SetupTests(unittest.TestCase):
-    setUp = fixture.AuditIntegrityTests.setUp
-    tearDown = fixture.AuditIntegrityTests.tearDown
-    login = fixture.AuditIntegrityTests.login
-    create_employee = fixture.AuditIntegrityTests.create_employee
-    complete_employee = fixture.AuditIntegrityTests.complete_employee
-    employee = fixture.AuditIntegrityTests.employee
+class SetupTests(PayrollTestCase):
 
     def test_date_change_requires_choice_and_keep_is_current_year_only(self):
         from tools.annual_leave_setup import apply
@@ -65,10 +59,9 @@ class SetupTests(unittest.TestCase):
         self.assertIn('2026-10-10',page)
 
     def test_staff_record_date_choice_preserves_then_recalculates(self):
-        from test_profile_integrity import ProfileIntegrityTests
         eid,_=self.employee('management')
         self.setup(eid,preserve='0')
-        staff=ProfileIntegrityTests.document(self,eid,'staff_record','C')
+        staff=self.document(eid,'staff_record','C')
         url=f'/documents/{staff}/review'
         self.client.post(url,data=dict(start_date='2026-07-01'))
         with self.app.app_context():
@@ -290,10 +283,9 @@ class SetupTests(unittest.TestCase):
                              + missing['employee_mpf'] - calculated['employee_mpf'])
 
     def test_confirmed_contract_and_staff_record_recalculate_current_year(self):
-        from test_profile_integrity import ProfileIntegrityTests
         eid,_=self.employee()
         self.setup(eid,start='2026-07-01')
-        did=ProfileIntegrityTests.document(self,eid,'signed_contract')
+        did=self.document(eid,'signed_contract')
         self.client.post(f'/documents/{did}/review',data=dict(contract_effective_date='2026-07-01',
                           contract_annual_leave_days='8'))
         with self.app.app_context():
@@ -304,7 +296,7 @@ class SetupTests(unittest.TestCase):
         with self.app.app_context():
             self.assertEqual(annual_leave_summary(db.session.get(Employee,eid),2026)['entitled'],4)
             self.assertTrue(db.session.get(Employee,eid).current_period.annual_leave_contract_verified)
-        staff=ProfileIntegrityTests.document(self,eid,'staff_record','B')
+        staff=self.document(eid,'staff_record','B')
         self.client.post(f'/documents/{staff}/review',data=dict(start_date='2026-01-01',date_change_action='recalculate'))
         with self.app.app_context():
             self.assertEqual(annual_leave_summary(db.session.get(Employee,eid),2026)['entitled'],8)

@@ -1,5 +1,5 @@
 """Synthetic isolated-data acceptance tests for the independent salary register."""
-from test_v1_workflows import pdf_bytes
+from tests.fixtures import PayrollTestCase, pdf_bytes
 import html
 import io
 import re
@@ -8,20 +8,13 @@ from datetime import date, datetime
 from decimal import Decimal
 from unittest.mock import patch
 
-import test_audit_integrity as fixture
 from models import (db, Employee, ReferenceValue, SalaryRecord, AuditLog, EmployeeDocument,
                     PayrollRun, PayrollEmployeeResult, EmployeeAnnualLeaveRecord)
 from tools.salary_records import annual_summary, money
 from openpyxl import load_workbook
 
 
-class SalaryRecordTests(unittest.TestCase):
-    setUp=fixture.AuditIntegrityTests.setUp
-    tearDown=fixture.AuditIntegrityTests.tearDown
-    login=fixture.AuditIntegrityTests.login
-    create_employee=fixture.AuditIntegrityTests.create_employee
-    complete_employee=fixture.AuditIntegrityTests.complete_employee
-    employee=fixture.AuditIntegrityTests.employee
+class SalaryRecordTests(PayrollTestCase):
 
     def entity(self):
         with self.app.app_context():

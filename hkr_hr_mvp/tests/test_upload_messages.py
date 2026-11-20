@@ -7,7 +7,7 @@ from PIL import Image
 from werkzeug.datastructures import FileStorage
 from tools.security import validate_uploaded_file, UploadValidationError
 from tools.i18n import TRANSLATIONS
-import test_profile_workspace as workspace
+from tests.fixtures import ProfileTestCase
 from models import db, EmployeeAnnualLeaveRecord
 
 
@@ -80,16 +80,12 @@ class UploadMessageTests(unittest.TestCase):
             self.assertIn('32 MB', copy['error.413.message'])
 
 
-class UploadErrorPageTests(unittest.TestCase):
-    setUp = workspace.ProfileWorkspaceTests.setUp
-    tearDown = workspace.ProfileWorkspaceTests.tearDown
-    login = workspace.ProfileWorkspaceTests.login
-    create_employee = workspace.ProfileWorkspaceTests.create_employee
+class UploadErrorPageTests(ProfileTestCase):
     def employee(self):
         from datetime import date
         from models import EmployeeAssignment
         from tools.hr_core import reference_by_code
-        eid = workspace.ProfileWorkspaceTests.employee(self)
+        eid = super().employee()
         with self.app.app_context():
             db.session.add(EmployeeAssignment(employee_id=eid, effective_from=date(2026, 1, 1),
                 payroll_group="management", workweek_days=5,

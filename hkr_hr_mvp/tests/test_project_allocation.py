@@ -5,24 +5,17 @@ import io
 from decimal import Decimal
 import unittest
 
-import test_audit_integrity as audit_fixture
+from tests.fixtures import PayrollTestCase, pdf_bytes
 from models import (db, Employee, WorkProject, AttendanceMonthlySummary, AttendanceSegment,
                     EmployeeAllowance, EmployeeAnnualLeaveRecord, EmployeeMpfEnrollment, User,
                     WorkCalendarHoliday, EmployeeDocument, AttendanceBatchItem, EmployeeAssignment, AttendanceSpecialDay)
 from tools.payroll_engine import calculate_employee, snapshot_payroll
 from tools.project_allocation import allocation_dates, allocation_weights, WORKDAY_BASIS, ProjectAllocationError
-from test_v1_workflows import pdf_bytes
 from tools.completeness import mpf_data_item
 from routes.payroll import build_group_workbook, mpf_export_issues, monthly_values, result_lines
 
 
-class ProjectAllocationTests(unittest.TestCase):
-    setUp = audit_fixture.AuditIntegrityTests.setUp
-    tearDown = audit_fixture.AuditIntegrityTests.tearDown
-    login = audit_fixture.AuditIntegrityTests.login
-    create_employee = audit_fixture.AuditIntegrityTests.create_employee
-    complete_employee = audit_fixture.AuditIntegrityTests.complete_employee
-    employee = audit_fixture.AuditIntegrityTests.employee
+class ProjectAllocationTests(PayrollTestCase):
     def setup_monthly(self, group='management'):
         eid, pid = self.employee(group)
         employee = db.session.get(Employee, eid)

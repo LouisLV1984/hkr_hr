@@ -3,21 +3,14 @@ from datetime import date
 from decimal import Decimal
 import unittest
 
-import test_audit_integrity as fixture
+from tests.fixtures import PayrollTestCase
 from models import (db, Employee, EmployeeAnnualLeaveRecord, PayrollRun, PayrollEmployeeResult,
                     AttendanceMonthlySummary, AttendanceSegment, AuditLog, User, EmployeeFinalPaymentCase)
 from tools.payroll_engine import calculate_employee, snapshot_payroll
 from tools.leave_review import review_rows, review_token
 
 
-class LeaveReviewTests(unittest.TestCase):
-    setUp = fixture.AuditIntegrityTests.setUp
-    tearDown = fixture.AuditIntegrityTests.tearDown
-    login = fixture.AuditIntegrityTests.login
-    create_employee = fixture.AuditIntegrityTests.create_employee
-    complete_employee = fixture.AuditIntegrityTests.complete_employee
-    employee = fixture.AuditIntegrityTests.employee
-    request_leave = fixture.AuditIntegrityTests.request_leave
+class LeaveReviewTests(PayrollTestCase):
 
     def legacy(self, eid, start=14, end=17, kind="sick"):
         with self.app.app_context():

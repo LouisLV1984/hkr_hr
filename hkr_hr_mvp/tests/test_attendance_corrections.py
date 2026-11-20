@@ -4,21 +4,14 @@ from datetime import date
 from decimal import Decimal
 from io import BytesIO
 
-import test_payroll_policy as fixture
+from tests.fixtures import PayrollTestCase, pdf_bytes
 from models import AttendanceCorrection, Employee, PayrollAdjustment, User, db
 from routes.payroll import build_final_payment_workbook, build_group_workbook
-from test_v1_workflows import pdf_bytes
 from tools.final_payment import calculate_final_payment
 from tools.payroll_engine import calculate_employee, snapshot_payroll
 
 
-class AttendanceCorrectionTests(unittest.TestCase):
-    setUp = fixture.PayrollPolicyTests.setUp
-    tearDown = fixture.PayrollPolicyTests.tearDown
-    login = fixture.PayrollPolicyTests.login
-    create_employee = fixture.PayrollPolicyTests.create_employee
-    complete_employee = fixture.PayrollPolicyTests.complete_employee
-    employee = fixture.PayrollPolicyTests.employee
+class AttendanceCorrectionTests(PayrollTestCase):
 
     def test_correction_replaces_only_this_batch_and_freezes_export(self):
         eid, project = self.employee("site_daily", 1)

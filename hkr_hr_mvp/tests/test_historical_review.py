@@ -4,8 +4,7 @@ import unittest
 from datetime import date, timedelta
 from decimal import Decimal
 
-import test_audit_integrity as fixtures
-from test_v1_workflows import pdf_bytes
+from tests.fixtures import PayrollTestCase, pdf_bytes
 from models import (
     AttendanceBatchItem,
     AttendanceMonthlySummary,
@@ -22,13 +21,7 @@ from tools.hr_core import reference_by_code
 from tools.payroll_engine import calculate_employee, snapshot_payroll
 
 
-class HistoricalReviewTests(unittest.TestCase):
-    setUp = fixtures.AuditIntegrityTests.setUp
-    tearDown = fixtures.AuditIntegrityTests.tearDown
-    login = fixtures.AuditIntegrityTests.login
-    create_employee = fixtures.AuditIntegrityTests.create_employee
-    complete_employee = fixtures.AuditIntegrityTests.complete_employee
-    employee = fixtures.AuditIntegrityTests.employee
+class HistoricalReviewTests(PayrollTestCase):
 
     def test_admin_only_access_and_read_only_historical_checks(self):
         # 1. Replaced attendance sheet + saved payroll snapshot

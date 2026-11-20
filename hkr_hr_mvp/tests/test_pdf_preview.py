@@ -2,17 +2,13 @@
 import io
 import unittest
 from pathlib import Path
-import test_v1_workflows as workflow
+from tests.fixtures import HrAppTestCase, pdf_bytes
 from models import db, AttendanceBatchItem, EmployeeDocument
 
-class PdfPreviewTests(unittest.TestCase):
-    setUp = workflow.V1WorkflowTests.setUp
-    tearDown = workflow.V1WorkflowTests.tearDown
-    login = workflow.V1WorkflowTests.login
-    create_employee = workflow.V1WorkflowTests.create_employee
+class PdfPreviewTests(HrAppTestCase):
 
     def test_batch_and_employee_viewer_keep_original_bytes(self):
-        content = workflow.pdf_bytes('Preview QA')
+        content = pdf_bytes('Preview QA')
         self.client.post('/attendance/batches', data={'year_month':'2026-08', 'files':(io.BytesIO(content),'QA.pdf')}, content_type='multipart/form-data')
         eid, _ = self.create_employee('HKR', 'management', 'PDF測試', 'PDF QA')
         with self.app.app_context():

@@ -1,12 +1,11 @@
 """Progressive employee editors: isolated synthetic records, no runtime data."""
-from test_v1_workflows import current_profile_revision, pdf_bytes
+from tests.fixtures import ProfileTestCase, current_profile_revision, pdf_bytes
 import io
 import unittest
 import re
 from datetime import date, timedelta
 from decimal import Decimal
 
-import test_profile_integrity as integrity
 from models import (
     db,
     Employee,
@@ -19,13 +18,7 @@ from models import (
 from tools.hr_core import reference_by_code
 
 
-class ProfileWorkspaceTests(unittest.TestCase):
-    setUp = integrity.ProfileIntegrityTests.setUp
-    tearDown = integrity.ProfileIntegrityTests.tearDown
-    login = integrity.ProfileIntegrityTests.login
-    create_employee = integrity.ProfileIntegrityTests.create_employee
-    employee = integrity.ProfileIntegrityTests.employee
-    document = integrity.ProfileIntegrityTests.document
+class ProfileWorkspaceTests(ProfileTestCase):
     enhanced = {"X-HKR-Profile-Editor": "1"}
 
     def test_history_separates_effective_start_and_end_without_changing_records(self):

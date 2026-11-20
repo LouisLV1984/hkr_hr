@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal
 import unittest
 
-import test_audit_integrity as audit_fixture
+from tests.fixtures import PayrollTestCase
 from models import db, Employee, EmployeeAssignment, EmployeeAnnualLeaveRecord, WorkCalendarHoliday, AuditLog
 from tools.attendance_policy import (leave_day_units, saved_leave_units, scheduled_work_units,
                                     employee_nonattendance_units)
@@ -11,14 +11,7 @@ from tools.payroll_engine import monthly_salary_components, daily_leave_componen
 from tools.absence_integrity import absence_data_issues
 
 
-class LeaveCalendarTests(unittest.TestCase):
-    setUp = audit_fixture.AuditIntegrityTests.setUp
-    tearDown = audit_fixture.AuditIntegrityTests.tearDown
-    login = audit_fixture.AuditIntegrityTests.login
-    create_employee = audit_fixture.AuditIntegrityTests.create_employee
-    complete_employee = audit_fixture.AuditIntegrityTests.complete_employee
-    employee = audit_fixture.AuditIntegrityTests.employee
-    request_leave = audit_fixture.AuditIntegrityTests.request_leave
+class LeaveCalendarTests(PayrollTestCase):
 
     def test_five_five_half_six_and_half_day_endpoints(self):
         eid, _ = self.employee('management')

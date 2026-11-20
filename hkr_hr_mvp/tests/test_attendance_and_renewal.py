@@ -2,20 +2,13 @@ import io
 import unittest
 from datetime import date, timedelta
 
-import test_audit_integrity as fixture
-from test_v1_workflows import pdf_bytes
+from tests.fixtures import PayrollTestCase, pdf_bytes
 from models import db, AttendanceBatchItem, AttendanceMonthlySummary, EmployeeCertificate
 from tools.hr_core import reference_by_code
 from tools.profile_integrity import credential_alerts, credential_state
 
 
-class AttendanceAndRenewalTests(unittest.TestCase):
-    setUp = fixture.AuditIntegrityTests.setUp
-    tearDown = fixture.AuditIntegrityTests.tearDown
-    login = fixture.AuditIntegrityTests.login
-    employee = fixture.AuditIntegrityTests.employee
-    create_employee = fixture.AuditIntegrityTests.create_employee
-    complete_employee = fixture.AuditIntegrityTests.complete_employee
+class AttendanceAndRenewalTests(PayrollTestCase):
 
     def test_new_pdf_needs_original_id_and_old_forms_cannot_change_replacement(self):
         employee, project = self.employee()

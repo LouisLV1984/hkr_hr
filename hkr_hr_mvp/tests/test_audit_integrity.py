@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 
-import test_v1_workflows as workflow
+from tests.fixtures import PayrollTestCase
 from models import (db, Employee, EmployeeAnnualLeaveRecord, EmployeeAnnualLeaveBalance,
                     AttendanceMonthlySummary, AttendanceSegment, EmployeeCompLeaveCredit,
                     EmployeeWorkInjuryPeriod, User, AuditLog)
@@ -19,23 +19,7 @@ from routes.payroll import build_group_workbook
 from routes.attendance import replace_summary_segments
 
 
-class AuditIntegrityTests(unittest.TestCase):
-    setUp = workflow.V1WorkflowTests.setUp
-    tearDown = workflow.V1WorkflowTests.tearDown
-    login = workflow.V1WorkflowTests.login
-    create_employee = workflow.V1WorkflowTests.create_employee
-    complete_employee = workflow.V1WorkflowTests.complete_employee
-
-    def employee(self, group="site_daily", number=1):
-        eid, _ = self.create_employee("HKR", group, f"驗收{number}", f"QA {number}")
-        project = self.complete_employee(eid, group, "TMC046", "daily" if group == "site_daily" else "monthly",
-                                         "1000" if group == "site_daily" else "31000", f"QA{number:06}", f"6123{number:04}")
-        return eid, project
-
-    def request_leave(self, eid, start="2026-08-04", end="2026-08-04", **extra):
-        form = dict(leave_type="sick", start_date=start, end_date=end, start_session="am", end_session="pm")
-        form.update(extra)
-        return self.client.post(f"/employees/{eid}/annual-leave", data=form, follow_redirects=True)
+class AuditIntegrityTests(PayrollTestCase):
 
     def test_dates_are_only_days_source_and_overlap_uses_half_days(self):
         eid, _ = self.employee()

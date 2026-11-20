@@ -4,18 +4,13 @@ import re
 import unittest
 from datetime import date
 from openpyxl import load_workbook
-import test_v1_workflows as workflow
+from tests.fixtures import HrAppTestCase
 from models import db, Employee, MpfScheme, EmployeeMpfEnrollment, AuditLog, AttendanceMonthlySummary
 from tools.completeness import mpf_data_item
 from routes.payroll import mpf_export_issues
 
 
-class OptionalMpfAccountTests(unittest.TestCase):
-    setUp = workflow.V1WorkflowTests.setUp
-    tearDown = workflow.V1WorkflowTests.tearDown
-    login = workflow.V1WorkflowTests.login
-    create_employee = workflow.V1WorkflowTests.create_employee
-    complete_employee = workflow.V1WorkflowTests.complete_employee
+class OptionalMpfAccountTests(HrAppTestCase):
 
     def test_blank_create_correct_export_and_required_scheme(self):
         eid,_ = self.create_employee('ASMTP', 'management', '測試員工', 'OPTIONAL MPF QA')

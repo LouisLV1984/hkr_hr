@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 import unittest
 
-import test_audit_integrity as fixture
+from tests.fixtures import PayrollTestCase
 from models import db, Employee, AttendanceMonthlySummary, EmployeeAnnualLeaveRecord, PayrollAdjustment, PayrollRun, User, AuditLog
 from tools.attendance_policy import set_long_term_attendance_policy
 from tools.hr_core import reference_by_code
@@ -11,24 +11,7 @@ from tools.payroll_engine import calculate_employee, snapshot_payroll
 from tools.payroll_exchange import hkd_summary
 
 
-class PayrollPolicyTests(unittest.TestCase):
-    setUp = fixture.AuditIntegrityTests.setUp
-    tearDown = fixture.AuditIntegrityTests.tearDown
-    login = fixture.AuditIntegrityTests.login
-    create_employee = fixture.AuditIntegrityTests.create_employee
-    complete_employee = fixture.AuditIntegrityTests.complete_employee
-    employee = fixture.AuditIntegrityTests.employee
-
-    def ready(self, number=1):
-        eid, project = self.employee("management", number)
-        with self.app.app_context():
-            employee = db.session.get(Employee, eid)
-            db.session.add(set_long_term_attendance_policy(employee, "2026-01", False))
-            db.session.commit()
-            row = calculate_employee(employee, "2026-08")
-            self.assertFalse(row["blockers"])
-            self.assertGreaterEqual(row["net_amount"], 0)
-        return eid
+class PayrollPolicyTests(PayrollTestCase):
 
     def export(self, eid=None):
         data = {"year_month": "2026-08", "payroll_group": "management"}

@@ -7,20 +7,13 @@ from types import SimpleNamespace
 
 from openpyxl import load_workbook
 from werkzeug.datastructures import FileStorage
-import test_profile_integrity as fixture
-from test_v1_workflows import current_profile_revision, pdf_bytes
+from tests.fixtures import ProfileTestCase, current_profile_revision, pdf_bytes
 from models import db, Employee, EmployeeSalary, EmployeeDocument, AttendanceBatchItem, AttendanceMonthlySummary, User
 from tools.payroll_engine import currency_summary, project_summary
 from tools.security import validate_uploaded_file, UploadValidationError
 
 
-class ReviewHardeningTests(unittest.TestCase):
-    setUp = fixture.ProfileIntegrityTests.setUp
-    tearDown = fixture.ProfileIntegrityTests.tearDown
-    login = fixture.ProfileIntegrityTests.login
-    create_employee = fixture.ProfileIntegrityTests.create_employee
-    employee = fixture.ProfileIntegrityTests.employee
-    document = fixture.ProfileIntegrityTests.document
+class ReviewHardeningTests(ProfileTestCase):
 
     def test_stale_profile_cannot_erase_new_values_and_scopes_are_independent(self):
         eid = self.employee()

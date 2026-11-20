@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest import TestCase
 
 from flask import template_rendered
-import test_payroll_policy as fixtures
+from tests.fixtures import PayrollTestCase
 from models import (db, Employee, EmployeeWorkInjuryPeriod, EmployeeAnnualLeaveRecord, AttendanceBatch, AttendanceBatchItem,
                     AttendanceMonthlySummary, PayrollRun, PayrollAdjustment)
 from tools.attendance_policy import attendance_required, automatic_attendance_rows
@@ -12,14 +12,7 @@ from tools.attendance_rates import allocation_issue, rate_windows
 from tools.payroll_engine import calculate_employee
 
 
-class WorkbenchConsistencyTests(TestCase):
-    setUp = fixtures.PayrollPolicyTests.setUp
-    tearDown = fixtures.PayrollPolicyTests.tearDown
-    login = fixtures.PayrollPolicyTests.login
-    create_employee = fixtures.PayrollPolicyTests.create_employee
-    complete_employee = fixtures.PayrollPolicyTests.complete_employee
-    employee = fixtures.PayrollPolicyTests.employee
-    ready = fixtures.PayrollPolicyTests.ready
+class WorkbenchConsistencyTests(PayrollTestCase):
 
     def test_intake_resumes_unfinished_batch_after_work_month_changes(self):
         with self.app.app_context():

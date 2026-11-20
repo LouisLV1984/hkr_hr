@@ -5,7 +5,7 @@ import unittest
 from datetime import date, timedelta
 from decimal import Decimal
 
-import test_v1_workflows as workflow
+from tests.fixtures import ProfileTestCase, pdf_bytes
 from models import (db, Employee, EmployeeDocument, EmployeeEmploymentPeriod,
                     EmployeeIdentity, EmployeeCertificate, EmployeeQualification,
                     EmployeeAnnualLeaveRecord, EmployeeAllowance, AuditLog)
@@ -13,26 +13,7 @@ from tools.hr_core import reference_by_code
 from tools.profile_integrity import credential_state, credential_alerts, document_reference_count
 
 
-class ProfileIntegrityTests(unittest.TestCase):
-    setUp = workflow.V1WorkflowTests.setUp
-    tearDown = workflow.V1WorkflowTests.tearDown
-    login = workflow.V1WorkflowTests.login
-    create_employee = workflow.V1WorkflowTests.create_employee
-
-    def employee(self, suffix="A"):
-        eid, _ = self.create_employee("HKR", "management", "測試" + suffix, "QA " + suffix)
-        with self.app.app_context():
-            db.session.add(EmployeeEmploymentPeriod(employee_id=eid, start_date=date(2026, 1, 1),
-                contract_annual_leave_days=14, probation_end_date=date(2026, 3, 31)))
-            db.session.commit()
-        return eid
-
-    def document(self, eid, category="staff_record", suffix="A"):
-        response = self.client.post(f"/employees/{eid}/documents/new", data={
-            "category": category, "file": (io.BytesIO(workflow.pdf_bytes(suffix)), suffix + ".pdf")})
-        self.assertEqual(response.status_code, 302)
-        with self.app.app_context():
-            return EmployeeDocument.query.filter_by(employee_id=eid).order_by(EmployeeDocument.id.desc()).first().id
+class ProfileIntegrityTests(ProfileTestCase):
 
     def test_evidence_only_and_missing_entry(self):
         eid = self.employee()
@@ -46,7 +27,7 @@ class ProfileIntegrityTests(unittest.TestCase):
         self.assertIn(f'/annual-leave/{rid}/evidence', page)
         response = self.client.post(f"/annual-leave/{rid}/evidence", data={
             "start_date": "2025-01-01", "days": "99", "leave_type": "annual",
-            "evidence": (io.BytesIO(workflow.pdf_bytes("sick")), "sick.pdf")}, follow_redirects=True)
+            "evidence": (io.BytesIO(pdf_bytes("sick")), "sick.pdf")}, follow_redirects=True)
         self.assertEqual(response.status_code, 200)
         with self.app.app_context():
             row = EmployeeAnnualLeaveRecord.query.one()
@@ -180,7 +161,7 @@ class ProfileIntegrityTests(unittest.TestCase):
             self.assertEqual(document_reference_count(db.session.get(EmployeeDocument, first)), 2)
         response = self.client.post(f"/employees/{eid}/documents/new", data={
             "category": "staff_record", "replace_document_id": str(first), "replacement_reason": "QA correction",
-            "file": (io.BytesIO(workflow.pdf_bytes("third")), "third.pdf")})
+            "file": (io.BytesIO(pdf_bytes("third")), "third.pdf")})
         self.assertEqual(response.status_code, 302)
         with self.app.app_context():
             old = db.session.get(EmployeeDocument, first)
@@ -199,7 +180,7 @@ class ProfileIntegrityTests(unittest.TestCase):
                 amount=10, effective_from=date(2026, 1, 1), evidence_document_id=did)])
             db.session.commit(); rid = leave.id
         self.client.post(f"/annual-leave/{rid}/evidence", data={
-            "evidence": (io.BytesIO(workflow.pdf_bytes("new evidence")), "new.pdf")})
+            "evidence": (io.BytesIO(pdf_bytes("new evidence")), "new.pdf")})
         with self.app.app_context():
             self.assertEqual(db.session.get(EmployeeDocument, did).status, "active")
             self.assertEqual(EmployeeAllowance.query.one().evidence_document_id, did)

@@ -1,7 +1,7 @@
 from datetime import date
 from unittest import TestCase, mock
 
-import test_payroll_policy as fixtures
+from tests.fixtures import PayrollTestCase
 from models import (
     AttendanceMonthlySummary,
     AttendanceSegment,
@@ -16,14 +16,7 @@ from models import (
 from tools.payroll_engine import calculate_employee, snapshot_payroll
 
 
-class PayrollDirectoryTests(TestCase):
-    setUp = fixtures.PayrollPolicyTests.setUp
-    tearDown = fixtures.PayrollPolicyTests.tearDown
-    login = fixtures.PayrollPolicyTests.login
-    create_employee = fixtures.PayrollPolicyTests.create_employee
-    complete_employee = fixtures.PayrollPolicyTests.complete_employee
-    employee = fixtures.PayrollPolicyTests.employee
-    ready = fixtures.PayrollPolicyTests.ready
+class PayrollDirectoryTests(PayrollTestCase):
 
     def test_browse_cards_without_calculating_payroll(self):
         eid, _ = self.employee()
